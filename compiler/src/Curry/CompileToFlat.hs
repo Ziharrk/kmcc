@@ -1,0 +1,104 @@
+module Curry.CompileToFlat where
+
+import Control.Monad.IO.Class (liftIO)
+import Data.Maybe ( mapMaybe, fromMaybe, catMaybes )
+import Data.Binary (decodeFileOrFail)
+import System.FilePath ((</>))
+
+import Base.Messages ( status )
+import Curry.Base.Monad ( CYIO )
+import Curry.Base.Pretty ( Pretty(..) )
+import Curry.Base.Ident ( ModuleIdent )
+import Curry.FlatCurry.Typed.Type ( TProg )
+import Curry.Files.Filenames
+import qualified Curry.Syntax.ShowModule as CS
+import qualified CompilerOpts as Frontend
+import CurryBuilder ( findCurry, processPragmas, adjustOptions, smake, compMessage)
+import CurryDeps ( flatDeps, Source(..) )
+import CompilerOpts ( Options(..), TargetType(..), DumpLevel (..) )
+import Modules (loadAndCheckModule, dumpWith, writeInterface, writeFlat, transModule)
+import Transformations (qual)
+import Checks (expandExports)
+import Exports ( exportInterface )
+import Generators (genTypedFlatCurry, genAnnotatedFlatCurry)
+
+import Curry.FrontendUtils ( runCurryFrontendAction )
+
+getDependencies :: FilePath -> Frontend.Options -> IO [(ModuleIdent, Source)]
+getDependencies file opts =
+  runCurryFrontendAction opts (findCurry opts file >>= flatDeps opts)
+
+compileFileToFcy :: Frontend.Options -> [(ModuleIdent, Source)] -> IO [TProg]
+compileFileToFcy opts srcs = runCurryFrontendAction opts $
+  catMaybes <$> mapM process' (zip [1 ..] srcs)
+  where
+    total    = length srcs
+    tgtDir m = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
+
+    process' :: (Int, (ModuleIdent, Source)) -> CYIO (Maybe TProg)
+    process' (n, (m, Source fn ps is)) = do
+      opts' <- processPragmas opts ps
+      Just <$> process (adjustOptions (n == total) opts') (n, total) m fn deps
+      where
+        deps = fn : mapMaybe curryInterface is
+
+        curryInterface i = case lookup i srcs of
+          Just (Source    fn' _ _) -> Just $ tgtDir i $ interfName fn'
+          Just (Interface fn'    ) -> Just $ tgtDir i $ interfName fn'
+          _                        -> Nothing
+    process' _ = return Nothing
+
+-- |Compile a single source module to typed flat curry.
+process :: Frontend.Options -> (Int, Int)
+        -> ModuleIdent -> FilePath -> [FilePath] -> CYIO TProg
+process opts idx m fn deps
+  | optForce opts = compile
+  | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile skip
+  where
+    skip = do
+      status opts $ compMessage idx "Skipping" m (fn, head destFiles)
+      eithRes <- liftIO $ decodeFileOrFail (tgtDir (typedBinaryFlatName fn))
+      case eithRes of
+        Left (_, err) -> do
+          liftIO $ putStrLn $ unwords
+            [ "Binary interface file is corrupted."
+            , "For the file\"" ++ fn ++ "\"."
+            , "Decoding failed with:"
+            , err
+            , "Retrying compilation from source..." ]
+          compile
+        Right res -> return res
+    compile = do
+      status opts $ compMessage idx "Compiling" m (fn, head destFiles)
+      compileModule opts m fn
+
+    tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
+
+    destFiles = [ gen fn | (t, gen) <- nameGens, t `elem` optTargetTypes opts]
+    nameGens  =
+      [ (Tokens              , tgtDir . tokensName         )
+      , (Comments            , tgtDir . commentsName       )
+      , (Parsed              , tgtDir . sourceRepName      )
+      , (FlatCurry           , tgtDir . flatName           )
+      , (TypedFlatCurry      , tgtDir . typedFlatName      )
+      , (TypedBinaryFlatCurry, tgtDir . typedBinaryFlatName)
+      , (AnnotatedFlatCurry  , tgtDir . annotatedFlatName  )
+      , (AbstractCurry       , tgtDir . acyName            )
+      , (UntypedAbstractCurry, tgtDir . uacyName           )
+      , (AST                 , tgtDir . astName            )
+      , (ShortAST            , tgtDir . shortASTName       )
+      , (Html                , const (fromMaybe "." (optHtmlDir opts) </> htmlName m))
+      ]
+
+compileModule :: Options -> ModuleIdent -> FilePath -> CYIO TProg
+compileModule opts m fn = do
+  mdl <- loadAndCheckModule opts m fn
+  let qmdl = qual mdl
+  mdl' <- expandExports opts mdl
+  qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
+  -- generate interface file
+  let intf = uncurry exportInterface qmdl'
+  writeInterface opts (fst mdl') intf
+  ((env, il), mdl'') <- transModule opts qmdl'
+  writeFlat opts env (snd mdl'') il
+  return $ genTypedFlatCurry $ genAnnotatedFlatCurry env (snd mdl'') il

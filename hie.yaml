@@ -1,0 +1,14 @@
+cradle:
+  stack:
+    - path: curry-frontend/src
+      component: "curry-frontend:lib"
+      stackYaml: "stack.yaml"
+    - path: curry-frontend/app
+      stackYaml: "stack.yaml"
+      component: "curry-frontend:exe:curry-frontend"
+    - path: curry-frontend/test
+      component: "curry-frontend:test:test-frontend"
+      stackYaml: "stack.yaml"
+    - path: compiler/src
+      component: "kmcc:exe:kmcc"
+      stackYaml: "stack.yaml"

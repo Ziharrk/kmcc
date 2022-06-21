@@ -1,0 +1,3 @@
+[submodule "curry-frontend"]
+	path = curry-frontend
+	url = ssh://git@git.ps.informatik.uni-kiel.de:55055/curry/curry-frontend.git
