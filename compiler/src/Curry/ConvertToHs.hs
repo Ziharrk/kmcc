@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveAnyClass         #-}
 {-# LANGUAGE DerivingStrategies     #-}
 {-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE OverloadedStrings      #-}
@@ -114,7 +113,16 @@ instance ToHs TProgWithFilePath where
         ext <- liftIO $ parseFile' fp
         case fmap void ext of
           ParseOk (Module _ _ p i d) -> return (p, i, d)
-          _ -> return ([], [], [])
+          ParseOk _           -> return ([] , [], [])
+          ParseFailed loc err -> do
+            liftIO $ fail $ unlines
+              [ "External definitions file is corrupted."
+              , "For the file \"" ++ fp ++ "\"."
+              , "Parsing failed with:"
+              , err
+              , "At location:"
+              , prettyPrint loc
+              , "Aborting compilation ..." ]
       False -> return ([], [], [])
     let ps' = defaultPragmas ++ extPragmas
     let im' = defaultImports ++ extImports ++ curryImports
@@ -158,10 +166,13 @@ instance ToHs ImportString where
 newtype HsTypeDecl = HTD (Decl ())
 type instance HsEquivalent TypeDecl = HsTypeDecl
 instance ToHs TypeDecl where
-  convertToHs (Type qname _ vs cs) = do
-    cs' <- mapM convertToHs cs
-    return $ HTD $
-      DataDecl () (DataType ()) Nothing (mkTypeHead qname vs) cs' []
+  convertToHs (Type qname@(mdl, nm) _ vs cs)
+    | [] <- cs = return $ HTD $ TypeDecl () (mkTypeHead qname []) $ -- eta reduce -> ignore vars
+      TyCon () (Qual () (ModuleName () ("Curry_" ++ mdl)) (Ident () (escapeTypeName nm ++ "#")))
+    | otherwise = do
+      cs' <- mapM convertToHs cs
+      return $ HTD $
+        DataDecl () (DataType ()) Nothing (mkTypeHead qname vs) cs' []
   convertToHs (TypeSyn qname _ vs texpr) = do
     ty <- convertToHs texpr
     return $ HTD $
