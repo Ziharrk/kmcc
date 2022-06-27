@@ -28,17 +28,18 @@ getDependencies :: FilePath -> Frontend.Options -> IO [(ModuleIdent, Source)]
 getDependencies file opts =
   runCurryFrontendAction opts (findCurry opts file >>= flatDeps opts)
 
-compileFileToFcy :: Frontend.Options -> [(ModuleIdent, Source)] -> IO [TProg]
+compileFileToFcy :: Frontend.Options -> [(ModuleIdent, Source)]
+                 -> IO [(TProg, ModuleIdent, FilePath)]
 compileFileToFcy opts srcs = runCurryFrontendAction opts $
   catMaybes <$> mapM process' (zip [1 ..] srcs)
   where
     total    = length srcs
     tgtDir m = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
-    process' :: (Int, (ModuleIdent, Source)) -> CYIO (Maybe TProg)
+    process' :: (Int, (ModuleIdent, Source)) -> CYIO (Maybe (TProg, ModuleIdent, FilePath))
     process' (n, (m, Source fn ps is)) = do
       opts' <- processPragmas opts ps
-      Just <$> process (adjustOptions (n == total) opts') (n, total) m fn deps
+      Just . (, m, fn) <$> process (adjustOptions (n == total) opts') (n, total) m fn deps
       where
         deps = fn : mapMaybe curryInterface is
 

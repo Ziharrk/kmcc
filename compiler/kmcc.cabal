@@ -20,11 +20,12 @@ executable kmcc
                       Curry.FrontendUtils
     options-ghc:      -Wall
     -- other-extensions:
-    build-depends:    base           ^>= 4.16,
-                      curry-frontend ^>= 2.0,
-                      filepath       ^>= 1.4,
-                      binary         ^>= 0.8,
-                      containers     ^>= 0.6,
-                      mtl            ^>= 2.2,
+    build-depends:    base             ^>= 4.16,
+                      curry-frontend   ^>= 2.0,
+                      filepath         ^>= 1.4,
+                      binary           ^>= 0.8,
+                      containers       ^>= 0.6,
+                      mtl              ^>= 2.2,
+                      haskell-src-exts ^>= 1.23,
     hs-source-dirs:   src
     default-language: GHC2021

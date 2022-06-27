@@ -10,8 +10,8 @@ main :: IO ()
 main = do
   deps <- getDependencies "Prelude" opts
   progs <- compileFileToFcy opts deps
-  ndInfos <- undefined analyzeNondet progs opts
-  _ <- compileToHs
+  ndInfos <- analyzeNondet progs opts
+  _ <- compileToHs progs ndInfos opts
   return ()
   where
     opts = defaultOptions { optTargetTypes = [TypedBinaryFlatCurry] }
