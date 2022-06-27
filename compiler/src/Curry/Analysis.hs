@@ -10,10 +10,10 @@ import Control.Arrow ( first )
 import Control.Monad ( when )
 import Control.Monad.IO.Class ( MonadIO(..) )
 import Control.Monad.Except ( ExceptT (..), MonadError (..), runExceptT )
-import Control.Monad.State ( StateT (..), MonadState, execStateT, modify, get, put )
-import Data.Binary ( decodeFileOrFail, Binary )
+import Control.Monad.State ( StateT (..), MonadState, evalStateT, modify, get, put, modify' )
+import Data.Binary ( decodeFileOrFail, Binary, encodeFile )
 import Data.Map ( Map )
-import qualified Data.Map as Map ( empty, restrictKeys, lookup, insert, findWithDefault, fromList )
+import qualified Data.Map as Map ( empty, restrictKeys, lookup, insert, findWithDefault, unions, union )
 import Data.Set ( Set )
 import qualified Data.Set as Set ( empty, insert )
 import GHC.Generics ( Generic )
@@ -27,18 +27,18 @@ import Curry.FlatCurry.Typed.Goodies ( trTProg, trTFunc, trTExpr )
 import Curry.Base.Ident ( ModuleIdent )
 import CurryBuilder ( smake, compMessage )
 import CompilerOpts ( Options(..) )
-import Curry.Files.Filenames ( typedBinaryFlatName, addOutDirModule )
+import Curry.Files.Filenames ( addOutDirModule )
 
 type NDAnalysisResult = Map QName NDInfo
 
 data Locality = Local | Global
 
 type family NDAnalysisState s = a | a -> s where
-  NDAnalysisState Local  = (NDAnalysisResult, Set QName)
-  NDAnalysisState Global = NDAnalysisResult
+  NDAnalysisState 'Local  = (NDAnalysisResult, Set QName)
+  NDAnalysisState 'Global = NDAnalysisResult
 
 data NDInfo = Det | NonDet
-  deriving (Binary, Generic, Eq, Ord)
+  deriving (Binary, Generic, Eq, Ord, Show, Bounded)
 
 newtype AM s a = AnalysisMonad {
     runAM :: StateT (NDAnalysisState s) (ExceptT [Message] IO) a
@@ -49,8 +49,8 @@ deriving newtype instance (x ~ NDAnalysisState s) => MonadState x (AM s)
 
 analyzeNondet :: [(TProg, ModuleIdent, FilePath)] -> Frontend.Options
               -> IO NDAnalysisResult
-analyzeNondet tps opts = handleRes $ runExceptT $ flip execStateT Map.empty $ runAM $
-    mapM_ process' (zip tps [1..])
+analyzeNondet tps opts = handleRes $ runExceptT $ flip evalStateT Map.empty $ runAM $ Map.unions <$>
+    mapM process' (zip tps [1..])
   where
     total = length tps
     deps = map (\(_, _, dep) -> dep) tps
@@ -61,41 +61,47 @@ analyzeNondet tps opts = handleRes $ runExceptT $ flip execStateT Map.empty $ ru
 
 -- |Analyze a single flat curry module.
 process :: Frontend.Options -> (Int, Int) -> TProg
-        -> ModuleIdent -> FilePath -> [FilePath] -> AM Global ()
+        -> ModuleIdent -> FilePath -> [FilePath] -> AM 'Global NDAnalysisResult
 process opts idx tprog m fn deps
   | optForce opts = compile
   | otherwise     = smake [destFile] deps compile skip
   where
     destFile = tgtDir (analysisName fn)
     skip = do
-      status opts $ compMessage idx "Skipping" m (fn, destFile)
+      status opts $ compMessage idx (11, 16) "Skipping" m (fn, destFile)
       eithRes <- liftIO $ decodeFileOrFail (tgtDir (analysisName fn))
       case eithRes of
         Left (_, err) -> do
-          liftIO $ putStrLn $ unwords
+          liftIO $ putStr $ unlines
             [ "Binary analysis file is corrupted."
-            , "For the file\"" ++ fn ++ "\"."
+            , "For the file \"" ++ fn ++ "\"."
             , "Decoding failed with:"
             , err
             , "Retrying analysis from flat curry..." ]
           compile
-        Right res -> modify (res <>)
-    compile = toGlobalState $ do
-      status opts $ compMessage idx "Compiling" m (fn, destFile)
-      analyzeTProg tprog
-      -- TODO: 1. write analysis file
-      -- TODO: 2. currently only returning the result of the current module.
+        Right (analysis, exportedNames) -> do
+          modify' (Map.union (Map.restrictKeys analysis exportedNames))
+          return analysis
+    compile = do
+      res@(analysis, _) <- runLocalState $ do
+        status opts $ compMessage idx (11, 16) "Analyzing" m (fn, destFile)
+        analyzeTProg tprog
+      liftIO $ encodeFile (tgtDir (analysisName fn)) res
+      return analysis
 
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
-toGlobalState :: AM Local a -> AM Global a
-toGlobalState a = get >>= \st -> handle $ runExceptT $ flip runStateT (st, Set.empty) $ runAM a
-  where
-    handle act = liftIO act >>= \case
-      Left  msgs      -> throwError msgs
-      Right (res, (allInfos, exportedQNames)) -> put (Map.restrictKeys allInfos exportedQNames) >> return res
+runLocalState :: AM 'Local a -> AM 'Global (NDAnalysisResult, Set QName)
+runLocalState a = do
+  st <- get
+  let handle act = liftIO act >>= \case
+        Left  msgs      -> throwError msgs
+        Right (_, (allInfos, exportedQNames)) -> do
+          put (Map.union st (Map.restrictKeys allInfos exportedQNames))
+          return (allInfos, exportedQNames)
+  handle $ runExceptT $ flip runStateT (st, Set.empty) $ runAM a
 
-analyzeTProg :: TProg -> AM Local ()
+analyzeTProg :: TProg -> AM 'Local ()
 analyzeTProg = trTProg (\_ _ _ funcs _ -> fixedPoint (or <$> mapM (trTFunc analyzeFunc) funcs))
 
 fixedPoint :: Monad m => m Bool -> m ()
@@ -103,7 +109,7 @@ fixedPoint act = do
   b <- act
   when b $ fixedPoint act
 
-analyzeFunc :: QName -> a -> Visibility -> c -> TRule -> AM Local Bool
+analyzeFunc :: QName -> a -> Visibility -> c -> TRule -> AM 'Local Bool
 analyzeFunc qname _ vis _ rule = do
   (mp, st) <- get
   when (vis == Public) $ put (mp, Set.insert qname st)
@@ -120,11 +126,11 @@ checkDeterministic (TRule _ expr) mp = trTExpr var lit comb lt free o cse branch
   where
     var _ _ = Det
     lit _ _ = Det
-    comb _ _ name args = max (Map.findWithDefault Det name mp) (maximum args)
+    comb _ _ name args = max (Map.findWithDefault Det name mp) (maximum (minBound : args))
     lt bs e = max e (foldr (max . snd) Det bs)
     free _ _ = NonDet
     o _ _ = NonDet
-    cse _ e bs = max e (maximum bs)
+    cse _ e bs = max e (maximum (minBound : bs))
     branch _ e = e
     typed e _ = e
 checkDeterministic (TExternal _ ext) _ = Map.findWithDefault Det ext externalInfoMap

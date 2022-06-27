@@ -1,3 +1,6 @@
+{-# LANGUAGE DeriveAnyClass         #-}
+{-# LANGUAGE DerivingStrategies     #-}
+{-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Curry.ConvertToHs where
@@ -7,14 +10,17 @@ import Control.Monad.Except (ExceptT, MonadError (..), runExceptT)
 import Control.Monad.Reader (ReaderT (..), MonadReader (..))
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Coerce (coerce)
+import Data.List (isPrefixOf)
 import qualified Data.Map as Map
+import Data.Maybe (mapMaybe)
 import Language.Haskell.Exts hiding (Literal, Cons, Kind, QName)
 import qualified Language.Haskell.Exts as Hs
+import System.Directory (doesFileExist)
 import System.FilePath (replaceExtension)
+import System.IO (openFile, IOMode (..), utf8, hSetEncoding, hPutStr, hClose, hGetContents')
 
 import Base.Messages (status, abortWithMessages, Message, message)
 import Curry.Base.Ident (ModuleIdent)
-import Curry.Base.Monad (CYIO)
 import Curry.FlatCurry hiding (Let)
 import Curry.FlatCurry.Typed.Type
 import Curry.Files.Filenames (addOutDirModule)
@@ -23,12 +29,13 @@ import CompilerOpts (Options(..))
 import CurryBuilder (smake, compMessage)
 
 import Curry.Analysis (NDAnalysisResult, NDInfo (..))
-import Curry.FrontendUtils (runCurryFrontendAction)
+import Haskell.ExtsInstances ()
+import Data.Char (toLower, toUpper)
 
 newtype CM a = CM {
     runCM :: ReaderT NDAnalysisResult (ExceptT [Message] IO) a
-  } deriving ( Functor, Applicative, Monad, MonadIO
-             , MonadReader NDAnalysisResult, MonadError [Message] )
+  } deriving newtype ( Functor, Applicative, Monad, MonadIO
+                     , MonadReader NDAnalysisResult, MonadError [Message] )
 
 evalCM :: CM a -> NDAnalysisResult -> IO a
 evalCM (CM a) st = do
@@ -53,19 +60,25 @@ process opts idx tprog m fn deps
   where
     destFile = tgtDir (haskellName fn)
     skip = do
-      status opts $ compMessage idx "Skipping" m (fn, destFile)
-      eithRes <- parseModule <$> liftIO (readFile (tgtDir (haskellName fn)))
+      status opts $ compMessage idx (11, 16) "Skipping" m (fn, destFile)
+      eithRes <- liftIO (parseFile' destFile)
       case eithRes of
-        ParseFailed _ err -> do
-          liftIO $ putStrLn $ unwords
+        ParseFailed loc err -> do
+          liftIO $ putStr $ unlines
             [ "Haskell file is corrupted."
-            , "For the file\"" ++ fn ++ "\"."
+            , "For the file \"" ++ fn ++ "\"."
             , "Parsing failed with:"
             , err
-            , "Retrying analysis from flat curry..." ]
+            , "At location:"
+            , prettyPrint loc
+            , "Retrying compilation from analyzed flat curry ..." ]
           compile
         ParseOk res -> return (void res)
-    compile = convertToHs tprog
+    compile = do
+      status opts $ compMessage idx (11, 16) "Translating" m (fn, destFile)
+      res <- convertToHs (TWFP (tprog, externalName fn))
+      liftIO $ writeUTF8File' (tgtDir (haskellName fn)) (prettyPrint res)
+      return res
 
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
@@ -77,36 +90,75 @@ class ToHs a where
 class ToMonadicHs a where
   convertToMonadicHs :: a -> CM (HsEquivalent a)
 
-type instance HsEquivalent TProg = Module ()
-instance ToHs TProg where
-  convertToHs (TProg nm im tys fs _) = do
-    head <- convertToHs (MS nm)
-    im' <- mapM (convertToHs . IS) im
-    tyds <- mapM convertToHs tys
-    funds <- mapM convertToHs fs
-    tydsM <- mapM convertToMonadicHs tys
-    fundsM <- mapM convertToMonadicHs fs
-    let extract (Just (x, y)) = [x,y]
-        extract Nothing = []
-    let ds = coerce (tyds ++ tydsM) ++ concatMap @[] extract (coerce (funds ++ fundsM))
-    return (Module () (Just head) defaultPragmas (defaultImports ++ im') ds)
+newtype TProgWithFilePath = TWFP (TProg, FilePath)
+type instance HsEquivalent TProgWithFilePath = Module ()
+instance ToHs TProgWithFilePath where
+  convertToHs (TWFP (TProg nm im tys fs _, fp)) = do
+    (header, curryImports, curryDs) <- do
+        im' <- mapM (convertToHs . IS) im
+        tyds <- mapM convertToHs tys
+        funds <- mapM convertToHs fs
+        --tydsM <- mapM convertToMonadicHs tys
+        --fundsM <- mapM convertToMonadicHs fs
+        let visT = mapMaybe getVisT tys
+        let visF = mapMaybe getVisF fs
+        header <- convertToHs (MS (nm, visT, visF))
+        let extract (Just (x, y)) = [x,y]
+            extract Nothing = []
+        --let ds = coerce (tyds ++ tydsM) ++ concatMap @[] extract (coerce (funds ++ fundsM))
+        let ds = coerce tyds ++ concatMap @[] extract (coerce funds)
+        -- TODO: deriving stuff?
+        return (header, im', ds)
+    (extPragmas, extImports, extDs) <- liftIO $ doesFileExist fp >>= \case
+      True -> do
+        ext <- liftIO $ parseFile' fp
+        case fmap void ext of
+          ParseOk (Module _ _ p i d) -> return (p, i, d)
+          _ -> return ([], [], [])
+      False -> return ([], [], [])
+    let ps' = defaultPragmas ++ extPragmas
+    let im' = defaultImports ++ extImports ++ curryImports
+    let ds' = extDs ++ curryDs
+    return (Module () (Just header) ps' im' ds')
+    where
+      getVisT (Type qname Public _ cs) = Just (qname, mapMaybe getVisC cs)
+      getVisT (TypeSyn qname Public _ _) = Just (qname, [])
+      getVisT (TypeNew qname Public _ c) = Just (qname, maybe [] return (getVisN c))
+      getVisT _ = Nothing
+
+      getVisC (Cons qname _ Public _) = Just qname
+      getVisC _ = Nothing
+
+      getVisN (NewCons qname Public _) = Just qname
+      getVisN _ = Nothing
+
+      getVisF (TFunc qname _ Public _ _) = Just qname
+      getVisF _ = Nothing
+
 
 -- TODO export only what is visible
-newtype ModuleString = MS String
-type instance HsEquivalent ModuleString = ModuleHead ()
-instance ToHs ModuleString where
-  convertToHs (MS s) = return $ ModuleHead () (ModuleName () s) Nothing Nothing
+newtype ModuleHeadStuff = MS (String, [(QName, [QName])], [QName])
+type instance HsEquivalent ModuleHeadStuff = ModuleHead ()
+instance ToHs ModuleHeadStuff where
+  convertToHs (MS (s, qnamesT, qnamesF)) = return $ ModuleHead () (ModuleName () ("Curry_" ++ s)) Nothing $
+    Just (ExportSpecList () (map typeItem qnamesT ++ map funcItem qnamesF))
+    where
+      typeItem (qname, [])      = EAbs () (NoNamespace ()) (convertTypeNameToHs qname)
+      typeItem (qname, csNames) = EThingWith () (NoWildcard ()) (convertTypeNameToHs qname) (map conItem csNames)
+
+      conItem qname = ConName () (convertTypeNameToHs (Unqual qname))
+
+      funcItem = EVar () . convertFuncNameToHs
 
 newtype ImportString = IS String
 type instance HsEquivalent ImportString = ImportDecl ()
 instance ToHs ImportString where
-  convertToHs (IS s) = return $ ImportDecl () (ModuleName () s) False False False Nothing Nothing Nothing
+  convertToHs (IS s) = return $ ImportDecl () (ModuleName () ("Curry_" ++ s)) False False False Nothing Nothing Nothing
 
--- TODO: deriving stuff?
 newtype HsTypeDecl = HTD (Decl ())
 type instance HsEquivalent TypeDecl = HsTypeDecl
 instance ToHs TypeDecl where
-  convertToHs (Type qname vis vs cs) = do
+  convertToHs (Type qname _ vs cs) = do
     cs' <- mapM convertToHs cs
     return $ HTD $
       DataDecl () (DataType ()) Nothing (mkTypeHead qname vs) cs' []
@@ -114,7 +166,7 @@ instance ToHs TypeDecl where
     ty <- convertToHs texpr
     return $ HTD $
       TypeDecl () (mkTypeHead qname vs) ty
-  convertToHs (TypeNew qname vis vs (NewCons cname cvis texpr)) = do
+  convertToHs (TypeNew qname _ vs (NewCons cname cvis texpr)) = do
     c' <- convertToHs (Cons cname 1 cvis [texpr])
     return $ HTD $
       DataDecl () (DataType ()) Nothing (mkTypeHead qname vs) [c'] []
@@ -126,12 +178,12 @@ instance ToMonadicHs TypeDecl where
 
 type instance HsEquivalent ConsDecl = QualConDecl ()
 instance ToHs ConsDecl where
-  convertToHs (Cons cname _ cvis texprs) = do
+  convertToHs (Cons cname _ _ texprs) = do
     tys <- mapM convertToHs texprs
-    return $ QualConDecl () Nothing Nothing (ConDecl () (convertNameToHs (Unqual cname)) tys)
+    return $ QualConDecl () Nothing Nothing (ConDecl () (convertTypeNameToHs (Unqual cname)) tys)
 
 mkTypeHead :: QName -> [TVarWithKind] -> DeclHead ()
-mkTypeHead qname vs = foldl (DHApp ()) (DHead () (convertNameToHs (Unqual qname))) $ map toTyVarBndr vs
+mkTypeHead qname vs = foldl (DHApp ()) (DHead () (convertTypeNameToHs (Unqual qname))) $ map toTyVarBndr vs
 
 toTyVarBndr :: TVarWithKind -> TyVarBind ()
 toTyVarBndr (i, k) = KindedVar () (indexToName i) (kindToHsType k)
@@ -141,24 +193,24 @@ kindToHsType KStar = TyCon () (Qual () (ModuleName () "Data.Kind") (Ident () "Ty
 kindToHsType (KArrow k1 k2) = TyFun () (kindToHsType k1) (kindToHsType k2)
 
 indexToName :: Int -> Name ()
-indexToName i = [Ident () (c : rest) | n <- [0..], let rest = if n == 0 then "" else show n, c <- ['a'..'z']] !! i
+indexToName i = [Ident () (c : rest) | n <- [0 :: Int ..], let rest = if n == 0 then "" else show n, c <- ['a'..'z']] !! i
 
 type instance HsEquivalent TypeExpr = Type ()
 instance ToHs TypeExpr where
   convertToHs (TVar idx) = return $ TyVar () (indexToName idx)
   convertToHs (FuncType t1 t2) = TyFun () <$> convertToHs t1 <*> convertToHs t2
-  convertToHs (TCons qn tys) = foldr (TyApp ()) (TyCon () (convertNameToHs qn)) <$> mapM convertToHs tys
+  convertToHs (TCons qn tys) = foldl (TyApp ()) (TyCon () (convertTypeNameToHs qn)) <$> mapM convertToHs tys
   convertToHs (ForallType vs t) = TyForall () (Just $ map toTyVarBndr vs) Nothing <$> convertToHs t
 
 newtype HsFuncDecl = HFD (Maybe (Decl (), Decl ()))
 type instance HsEquivalent TFuncDecl = HsFuncDecl
 instance ToHs TFuncDecl where
-  convertToHs (TFunc qname ar vis texpr rule) = do
+  convertToHs (TFunc qname _ _ texpr rule) = do
     analysis <- ask
     case Map.lookup qname analysis of
       Just Det -> do
         ty <- convertToHs texpr
-        let tsig = TypeSig () [convertNameToHs (Unqual qname)] ty
+        let tsig = TypeSig () [convertFuncNameToHs (Unqual qname)] ty
         match <- convertToHs (RI (qname, rule))
         let f = FunBind () [match]
         return $ HFD $ Just (tsig, f)
@@ -172,23 +224,32 @@ type instance HsEquivalent RuleInfo = Match ()
 instance ToHs RuleInfo where
   convertToHs (RI (qname, TRule args expr)) = do
     e <- convertToHs expr
-    return $ Match () (convertNameToHs (Unqual qname)) (map (PVar () . indexToName . fst) args)
+    return $ Match () (convertFuncNameToHs (Unqual qname)) (map (PVar () . indexToName . fst) args)
       (UnGuardedRhs () e) Nothing
   convertToHs (RI (qname, TExternal _ str)) = return $
-    Match () (convertNameToHs (Unqual qname)) []
-      (UnGuardedRhs () (Hs.Var () (UnQual () (Ident () str)))) Nothing
+    Match () (convertFuncNameToHs (Unqual qname)) []
+      (UnGuardedRhs () (Hs.Var () (UnQual () (Ident () (escapeFuncName unqualStr ++ "#"))))) Nothing
+    where unqualStr = case dropWhile (/= '.') str of
+            ""  -> str
+            "." -> str
+            _:s -> s
 
 type instance HsEquivalent TExpr = Exp ()
 instance ToHs TExpr where
   convertToHs (TVarE _ idx) = return $ Hs.Var () (UnQual () (indexToName idx))
   convertToHs (TLit _ lit) = return $ Hs.Lit () (convertLit lit)
-  convertToHs (TComb _ _ qname args) = do
+  convertToHs (TComb _ ct qname args) = do
     args' <- mapM convertToHs args
+    let convertNameToHs = case ct of
+          ConsCall -> convertTypeNameToHs
+          ConsPartCall _ -> convertTypeNameToHs
+          FuncCall -> convertFuncNameToHs
+          FuncPartCall _ -> convertFuncNameToHs
     return $ foldl (Hs.App ()) (Hs.Var () (convertNameToHs qname)) args'
   convertToHs (TLet bs e) = do
     e' <- convertToHs e
     bs' <- mapM (\((v, _), lclE) -> PatBind () (PVar () (indexToName v))
-                     <$> (UnGuardedRhs () <$> convertToHs e)
+                     <$> (UnGuardedRhs () <$> convertToHs lclE)
                      <*> pure Nothing) bs
     return $ Let () (BDecls () bs') e'
   convertToHs (TFree _ _) = throwError [message "Encountered a free variable in an expression inferred to be deterministic"]
@@ -208,7 +269,7 @@ instance ToHs TBranchExpr where
 
 type instance HsEquivalent TPattern = Pat ()
 instance ToHs TPattern where
-  convertToHs (TPattern _ qname args) = return $ PApp () (convertNameToHs qname) (map (PVar () . indexToName . fst) args)
+  convertToHs (TPattern _ qname args) = return $ PApp () (convertTypeNameToHs qname) (map (PVar () . indexToName . fst) args)
   convertToHs (TLPattern _ lit) = return $ PLit () (litSign lit) (convertLit lit)
   -- TODO: remove sign?
 
@@ -225,30 +286,126 @@ convertLit (Floatc d) = Hs.Frac () (toRational d) (show d)
 convertLit (Charc c) = Hs.Char () c (show c)
 
 class ToHsName a where
-  convertNameToHs :: a -> HsEquivalent a
+  convertTypeNameToHs :: a -> HsEquivalent a
+  convertFuncNameToHs :: a -> HsEquivalent a
 
 newtype UnqualName = Unqual QName
 type instance HsEquivalent UnqualName = Name ()
 instance ToHsName UnqualName where
-  convertNameToHs (Unqual (_, s)) = Ident () $ escapeName s
+  convertTypeNameToHs (Unqual (_, s)) = Ident () $ escapeTypeName s
+  convertFuncNameToHs (Unqual (_, s)) = Ident () $ escapeFuncName s
 
 type instance HsEquivalent QName = Hs.QName ()
 instance ToHsName QName where
-  convertNameToHs n@(m, _) = Hs.Qual () (ModuleName () m) (convertNameToHs (Unqual n))
+  convertTypeNameToHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertTypeNameToHs (Unqual n))
+  convertFuncNameToHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertFuncNameToHs (Unqual n))
 
 defaultPragmas :: [ModulePragma ()]
-defaultPragmas = []
+defaultPragmas =
+  [ LanguagePragma () [Ident () "NoImplicitPrelude"]
+  , LanguagePragma () [Ident () "KindSignatures"]
+  , LanguagePragma () [Ident () "TypeOperators"]
+  , LanguagePragma () [Ident () "ExplicitForAll"]
+  , OptionsPragma () (Just GHC) "-w " -- Space is important here
+  ]
 
 defaultImports :: [ImportDecl ()]
-defaultImports = []
+defaultImports =
+  [ ImportDecl () (ModuleName () "Data.Kind") True False False Nothing Nothing Nothing
+  , ImportDecl () (ModuleName () "BasicDefinitions") False False False Nothing Nothing Nothing
+  ]
 
 -- |Compute the filename of the Haskell file for a source file
 haskellName :: FilePath -> FilePath
-haskellName = flip replaceExtension haskellExt
+haskellName = ("Curry_" ++) . flip replaceExtension haskellExt
+
+-- |Compute the filename of the external definition file for a source file
+externalName :: FilePath -> FilePath
+externalName = flip replaceExtension externalExt
 
 -- |Filename extension for Haskell files
 haskellExt :: String
 haskellExt = ".hs"
 
+-- |Filename extension for external definition files
+externalExt :: String
+externalExt = ".ext.hs"
+
+escapeFuncName :: String -> String
+escapeFuncName s = case escapeName s of
+  "" -> ""
+  c:cs -> toLower c : cs
+
+escapeTypeName :: String -> String
+escapeTypeName s = case escapeName s of
+  "" -> ""
+  c:cs -> toUpper c : cs
+
 escapeName :: String -> String
-escapeName = id
+escapeName "[]" = "CList"
+escapeName "(->)" = "CArrow"
+escapeName "()" = "CUnit"
+escapeName ":" = "CCons"
+escapeName s
+  | "_Dict" `isPrefixOf` s = concatMap replaceChar (drop 1 s)
+  | Just arity <- tupleStringArity s = "CTuple" ++ show arity
+  | otherwise = concatMap replaceChar s
+  where
+    replaceChar c | Just r <- lookup c opRenaming = r
+                  | otherwise = return c
+
+tupleStringArity :: String -> Maybe Int
+tupleStringArity s = case s of
+  '(':rest | last s == ')' -> Just $ length rest
+  _                        -> Nothing
+
+opRenaming :: [(Char, String)]
+opRenaming =
+  [ ('_' , "uscore"   )
+  , ('~' , "tilde"    )
+  , ('!' , "bang"     )
+  , ('@' , "at"       )
+  , ('#' , "hash"     )
+  , ('$' , "dollar"   )
+  , ('%' , "percent"  )
+  , ('^' , "caret"    )
+  , ('&' , "amp"      )
+  , ('*' , "star"     )
+  , ('+' , "plus"     )
+  , ('-' , "minus"    )
+  , ('=' , "eq"       )
+  , ('<' , "lt"       )
+  , ('>' , "gt"       )
+  , ('?' , "qmark"    )
+  , ('.' , "dot"      )
+  , ('/' , "slash"    )
+  , ('|' , "bar"      )
+  , ('\\', "backslash")
+  , (':' , "colon"    )
+  , ('(' , "lparen"   )
+  , (')' , "rparen"   )
+  , ('[' , "lbracket" )
+  , (']' , "rbracket" )
+  , (',' , "comma"    )
+  , ('\'', "tick"     )
+  ]
+
+parseFile' :: FilePath -> IO (ParseResult (Module SrcSpanInfo))
+parseFile' fp = parseFileWithMode' (defaultParseMode { parseFilename = fp }) fp
+
+-- | Parse a source file on disk, supplying a custom parse mode.
+parseFileWithMode' :: ParseMode -> FilePath -> IO (ParseResult (Module SrcSpanInfo))
+parseFileWithMode' p fp = parseFileContentsWithMode p <$> readUTF8File' fp
+
+readUTF8File' :: FilePath -> IO String
+readUTF8File' fp = do
+  h <- openFile fp ReadMode
+  hSetEncoding h utf8
+  hGetContents' h
+
+writeUTF8File' :: FilePath -> String -> IO ()
+writeUTF8File' fp s = do
+  h <- openFile fp WriteMode
+  hSetEncoding h utf8
+  hPutStr h s
+  hClose h

@@ -57,20 +57,20 @@ process opts idx m fn deps
   | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile skip
   where
     skip = do
-      status opts $ compMessage idx "Skipping" m (fn, head destFiles)
+      status opts $ compMessage idx (11, 16) "Skipping" m (fn, head destFiles)
       eithRes <- liftIO $ decodeFileOrFail (tgtDir (typedBinaryFlatName fn))
       case eithRes of
         Left (_, err) -> do
-          liftIO $ putStrLn $ unwords
+          liftIO $ putStr $ unlines
             [ "Binary interface file is corrupted."
-            , "For the file\"" ++ fn ++ "\"."
+            , "For the file \"" ++ fn ++ "\"."
             , "Decoding failed with:"
             , err
             , "Retrying compilation from source..." ]
           compile
         Right res -> return res
     compile = do
-      status opts $ compMessage idx "Compiling" m (fn, head destFiles)
+      status opts $ compMessage idx (11, 16) "Compiling" m (fn, head destFiles)
       compileModule opts m fn
 
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
@@ -94,7 +94,6 @@ process opts idx m fn deps
 compileModule :: Options -> ModuleIdent -> FilePath -> CYIO TProg
 compileModule opts m fn = do
   mdl <- loadAndCheckModule opts m fn
-  let qmdl = qual mdl
   mdl' <- expandExports opts mdl
   qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   -- generate interface file
