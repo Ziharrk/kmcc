@@ -11,7 +11,7 @@ import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Coerce (coerce)
 import Data.List (isPrefixOf)
 import qualified Data.Map as Map
-import Data.Maybe (mapMaybe)
+import Data.Maybe (mapMaybe, catMaybes)
 import Language.Haskell.Exts hiding (Literal, Cons, Kind, QName)
 import qualified Language.Haskell.Exts as Hs
 import System.Directory (doesFileExist)
@@ -148,15 +148,22 @@ instance ToHs TProgWithFilePath where
 newtype ModuleHeadStuff = MS (String, [(QName, [QName])], [QName])
 type instance HsEquivalent ModuleHeadStuff = ModuleHead ()
 instance ToHs ModuleHeadStuff where
-  convertToHs (MS (s, qnamesT, qnamesF)) = return $ ModuleHead () (ModuleName () ("Curry_" ++ s)) Nothing $
-    Just (ExportSpecList () (map typeItem qnamesT ++ map funcItem qnamesF))
+  convertToHs (MS (s, qnamesT, qnamesF)) = do
+    let tyEx = map typeItem qnamesT
+    fnEx <- catMaybes <$> mapM funcItem qnamesF
+    return $ ModuleHead () (ModuleName () ("Curry_" ++ s)) Nothing $
+      Just (ExportSpecList () (tyEx ++ fnEx))
     where
       typeItem (qname, [])      = EAbs () (NoNamespace ()) (convertTypeNameToHs qname)
       typeItem (qname, csNames) = EThingWith () (NoWildcard ()) (convertTypeNameToHs qname) (map conItem csNames)
 
       conItem qname = ConName () (convertTypeNameToHs (Unqual qname))
 
-      funcItem = EVar () . convertFuncNameToHs
+      funcItem qname = do
+        analysis <- ask
+        case Map.lookup qname analysis of
+          Just Det -> return $ Just $ EVar () $ convertFuncNameToHs qname
+          _        -> return Nothing
 
 newtype ImportString = IS String
 type instance HsEquivalent ImportString = ImportDecl ()
@@ -268,8 +275,13 @@ instance ToHs TExpr where
   convertToHs (TCase _ e bs) = do
     e' <- convertToHs e
     bs' <- mapM convertToHs bs
-    return $ Hs.Case () e' bs'
+    return $ Hs.Case () e' (bs' ++ [failedBranch])
   convertToHs (TTyped e ty) = ExpTypeSig () <$> convertToHs e <*> convertToHs ty
+
+failedBranch :: Alt ()
+failedBranch = Alt () (PWildCard ())
+  (UnGuardedRhs ()
+    (Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "failed")))) Nothing
 
 type instance HsEquivalent TBranchExpr = Alt ()
 instance ToHs TBranchExpr where

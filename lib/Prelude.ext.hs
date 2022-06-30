@@ -4,6 +4,8 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE UndecidableInstances   #-}
 import qualified Prelude as P
+import qualified Control.Exception as P
+import qualified GHC.IO.Exception as P
 import Prelude ((.), ($), ($!), (+), (-), (*), (/), (>>=))
 
 -- -----------------------------------------------------------------------------
@@ -22,10 +24,10 @@ apply# = ($)
 type Int# = P.Integer
 
 eqInt# :: Int# -> Int# -> Bool
-eqInt# = (P.==)
+eqInt# x y = to (x P.== y)
 
 ltEqInt# :: Int# -> Int# -> Bool
-ltEqInt# = (P.<=)
+ltEqInt# x y = to (x P.<= y)
 
 -- -----------------------------------------------------------------------------
 -- Float representation
@@ -34,10 +36,10 @@ ltEqInt# = (P.<=)
 type Float# = P.Double
 
 eqFloat# :: Float# -> Float# -> Bool
-eqFloat# = (P.==)
+eqFloat# x y = to (x P.== y)
 
 ltEqFloat# :: Float# -> Float# -> Bool
-ltEqFloat# = (P.<=)
+ltEqFloat# x y = to (x P.<= y)
 
 -- ---------------------------------------------------------------------------
 -- Char representation
@@ -46,10 +48,10 @@ ltEqFloat# = (P.<=)
 type Char# = P.Char
 
 eqChar# :: Char# -> Char# -> Bool
-eqChar# = (P.==)
+eqChar# x y = to (x P.== y)
 
 ltEqChar# :: Char# -> Char# -> Bool
-ltEqChar# = (P.<=)
+ltEqChar# x y = to (x P.<= y)
 
 -- ---------------------------------------------------------------------------
 -- IO representation
@@ -85,17 +87,27 @@ instance ConvertHs CUnit where
   to () = CUnit
   from CUnit = ()
 
+instance ConvertHs Bool where
+  type HsEquivalent Bool = P.Bool
+  to P.True = True
+  to P.False = False
+  from True = P.True
+  from False = P.False
+
 amp# :: Bool -> Bool -> Bool
-amp# = (P.&)
+amp# True  True  = True
+amp# False False = False
+amp# _     _     = False
 
 eqcolonlteq# :: a -> a -> Bool
-eqcolonlteq# a1 a2 = if a1 == a2 then True else failed
+eqcolonlteq# a1 a2 = P.undefined -- TODO
 
 eqcoloneq# :: a -> a -> Bool
-eqcoloneq# a1 a2 = if a1 == a2 then True else failed
+eqcoloneq# a1 a2 = P.undefined -- TODO
 
 cond# :: Bool -> a -> a
-cond# b a = if b then a else failed
+cond# True a = a
+cond# _    _ = failed
 
 dollarbang# :: (a -> b) -> a -> b
 dollarbang# = ($!)
@@ -114,10 +126,10 @@ ensureNotFree# !x = x
 -- -----------------------------------------------------------------------------
 
 primuscoreord# :: Char -> Int
-primuscoreord# = P.fromEnum
+primuscoreord# = P.fromIntegral . P.fromEnum
 
 primuscorechr# :: Int -> Char
-primuscorechr# = P.toEnum
+primuscorechr# = P.toEnum . P.fromIntegral
 
 -- -----------------------------------------------------------------------------
 -- Primitive operations: Arithmetics
@@ -247,10 +259,10 @@ instance ConvertHs IOError where
   to (P.IOError _ P.UserError _ s _ _) = UserError (to s)
   to (P.IOError _ _ _ s _ _) = IOError (to s)
 
-  from (IOError s) = P.IOError P.Nothing P.SystemError Nothing (from s) Nothing Nothing
-  from (UserError s) = P.IOError P.Nothing P.UserError Nothing (from s) Nothing Nothing
-  from (FailError s) = P.IOError P.Nothing P.UserError Nothing (from s) Nothing Nothing
-  from (NondetError s) = P.IOError P.Nothing P.UserError Nothing (from s) Nothing Nothing
+  from (IOError s) = P.IOError P.Nothing P.SystemError "" (from s) P.Nothing P.Nothing
+  from (UserError s) = P.IOError P.Nothing P.UserError "" (from s) P.Nothing P.Nothing
+  from (FailError s) = P.IOError P.Nothing P.UserError "" (from s) P.Nothing P.Nothing
+  from (NondetError s) = P.IOError P.Nothing P.UserError "" (from s) P.Nothing P.Nothing
 
 bindIO# :: IO a -> (a -> IO b) -> IO b
 bindIO# = (>>=)
@@ -262,10 +274,10 @@ getChar# :: IO Char
 getChar# = P.getChar
 
 primuscoreputChar# :: Char -> IO CUnit
-primuscoreputChar# = P.fmap to P.putChar
+primuscoreputChar# x = P.fmap to (P.putChar x)
 
 primuscorereadFile# :: CList Char -> IO (CList Char)
-primuscorereadFile# = P.fmap to P.readFile . from
+primuscorereadFile# = P.fmap to . P.readFile . from
 
 primuscorewriteFile# :: CList Char -> CList Char -> IO CUnit
 primuscorewriteFile# x = P.fmap to . P.writeFile (from x) . from
