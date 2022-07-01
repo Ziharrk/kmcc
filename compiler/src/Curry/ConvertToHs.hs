@@ -114,7 +114,8 @@ instance ToHs TProgWithFilePath where
         header <- convertToHs (MS (nm, visT, visF))
         let extract (Just (x, y)) = [x,y]
             extract Nothing = []
-        let ds = coerce (tyds ++ tydsM) ++ concatMap @[] extract (coerce (funds ++ fundsM))
+        let insts = concatMap genInstances tys
+        let ds = insts ++ coerce (tyds ++ tydsM) ++ concatMap @[] extract (coerce (funds ++ fundsM))
         -- TODO: deriving stuff?
         return (header, im', ds)
     (extPragmas, extImports, extDs) <- liftIO $ doesFileExist fp >>= \case
@@ -151,6 +152,47 @@ instance ToHs TProgWithFilePath where
 
       getVisF (TFunc qname _ Public _ _) = Just qname
       getVisF _ = Nothing
+
+genInstances :: TypeDecl -> [Decl ()]
+genInstances (Type qname _ vs cs) = [hsEquivDecl, shareableDecl, hsConvertDecl]
+  where
+    hsEquivDecl = TypeInsDecl () (TyApp () (TyCon () hsEquivQualName)
+      (foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
+        (map (TyVar () . indexToName . fst) vs)))
+      (foldl (TyApp ()) (TyCon () (convertTypeNameToHs qname))
+        (map (TyApp () (TyCon () hsEquivQualName) . TyVar () . indexToName . fst) vs))
+    shareableDecl = InstDecl () Nothing
+      (IRule () Nothing (mkShareableCtxt vs)
+        (IHApp () (IHCon () shareableQualName) (foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
+          (map (TyVar () . indexToName . fst) vs))))
+      (Just [InsDecl () (FunBind () (map mkShareMatch cs))])
+    hsConvertDecl = InstDecl () Nothing
+      (IRule () Nothing (mkShareableCtxt vs)
+        (IHApp () (IHCon () hsConvertQualName) (foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
+          (map (TyVar () . indexToName . fst) vs))))
+      (Just [ InsDecl () (FunBind () (map mkToMatch cs))
+            , InsDecl () (FunBind () (map mkFromMatch cs))])
+    mkShareMatch (Cons qname2 ar _ _) = Match () (Ident () "shareArgs")
+      [PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
+      (UnGuardedRhs () (mkShareImpl qname2 ar)) Nothing
+    mkToMatch (Cons qname2 ar _ _) = Match () (Ident () "to")
+      [PApp () (convertTypeNameToHs qname2) (map (PVar () . indexToName) [1..ar])]
+      (UnGuardedRhs () (mkToImpl qname2 ar)) Nothing
+    mkFromMatch (Cons qname2 ar _ _) = Match () (Ident () "from")
+      [PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
+      (UnGuardedRhs () (mkFromImpl qname2 ar)) Nothing
+    mkShareImpl qname2 ar = undefined
+    mkToImpl qname2 ar = undefined
+    mkFromImpl qname2 ar = Hs.App ()
+genInstances TypeSyn {} = []
+genInstances (TypeNew qname1 vis1 vs (NewCons qname2 vis2 ty)) =
+  genInstances (Type qname1 vis1 vs [Cons qname2 1 vis2 [ty]])
+
+hsEquivQualName :: Hs.QName ()
+hsEquivQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "HsEquivalent")
+
+hsConvertQualName :: Hs.QName ()
+hsConvertQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "ConvertHs")
 
 newtype ModuleHeadStuff = MS (String, [(QName, [QName])], [QName])
 type instance HsEquivalent ModuleHeadStuff = ModuleHead ()
@@ -262,15 +304,15 @@ instance ToMonadicHs TypeExpr where
   convertToMonadicHs (TVar idx) = return $ TyVar () (indexToName idx)
   convertToMonadicHs (FuncType t1 t2) = mkLiftedFunc <$> convertToMonadicHs t1 <*> convertToMonadicHs t2
   convertToMonadicHs (TCons qn tys) = foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qn)) <$> mapM convertToMonadicHs tys
-  convertToMonadicHs (ForallType vs t) = TyForall () (Just (map toTyVarBndr vs)) <$> mkShareableCtxt vs <*> convertQualType t
+  convertToMonadicHs (ForallType vs t) = TyForall () (Just (map toTyVarBndr vs)) (mkShareableCtxt vs) <$> convertQualType t
 
-mkShareableCtxt :: [TVarWithKind] -> CM (Maybe (Context ()))
-mkShareableCtxt [] = return Nothing
-mkShareableCtxt vs = Just . CxTuple () <$> mapM mkShareableFor vs
+mkShareableCtxt :: [TVarWithKind] -> Maybe (Context ())
+mkShareableCtxt [] = Nothing
+mkShareableCtxt vs = Just $ CxTuple () $ map mkShareableFor vs
 
-mkShareableFor :: TVarWithKind -> CM (Asst ())
-mkShareableFor (i, KStar) = return $ TypeA () $ mkShareableType (TyVar () (indexToName i))
-mkShareableFor (i, k) = construct <$> mapM mkShareableFor argsWithTVar
+mkShareableFor :: TVarWithKind -> Asst ()
+mkShareableFor (i, KStar) = TypeA () $ mkShareableType (TyVar () (indexToName i))
+mkShareableFor (i, k) = construct $ map mkShareableFor argsWithTVar
   where
     (args, _) = splitKindArrow k
     argTVars = take (length args) [i+1..]
