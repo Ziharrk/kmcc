@@ -6,11 +6,11 @@
 {-# LANGUAGE UndecidableInstances   #-}
 module Curry.Analysis where
 
-import Control.Arrow ( first )
+import Control.Arrow ( first, second )
 import Control.Monad ( when )
 import Control.Monad.IO.Class ( MonadIO(..) )
 import Control.Monad.Except ( ExceptT (..), MonadError (..), runExceptT )
-import Control.Monad.State ( StateT (..), MonadState, evalStateT, modify, get, put, modify' )
+import Control.Monad.State ( StateT (..), MonadState, evalStateT, get, put, modify' )
 import Data.Binary ( decodeFileOrFail, Binary, encodeFile )
 import Data.Map ( Map )
 import qualified Data.Map as Map ( empty, restrictKeys, lookup, insert, findWithDefault, unions, union )
@@ -102,7 +102,14 @@ runLocalState a = do
   handle $ runExceptT $ flip runStateT (st, Set.empty) $ runAM a
 
 analyzeTProg :: TProg -> AM 'Local ()
-analyzeTProg = trTProg (\_ _ _ funcs _ -> fixedPoint (or <$> mapM (trTFunc analyzeFunc) funcs))
+analyzeTProg = trTProg (\_ _ _ funcs _ -> mapM_ (trTFunc initAnalysis) funcs >>
+                                          fixedPoint (or <$> mapM (trTFunc analyzeFunc) funcs))
+
+initAnalysis :: QName -> a -> Visibility -> c -> TRule -> AM 'Local ()
+initAnalysis qname _ vis _ rule = do
+  (mp, _) <- get
+  when (vis == Public) $ modify' (second (Set.insert qname))
+  modify' (first (Map.insert qname (checkDeterministic rule mp)))
 
 fixedPoint :: Monad m => m Bool -> m ()
 fixedPoint act = do
@@ -110,16 +117,15 @@ fixedPoint act = do
   when b $ fixedPoint act
 
 analyzeFunc :: QName -> a -> Visibility -> c -> TRule -> AM 'Local Bool
-analyzeFunc qname _ vis _ rule = do
-  (mp, st) <- get
-  when (vis == Public) $ put (mp, Set.insert qname st)
+analyzeFunc qname _ _ _ rule = do
+  (mp, _) <- get
   case Map.lookup qname mp of
     Just NonDet -> return False
     cur -> do
       let res = checkDeterministic rule mp
       if cur == Just res
         then return False
-        else modify (first (Map.insert qname res)) >> return True
+        else modify' (first (Map.insert qname res)) >> return True
 
 checkDeterministic :: TRule -> NDAnalysisResult -> NDInfo
 checkDeterministic (TRule _ expr) mp = trTExpr var lit comb lt free o cse branch typed expr

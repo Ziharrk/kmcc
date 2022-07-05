@@ -3,7 +3,8 @@ module Curry.Annotate (annotateND) where
 import Control.Arrow (second)
 import qualified Data.Map as Map
 
-import Curry.FlatCurry.Typed.Type (TExpr (..), TBranchExpr (..), TPattern (..))
+import Curry.FlatCurry.Typeable (Typeable(..))
+import Curry.FlatCurry.Typed.Type (TExpr (..), TBranchExpr (..), TPattern (..), TypeExpr)
 import Curry.FlatCurry.Annotated.Type (AExpr(..), ABranchExpr (..), APattern(..))
 
 import Curry.Analysis (NDInfo(..), NDAnalysisResult)
@@ -58,3 +59,6 @@ annotateAlt analysis (TBranch x e) = ABranch (annotatePat x) (annotateND analysi
 annotatePat :: TPattern -> APattern NDInfo
 annotatePat (TPattern _ qname args) = APattern Det (qname, Det) (map (second (const NonDet)) args)
 annotatePat (TLPattern _ l) = ALPattern Det l
+
+exprType :: TExpr -> TypeExpr
+exprType = typeOf

@@ -474,8 +474,8 @@ instance ToHs (AExpr NDInfo) where
                      <$> (UnGuardedRhs () <$> convertToHs lclE)
                      <*> pure Nothing) bs
     return $ Let () (BDecls () bs') e'
-  convertToHs (AFree _ _ _) = throwError [message "Encountered a free variable in an expression inferred to be deterministic"]
-  convertToHs (AOr _ _ _) = throwError [message "Encountered an 'or' in an expression inferred to be deterministic"]
+  convertToHs AFree {} = throwError [message "Encountered a free variable in an expression inferred to be deterministic"]
+  convertToHs AOr {} = throwError [message "Encountered an 'or' in an expression inferred to be deterministic"]
   convertToHs (ACase _ _ e bs) = do
     e' <- convertToHs e
     bs' <- mapM convertToHs bs
