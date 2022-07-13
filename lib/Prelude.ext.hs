@@ -6,8 +6,12 @@
 {-# LANGUAGE UndecidableInstances   #-}
 import qualified Prelude as P
 import qualified Control.Monad as P
+import qualified Control.Monad.State as P
 import qualified Control.Exception as P
+import qualified Data.List as P
 import qualified GHC.IO.Exception as P
+import qualified GHC.Magic as P
+import qualified System.IO.Unsafe as P
 import BasicDefinitions
 import Prelude ((.), ($), ($!), (+), (-), (*), (/), (==), (<=),(>>=))
 
@@ -166,25 +170,25 @@ dollarbang# :: (a -> b) -> a -> b
 dollarbang# = ($!)
 
 dollarbangND# :: Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
-dollarbangND# = P.undefined -- TODO
+dollarbangND# = BasicDefinitions.dollarBangNDImpl
 
 dollarbangbang# :: (a -> b) -> a -> b
 dollarbangbang# = ($!)
 
-dollarbangbangND# :: Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
-dollarbangbangND# = P.undefined -- TODO
+dollarbangbangND# :: BasicDefinitions.NormalForm a => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
+dollarbangbangND# = BasicDefinitions.dollarBangBangNDImpl
 
 dollarhashhash# :: (a -> b) -> a -> b
 dollarhashhash# = ($!)
 
-dollarhashhashND# :: Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
-dollarhashhashND# = P.undefined -- TODO
+dollarhashhashND# :: BasicDefinitions.NormalForm a => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
+dollarhashhashND# = BasicDefinitions.dollarHashHashNDImpl
 
 ensureNotFree# :: a -> a
 ensureNotFree# !x = x
 
 ensureNotFreeND# :: Curry (LiftedFunc a a)
-ensureNotFreeND# = P.undefined -- TODO
+ensureNotFreeND# = P.return (Func (\x -> x P.>>= P.noinline P.return))
 
 -- -----------------------------------------------------------------------------
 -- Primitive operations: Characters
@@ -438,19 +442,17 @@ primuscoretanhFloatND# = liftConvert1 P.tanh
 -- Primitive operations: IO stuff
 -- -----------------------------------------------------------------------------
 
-type instance HsEquivalent IOError = P.IOException
-
 bindIO# :: IO a -> (a -> IO b) -> IO b
 bindIO# = (>>=)
 
 bindIOND# :: Curry (LiftedFunc (IO a) (LiftedFunc (LiftedFunc a (IO b)) (IO b)))
-bindIOND# = P.undefined -- TODO
+bindIOND# = BasicDefinitions.bindIONDImpl
 
 returnIO# :: a -> IO a
 returnIO# = P.pure
 
 returnIOND# :: Curry (LiftedFunc a (IO a))
-returnIOND# = P.undefined -- TODO
+returnIOND# = BasicDefinitions.returnIONDImpl
 
 getChar# :: IO Char
 getChar# = P.getChar
@@ -468,7 +470,7 @@ primuscorereadFile# :: CList Char -> IO (CList Char)
 primuscorereadFile# = liftForeign1 P.readFile
 
 primuscorereadFileND# :: Curry (LiftedFunc (CListND CharND) (IO (CListND CharND)))
-primuscorereadFileND# = liftConvertIO1 primuscorereadFileND#
+primuscorereadFileND# = liftConvertIO1 primuscorereadFile#
 
 primuscorewriteFile# :: CList Char -> CList Char -> IO CUnit
 primuscorewriteFile# = liftForeign2 P.writeFile
@@ -482,17 +484,39 @@ primuscoreappendFile# = liftForeign2 P.appendFile
 primuscoreappendFileND# :: Curry (LiftedFunc (CListND CharND) (LiftedFunc (CListND CharND) (IO CUnitND)))
 primuscoreappendFileND# = liftConvertIO2 primuscoreappendFile#
 
+instance ForeignType IOError where
+  type Foreign IOError = P.IOException
+  fromForeign (P.IOError _ P.UserError _ s _ _) = UserError (fromForeign s)
+  fromForeign (P.IOError _ P.OtherError _ s _ _)
+    | "FAILERR_ " `P.isPrefixOf` s = FailError    (fromForeign (P.drop 9 s))
+    | "NDERR_ "   `P.isPrefixOf` s = NondetError  (fromForeign (P.drop 7 s))
+    | "IOERR_ "   `P.isPrefixOf` s = IOError      (fromForeign (P.drop 7 s))
+  fromForeign (P.IOError _ _ _ s _ _) = IOError (fromForeign s)
+
+  toForeign (IOError s)     = P.IOError P.Nothing P.OtherError "" ("IOERR_ " P.++ toForeign s) P.Nothing P.Nothing
+  toForeign (UserError s)   = P.IOError P.Nothing P.UserError "" (toForeign s) P.Nothing P.Nothing
+  toForeign (FailError s)   = P.IOError P.Nothing P.OtherError "" ("FAILERR_ " P.++ toForeign s) P.Nothing P.Nothing
+  toForeign (NondetError s) = P.IOError P.Nothing P.OtherError "" ("NDERR_ " P.++ toForeign s) P.Nothing P.Nothing
+
 primuscoreioError# :: IOError -> IO a
-primuscoreioError# = P.undefined -- TODO
+primuscoreioError# err = P.throw (toForeign err)
 
 primuscoreioErrorND# :: Curry (LiftedFunc IOErrorND (IO a))
-primuscoreioErrorND# = P.undefined -- TODO
+primuscoreioErrorND# = P.return (Func (\err -> do
+  e <- BasicDefinitions.ensureOneResult (toHaskell err :: Curry IOError)
+  P.return (P.throw (toForeign e :: P.IOException))))
 
 catch# :: IO a -> (IOError -> IO a) -> IO a
-catch# act cont = P.undefined -- TODO
+catch# io cont = P.catch io (cont . fromForeign)
 
 catchND# :: Curry (LiftedFunc (IO a) (LiftedFunc (LiftedFunc IOErrorND (IO a)) (IO a)))
-catchND# = P.undefined -- TODO
+catchND# = P.return (Func (\ioND -> P.return (Func (\contND -> do
+  io <- BasicDefinitions.ensureOneResult ioND
+  Func cont <- BasicDefinitions.ensureOneResult contND
+  let res = P.unsafePerformIO (P.unsafeInterleaveIO (P.try io))
+  case res of
+    P.Left e -> cont (fromHaskell (fromForeign e))
+    P.Right x -> P.return (P.return x)))))
 
 -- -----------------------------------------------------------------------------
 -- Primitive operations: Exception handling

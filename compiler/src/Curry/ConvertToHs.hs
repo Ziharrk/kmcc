@@ -2,9 +2,9 @@
 {-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
-module Curry.ConvertToHs (compileToHs) where
+module Curry.ConvertToHs (compileToHs, haskellName) where
 
-import Control.Monad (void, replicateM)
+import Control.Monad (void, replicateM, when)
 import Control.Monad.Except (ExceptT, MonadError (..), runExceptT)
 import Control.Monad.Reader (ReaderT, MonadReader (..), runReaderT)
 import Control.Monad.State (StateT, MonadState (..), evalStateT, modify)
@@ -17,14 +17,14 @@ import Data.Maybe (mapMaybe)
 import Language.Haskell.Exts hiding (Literal, Cons, Kind, QName)
 import qualified Language.Haskell.Exts as Hs
 import System.Directory (doesFileExist)
-import System.FilePath (replaceExtension)
+import System.FilePath (replaceExtension, replaceBaseName, takeBaseName)
 import System.IO (openFile, IOMode (..), utf8, hSetEncoding, hPutStr, hClose, hGetContents')
 
 import Base.Messages (status, abortWithMessages, Message, message)
 import Curry.Base.Ident (ModuleIdent)
 import Curry.FlatCurry hiding (Let)
-import Curry.FlatCurry.Annotated.Type
-import Curry.FlatCurry.Typed.Type
+import Curry.FlatCurry.Annotated.Type (APattern(..), ABranchExpr(..), AExpr(..))
+import Curry.FlatCurry.Typed.Type (TRule(..), TFuncDecl(..), TProg(..))
 import Curry.Files.Filenames (addOutDirModule)
 import qualified CompilerOpts as Frontend
 import CompilerOpts (Options(..))
@@ -32,7 +32,7 @@ import CurryBuilder (smake, compMessage)
 
 import Curry.Analysis (NDAnalysisResult, NDInfo (..))
 import Curry.Annotate (annotateND, isFunFree)
-import Haskell.ExtsInstances ()
+import Curry.ConvertUtils
 
 newtype CM a = CM {
     runCM :: ReaderT NDAnalysisResult (ExceptT [Message] (StateT Int IO)) a
@@ -55,43 +55,54 @@ freshVarName = do
   modify succ
   return (Ident () $  "x_" ++ show i)
 
-compileToHs :: [(TProg, ModuleIdent, FilePath)] -> NDAnalysisResult -> Frontend.Options
-            -> IO [Module ()]
-compileToHs mdls ndInfo opts = evalCM (mapM process' (zip [1 ..] mdls)) ndInfo
+compileToHs :: Bool -> [(TProg, ModuleIdent, FilePath)] -> NDAnalysisResult -> Frontend.Options
+            -> IO ()
+compileToHs hasMain mdls ndInfo opts =
+  evalCM (mapM_ process' (zip [1 ..] (addMainInfo mdls))) ndInfo
   where
+    addMainInfo [] = []
+    addMainInfo [(x, y, z)] = [(x, y, z, hasMain)]
+    addMainInfo ((x, y, z):xs) = (x, y, z, False) : addMainInfo xs
     total = length mdls
-    deps = map (\(_, _, dep) -> dep) mdls
-    process' (n, (prog, m, fp)) = process opts (n, total) prog m fp deps
+    process' (n, (prog, m, fp, mi)) = process opts (n, total) prog m fp mi deps
+      where deps = map (\(_, _, dep) -> dep) (take n mdls)
 
 process :: Frontend.Options -> (Int, Int) -> TProg
-        -> ModuleIdent -> FilePath -> [FilePath] -> CM (Module ())
-process opts idx tprog m fn deps
+        -> ModuleIdent -> FilePath -> Bool -> [FilePath] -> CM ()
+process opts idx tprog m fn mi deps
   | optForce opts = compile
   | otherwise     = smake [destFile] deps compile skip
   where
     destFile = tgtDir (haskellName fn)
     skip = do
       status opts $ compMessage idx (11, 16) "Skipping" m (fn, destFile)
-      eithRes <- liftIO (parseFile' destFile)
-      case eithRes of
-        ParseFailed loc err -> do
-          liftIO $ putStr $ unlines
-            [ "Haskell file is corrupted."
-            , "For the file \"" ++ fn ++ "\"."
-            , "Parsing failed with:"
-            , err
-            , "At location:"
-            , prettyPrint loc
-            , "Retrying compilation from analyzed flat curry ..." ]
-          compile
-        ParseOk res -> return (void res)
+      when False $ do -- TODO: implement check file when dumping stuff only
+        eithRes <- liftIO (parseFile' destFile)
+        case eithRes of
+          ParseFailed loc err -> do
+            liftIO $ putStr $ unlines
+              [ "Haskell file is corrupted."
+              , "For the file \"" ++ fn ++ "\"."
+              , "Parsing failed with:"
+              , err
+              , "At location:"
+              , prettyPrintStyleMode hsPrettyPrintStyle hsPrettyPrintMode loc
+              , "Retrying compilation from analyzed flat curry ..." ]
+            compile
+          ParseOk _ -> return ()
     compile = do
       status opts $ compMessage idx (11, 16) "Translating" m (fn, destFile)
-      res <- convertToHs (TWFP (tprog, externalName fn))
+      res <- convertToHs (TWFP (tprog, externalName fn, mi))
       liftIO $ writeUTF8File' (tgtDir (haskellName fn)) (prettyPrint res)
-      return res
+      return ()
 
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
+
+hsPrettyPrintMode :: PPHsMode
+hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPOffsideRule False
+
+hsPrettyPrintStyle :: Style
+hsPrettyPrintStyle = Style LeftMode 500 2
 
 type family HsEquivalent a = hs | hs -> a
 
@@ -101,10 +112,10 @@ class ToHs a where
 class ToMonadicHs a where
   convertToMonadicHs :: a -> CM (HsEquivalent a)
 
-newtype TProgWithFilePath = TWFP (TProg, FilePath)
+newtype TProgWithFilePath = TWFP (TProg, FilePath, Bool)
 type instance HsEquivalent TProgWithFilePath = Module ()
 instance ToHs TProgWithFilePath where
-  convertToHs (TWFP (TProg nm im tys fs _, fp)) = do
+  convertToHs (TWFP (TProg nm im tys fs _, fp, mi)) = do
     (header, curryImports, curryDs) <- do
         im' <- mapM (convertToHs . IS) im
         tyds <- mapM convertToHs tys
@@ -139,7 +150,8 @@ instance ToHs TProgWithFilePath where
     let ps' = defaultPragmas ++ extPragmas
     let im' = defaultImports ++ extImports ++ curryImports
     let ds' = extDs ++ curryDs
-    return (Module () (Just header) ps' im' ds')
+    let (header', ds'') = if mi then patchMain header ds' else (header, ds')
+    return (Module () (Just header') ps' im' ds'')
     where
       getVisT (Type qname Public _ cs) = Just (qname, mapMaybe getVisC cs)
       getVisT (TypeSyn qname Public _ _) = Just (qname, [])
@@ -155,9 +167,20 @@ instance ToHs TProgWithFilePath where
       getVisF (TFunc qname _ Public _ _) = Just qname
       getVisF _ = Nothing
 
+patchMain :: ModuleHead () -> [Decl ()] -> (ModuleHead (), [Decl ()])
+patchMain (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds'
+  | mainExport `notElem` es = (ModuleHead () nm w (Just (ExportSpecList () (mainExport:es))), mainDecl:ds')
+  where
+    mainExport = EVar () (Qual () nm (Ident () "main"))
+    mainDecl = PatBind () (PVar () (Ident () "main")) mainRHS Nothing
+    mainRHS = UnGuardedRhs () (App () (Hs.Var () mainWrapperQualName) (Hs.Var () (Qual () nm (Ident () "mainND"))))
+patchMain h ds = (h, ds)
+
 genInstances :: TypeDecl -> [Decl ()]
 genInstances (Type _ _ _ []) = []
-genInstances (Type qname _ vs cs) = map hsEquivDecl [0..length vs] ++ [shareableDecl, hsToDecl, hsFromDecl]
+genInstances (Type qname _ vs cs) = map hsEquivDecl [0..length vs] ++
+  [ shareableDecl, hsToDecl, hsFromDecl, hsNarrowableDecl
+  , hsUnifiableDecl, hsPrimitiveDecl, hsNormalFormDecl, hsCurryDecl ]
   where
     hsEquivDecl arity = TypeInsDecl () (TyApp () (TyCon () hsEquivQualName)
       (foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
@@ -165,81 +188,121 @@ genInstances (Type qname _ vs cs) = map hsEquivDecl [0..length vs] ++ [shareable
       (foldl (TyApp ()) (TyCon () (convertTypeNameToHs qname))
         (map (TyApp () (TyCon () hsEquivQualName) . TyVar () . indexToName . fst) (take arity vs)))
     shareableDecl = InstDecl () Nothing
-      (IRule () Nothing (mkShareableCtxt vs)
-        (IHApp () (IHCon () shareableQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
+      (IRule () Nothing (mkCurryCtxt vs)
+        (IHApp () (IHApp () (IHCon () shareableQualName) (TyCon () curryQualName)) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
           (map (TyVar () . indexToName . fst) vs))))
       (Just [InsDecl () (FunBind () (map mkShareMatch cs))])
     hsToDecl = InstDecl () Nothing
-      (IRule () Nothing (mkShareableCtxt vs)
+      (IRule () Nothing (mkCurryCtxt vs)
         (IHApp () (IHCon () hsToQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
           (map (TyVar () . indexToName . fst) vs))))
       (Just [InsDecl () (FunBind () (mapMaybe mkToMatch cs))])
     hsFromDecl = InstDecl () Nothing
-      (IRule () Nothing (mkShareableCtxt vs)
+      (IRule () Nothing (mkCurryCtxt vs)
         (IHApp () (IHCon () hsFromQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
           (map (TyVar () . indexToName . fst) vs))))
       (Just [InsDecl () (FunBind () (mapMaybe mkFromMatch cs))])
+    hsNarrowableDecl = InstDecl () Nothing
+      (IRule () Nothing (mkCurryCtxt vs)
+        (IHApp () (IHCon () narrowableQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
+          (map (TyVar () . indexToName . fst) vs))))
+      (Just [InsDecl () (FunBind () [mkNarrowMatch]), InsDecl () (FunBind () (mapMaybe mkSameConstrMatch cs))])
+    hsUnifiableDecl = InstDecl () Nothing
+      (IRule () Nothing (mkCurryCtxt vs)
+        (IHApp () (IHCon () unifiableQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
+          (map (TyVar () . indexToName . fst) vs))))
+      (Just [InsDecl () (FunBind () (mapMaybe mkUnifyWithMatch cs ++ [unifyWithFailMatch])), InsDecl () (FunBind () (mapMaybe mkLazyUnifyMatch cs))])
+    hsPrimitiveDecl = InstDecl () Nothing
+      (IRule () Nothing (mkCurryCtxt vs)
+        (IHApp () (IHCon () primitiveQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
+          (map (TyVar () . indexToName . fst) vs))))
+      Nothing
+    hsNormalFormDecl = InstDecl () Nothing
+      (IRule () Nothing (mkCurryCtxt vs)
+        (IHApp () (IHCon () normalFormQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
+          (map (TyVar () . indexToName . fst) vs))))
+      (Just [InsDecl () (FunBind () (mapMaybe mkNfWithMatch cs))])
+    hsCurryDecl = InstDecl () Nothing
+      (IRule () Nothing (mkCurryCtxt vs)
+        (IHApp () (IHCon () curryClassQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
+          (map (TyVar () . indexToName . fst) vs))))
+      Nothing
     mkShareMatch (Cons qname2 ar _ _) = Match () (Ident () "shareArgs")
       [PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
       (UnGuardedRhs () (mkShareImpl qname2 ar)) Nothing
     mkToMatch (Cons qname2 ar _ _) = fmap (\e -> Match () (Ident () "to")
       [PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
-      (UnGuardedRhs () e) Nothing) (mkToImpl qname2 ar)
+      (UnGuardedRhs () e) Nothing) (preventDict mkToImpl qname2 ar)
     mkFromMatch (Cons qname2 ar _ _) = fmap (\e -> Match () (Ident () "from")
       [PApp () (convertTypeNameToHs qname2) (map (PVar () . indexToName) [1..ar])]
-      (UnGuardedRhs () e) Nothing) (mkFromImpl qname2 ar)
+      (UnGuardedRhs () e) Nothing) (preventDict mkFromImpl qname2 ar)
+    mkNarrowMatch = Match () (Ident () "narrow") [] (UnGuardedRhs () (List () (mapMaybe mkNarrowExp cs))) Nothing
+    mkNarrowExp (Cons qname2 ar _ _) = preventDict mkNarrowImpl qname2 ar
+    mkSameConstrMatch (Cons qname2 ar _ _) = fmap (\e -> Match () (Ident () "narrowConstr")
+      [PApp () (convertTypeNameToMonadicHs qname2) (replicate ar (PWildCard ()))]
+      (UnGuardedRhs () e) Nothing) (preventDict mkSameConstrImpl qname2 ar)
+    mkUnifyWithMatch (Cons qname2 ar _ _) = fmap (\e -> Match () (Ident () "unifyWith")
+      [ PVar () (Ident () "_f")
+      , PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () .  appendName "_a" . indexToName) [1..ar])
+      , PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () .  appendName "_b" . indexToName) [1..ar])
+      ]
+      (UnGuardedRhs () e) Nothing) (preventDict mkUnifyWithImpl qname2 ar)
+    unifyWithFailMatch = Match () (Ident () "unifyWith")
+      [PWildCard (), PWildCard (), PWildCard ()]
+      (UnGuardedRhs () mkFailed) Nothing
+    mkLazyUnifyMatch (Cons qname2 ar _ _) = fmap (\e -> Match () (Ident () "lazyUnifyVar")
+      [PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar]), PVar () (Ident () "_i")]
+      (UnGuardedRhs () e) Nothing) (preventDict mkLazyUnifyImpl qname2 ar)
+    mkNfWithMatch (Cons qname2 ar _ _) = fmap (\e -> Match () (Ident () "nfWith")
+      [PVar () (Ident () "_f"), PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
+      (UnGuardedRhs () e) Nothing) (preventDict mkNfWithImpl qname2 ar)
+    preventDict f qname2 ar
+      | not ("_Dict#" `isPrefixOf` snd qname2) = Just (f qname2 ar)
+      | otherwise = Nothing
     mkShareImpl qname2 ar
       | not ("_Dict#" `isPrefixOf` snd qname2) =
         mkApplicativeChain (Hs.Var () (convertTypeNameToMonadicHs qname2))
                            (map (mkShare . Hs.Var () . UnQual () . indexToName) [1..ar])
       | otherwise =
-        mkReturn (foldl (Hs.App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
+        mkReturn (foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
                    (map (Hs.Var () . UnQual () . indexToName) [1..ar]))
-    mkToImpl qname2 ar
-      | not ("_Dict#" `isPrefixOf` snd qname2) = Just $
-        mkApplicativeChain (Hs.Var () (convertTypeNameToHs qname2))
-                           (map (mkToHaskell . Hs.Var () . UnQual () . indexToName) [1..ar])
-      | otherwise = Nothing
-    mkFromImpl qname2 ar
-      | not ("_Dict#" `isPrefixOf` snd qname) = Just $
-        foldl (Hs.App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
-          (map (mkFromHaskell . Hs.Var () . UnQual () . indexToName) [1..ar])
-      | otherwise = Nothing
+    mkToImpl qname2 ar =
+      mkApplicativeChain (Hs.Var () (convertTypeNameToHs qname2))
+                          (map (mkToHaskell . Hs.Var () . UnQual () . indexToName) [1..ar])
+    mkFromImpl qname2 ar =
+      foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
+        (map (mkFromHaskell . Hs.Var () . UnQual () . indexToName) [1..ar])
+    mkNarrowImpl qname2 ar =
+      foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
+        (map (const mkFree) [1..ar])
+    mkSameConstrImpl qname2 ar = foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
+      (replicate ar mkFree)
+    mkUnifyWithImpl _ ar = Do () $ maybeAddReturnTrue $
+      map (\i -> Qualifier () $ App () (App () (Hs.Var () (UnQual () (Ident () "_f")))
+                    (Hs.Var () (UnQual () (appendName "_a" (indexToName i)))))
+                    (Hs.Var () (UnQual () (appendName "_b" (indexToName i))))) [1..ar]
+    mkLazyUnifyImpl qname2 ar = Do () $
+      map (\i -> Generator () (PVar () (appendName "_s" (indexToName i))) (mkShare mkFree)) [1..ar] ++
+      [Qualifier () $ mkAddToVarHeap (Hs.Var () (UnQual () (Ident () "_i"))) $ mkReturn
+                        (foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
+                        (map (Hs.Var () . UnQual () . indexToName) [1..ar]))] ++
+      maybeAddReturnTrue (
+      map (\i -> Qualifier () $ mkLazyUnify
+                    (Hs.Var () (UnQual () (indexToName i)))
+                    (Hs.Var () (UnQual () (appendName "_s" (indexToName i))))) [1..ar])
+    mkNfWithImpl qname2 ar = mkApplicativeChain
+      (mkLambda (map (PVar () . appendName "_l" . indexToName) [1..ar])
+                (foldl (\c -> App () c . mkReturn . Hs.Var (). UnQual () . appendName "_l" . indexToName)
+                       (Hs.Var () (convertTypeNameToMonadicHs qname2))
+                       [1..ar]))
+      (map (App () (Hs.Var () (UnQual () (Ident () "_f"))) . Hs.Var () . UnQual () . indexToName) [1..ar])
+    maybeAddReturnTrue [] = [Qualifier () $ mkReturn (Hs.Var () (Qual () (ModuleName () "P") (Ident () "True")))]
+    maybeAddReturnTrue xs = xs
+    mkLambda [] e = e
+    mkLambda ps e = Paren () (Hs.Lambda () ps e)
 genInstances TypeSyn {} = []
 genInstances (TypeNew qname1 vis1 vs (NewCons qname2 vis2 ty)) =
   genInstances (Type qname1 vis1 vs [Cons qname2 1 vis2 [ty]])
-
-mkApplicativeChain :: Hs.Exp () -> [Hs.Exp ()] -> Hs.Exp ()
-mkApplicativeChain e [] = mkReturn e
-mkApplicativeChain e xs = InfixApp () e (QVarOp () dollarApplicativeQualName)
-  (foldl1 (flip (InfixApp ()) (QVarOp () starApplicativeQualName)) xs)
-
-dollarApplicativeQualName :: Hs.QName ()
-dollarApplicativeQualName = Qual () (ModuleName () "P") (Symbol () "<$>")
-
-starApplicativeQualName :: Hs.QName ()
-starApplicativeQualName = Qual () (ModuleName () "P") (Symbol () "<*>")
-
-mkFromHaskell :: Exp () -> Exp ()
-mkFromHaskell = Hs.App () (Hs.Var () fromHaskellQualName)
-
-fromHaskellQualName :: Hs.QName ()
-fromHaskellQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "fromHaskell")
-
-mkToHaskell :: Exp () -> Exp ()
-mkToHaskell = Hs.App () (Hs.Var () toHaskellQualName)
-
-toHaskellQualName :: Hs.QName ()
-toHaskellQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "toHaskell")
-
-hsEquivQualName :: Hs.QName ()
-hsEquivQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "HsEquivalent")
-
-hsToQualName :: Hs.QName ()
-hsToQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "ToHs")
-
-hsFromQualName :: Hs.QName ()
-hsFromQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "FromHs")
 
 newtype ModuleHeadStuff = MS (String, [(QName, [QName])], [QName])
 type instance HsEquivalent ModuleHeadStuff = ModuleHead ()
@@ -317,29 +380,6 @@ instance ToMonadicHs ConsDecl where
     tys <- mapM convertQualType texprs
     return $ QualConDecl () Nothing Nothing (ConDecl () (convertTypeNameToMonadicHs (Unqual cname)) tys)
 
-convertQualType :: TypeExpr -> CM (Type ())
-convertQualType ty
-  | ForallType _ _ <- ty = ty'
-  | otherwise            = mkCurry <$> ty'
-  where
-    ty' = convertToMonadicHs ty
-
-mkTypeHead :: QName -> [TVarWithKind] -> DeclHead ()
-mkTypeHead qname vs = foldl (DHApp ()) (DHead () (convertTypeNameToHs (Unqual qname))) $ map toTyVarBndr vs
-
-mkMonadicTypeHead :: QName -> [TVarWithKind] -> DeclHead ()
-mkMonadicTypeHead qname vs = foldl (DHApp ()) (DHead () (convertTypeNameToMonadicHs (Unqual qname))) $ map toTyVarBndr vs
-
-toTyVarBndr :: TVarWithKind -> TyVarBind ()
-toTyVarBndr (i, k) = KindedVar () (indexToName i) (kindToHsType k)
-
-kindToHsType :: Kind -> Type ()
-kindToHsType KStar = TyCon () (Qual () (ModuleName () "Data.Kind") (Ident () "Type"))
-kindToHsType (KArrow k1 k2) = TyFun () (kindToHsType k1) (kindToHsType k2)
-
-indexToName :: Int -> Name ()
-indexToName i = [Ident () (c : rest) | n <- [0 :: Int ..], let rest = if n == 0 then "" else show n, c <- ['a'..'z']] !! i
-
 type instance HsEquivalent TypeExpr = Type ()
 instance ToHs TypeExpr where
   convertToHs (TVar idx) = return $ TyVar () (indexToName idx)
@@ -351,46 +391,32 @@ instance ToMonadicHs TypeExpr where
   convertToMonadicHs (TVar idx) = return $ TyVar () (indexToName idx)
   convertToMonadicHs (FuncType t1 t2) = mkLiftedFunc <$> convertToMonadicHs t1 <*> convertToMonadicHs t2
   convertToMonadicHs (TCons qn tys) = foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qn)) <$> mapM convertToMonadicHs tys
-  convertToMonadicHs (ForallType vs t) = TyForall () (Just (map toTyVarBndr vs)) (mkShareableCtxt vs) <$> convertQualType t
+  convertToMonadicHs (ForallType vs t) = TyForall () (Just (map toTyVarBndr vs)) (mkCurryCtxt vs) <$> convertQualType t
 
-mkShareableCtxt :: [TVarWithKind] -> Maybe (Context ())
-mkShareableCtxt [] = Nothing
-mkShareableCtxt vs = Just $ CxTuple () $ map mkShareableFor vs
+convertQualType :: TypeExpr -> CM (Type ())
+convertQualType ty
+  | ForallType _ _ <- ty = ty'
+  | otherwise            = mkCurry <$> ty'
+  where
+    ty' = convertToMonadicHs ty
 
-mkShareableFor :: TVarWithKind -> Asst ()
-mkShareableFor (i, KStar) = TypeA () $ mkShareableType (TyVar () (indexToName i))
-mkShareableFor (i, k) = construct $ map mkShareableFor argsWithTVar
+mkCurryCtxt :: [TVarWithKind] -> Maybe (Context ())
+mkCurryCtxt = mkQuantifiedCtxt mkCurryClassType
+
+mkQuantifiedCtxt :: (Type () -> Type ()) -> [TVarWithKind] -> Maybe (Context ())
+mkQuantifiedCtxt _      [] = Nothing
+mkQuantifiedCtxt mkType vs = Just $ CxTuple () $ map (mkQuantifiedFor mkType) vs
+
+mkQuantifiedFor :: (Type () -> Type ()) -> TVarWithKind -> Asst ()
+mkQuantifiedFor mkType (i, KStar) = TypeA () $ mkType (TyVar () (indexToName i))
+mkQuantifiedFor mkType (i, k) = construct $ map (mkQuantifiedFor mkType) argsWithTVar
   where
     (args, _) = splitKindArrow k
     argTVars = take (length args) [i+1..]
     argsWithTVar = zip argTVars args
-    construct shareableArgs = TypeA () $ TyForall () (Just (map toTyVarBndr argsWithTVar))
-      (Just (CxTuple () shareableArgs))
-      (mkShareableType (foldl (TyApp ()) (TyVar () (indexToName i)) (map (TyVar () . indexToName) argTVars)))
-
-splitKindArrow :: Kind -> ([Kind], Kind)
-splitKindArrow KStar = ([], KStar)
-splitKindArrow (KArrow k1 k2) = (k1 : args, res)
-  where
-    (args, res) = splitKindArrow k2
-
-mkShareableType :: Type () -> Type ()
-mkShareableType = TyApp () (TyCon () shareableQualName)
-
-mkLiftedFunc :: Type () -> Type () -> Type ()
-mkLiftedFunc t1 = TyApp () (TyApp () (TyCon () liftedFuncQualName) t1)
-
-mkCurry :: Type () -> Type ()
-mkCurry = TyApp () (TyCon () curryQualName)
-
-shareableQualName :: Hs.QName ()
-shareableQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Shareable")
-
-liftedFuncQualName :: Hs.QName ()
-liftedFuncQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "LiftedFunc")
-
-curryQualName :: Hs.QName ()
-curryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Curry")
+    construct args' = TypeA () $ TyForall () (Just (map toTyVarBndr argsWithTVar))
+      (Just (CxTuple () args'))
+      (mkType (foldl (TyApp ()) (TyVar () (indexToName i)) (map (TyVar () . indexToName) argTVars)))
 
 newtype HsFuncDecl = HFD (Maybe (Decl (), Decl ()))
 type instance HsEquivalent TFuncDecl = HsFuncDecl
@@ -413,6 +439,12 @@ instance ToMonadicHs TFuncDecl where
     match <- convertToMonadicHs (RI (qname, rule))
     let f = FunBind () [match]
     return $ HFD $ Just (tsig, f)
+
+mkTypeHead :: QName -> [TVarWithKind] -> DeclHead ()
+mkTypeHead qname vs = foldl (DHApp ()) (DHead () (convertTypeNameToHs (Unqual qname))) $ map toTyVarBndr vs
+
+mkMonadicTypeHead :: QName -> [TVarWithKind] -> DeclHead ()
+mkMonadicTypeHead qname vs = foldl (DHApp ()) (DHead () (convertTypeNameToMonadicHs (Unqual qname))) $ map toTyVarBndr vs
 
 normalizeCurryType :: TypeExpr -> TypeExpr
 normalizeCurryType (FuncType ty1 ty2) = case normalizeCurryType ty2 of
@@ -467,7 +499,7 @@ instance ToHs (AExpr (TypeExpr, NDInfo)) where
           ConsPartCall _ -> convertTypeNameToHs
           FuncCall -> convertFuncNameToHs
           FuncPartCall _ -> convertFuncNameToHs
-    return $ foldl (Hs.App ()) (Hs.Var () (convertNameToHs qname)) args'
+    return $ foldl (App ()) (Hs.Var () (convertNameToHs qname)) args'
   convertToHs (ALet _ bs e) = do
     e' <- convertToHs e
     bs' <- mapM (\((v, _), lclE) -> PatBind () (PVar () (indexToName v))
@@ -490,18 +522,18 @@ failedBranch = Alt () (PWildCard ())
 instance ToMonadicHs (AExpr (TypeExpr, NDInfo)) where
   convertToMonadicHs (AVar _ idx) = return $ Hs.Var () (UnQual () (indexToName idx))
   convertToMonadicHs (ALit _ lit) = return $ mkReturn $ Hs.Lit () (convertLit lit)
-  convertToMonadicHs ex@(AComb (_, Det) FuncCall _ _) =
-    mkFromHaskell <$> convertToHs ex
-  convertToMonadicHs ex@(AComb (_, Det) ConsCall  _ _) =
-    mkFromHaskell <$> convertToHs ex
-  convertToMonadicHs (AComb (_, NonDet) ConsCall (qname, _) args) = do
+  convertToMonadicHs ex@(AComb (ty, Det) FuncCall _ _)
+    | isFunFree ty = mkFromHaskell <$> convertToHs ex
+  convertToMonadicHs ex@(AComb (ty, Det) ConsCall  _ _)
+    | isFunFree ty = mkFromHaskell <$> convertToHs ex
+  convertToMonadicHs (AComb _ ConsCall (qname, _) args) = do
     args' <- mapM convertToMonadicHs args
-    return $ mkReturn $ foldl (Hs.App ()) (Hs.Var () (convertTypeNameToMonadicHs qname)) args'
+    return $ mkReturn $ foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname)) args'
   convertToMonadicHs (AComb _ (ConsPartCall missing) (qname, _) args) = do
     args' <- mapM convertToMonadicHs args
     missingVs <- replicateM missing freshVarName
     let mkLam e = foldr (\v -> mkReturnFunc .  Lambda () [PVar () v]) e missingVs
-    return $ mkLam $ mkReturn $ foldl (Hs.App ()) (Hs.Var () (convertTypeNameToMonadicHs qname)) (args' ++ map (Hs.Var () . UnQual ()) missingVs)
+    return $ mkLam $ mkReturn $ foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname)) (args' ++ map (Hs.Var () . UnQual ()) missingVs)
   convertToMonadicHs (AComb _ _ (qname, _) args) = do -- (Partial) FuncCall
     args' <- mapM convertToMonadicHs args
     return $ foldl mkMonadicApp (Hs.Var () (convertFuncNameToMonadicHs qname)) args'
@@ -515,13 +547,9 @@ instance ToMonadicHs (AExpr (TypeExpr, NDInfo)) where
     e' <- convertToMonadicHs e
     return $ foldr mkShareBind e' (zip3 (map (indexToName . fst) vs) (repeat mkFree) (map (countVarUse e . fst) vs))
   convertToMonadicHs (AOr _ e1 e2) = mkMplus <$> convertToMonadicHs e1 <*> convertToMonadicHs e2
-  convertToMonadicHs ex@(ACase (ty, Det) _ e bs)
+  convertToMonadicHs ex@(ACase (ty, Det) _ _ _)
     | isFunFree ty = mkFromHaskell <$> convertToHs ex
-    | otherwise = do
-      e' <- mkFromHaskell <$> convertToMonadicHs e
-      bs' <- mapM convertToMonadicHs bs
-      return $ mkBind e' $ Hs.LCase () (bs' ++ [failedMonadicBranch])
-  convertToMonadicHs (ACase (_, NonDet) _  e bs) = do
+  convertToMonadicHs (ACase (_, _) _  e bs) = do
     e' <- convertToMonadicHs e
     bs' <- mapM convertToMonadicHs bs
     return $ mkBind e' $ Hs.LCase () (bs' ++ [failedMonadicBranch])
@@ -533,101 +561,6 @@ failedMonadicBranch :: Alt ()
 failedMonadicBranch = Alt () (PWildCard ())
   (UnGuardedRhs ()
     (Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "failedND")))) Nothing
-
-mkMonadicApp :: Exp () -> Exp () -> Exp ()
-mkMonadicApp e1 = Hs.App () (Hs.App () (Hs.Var () appQualName) e1)
-
-appQualName :: Hs.QName ()
-appQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "app")
-
-mkMplus :: Exp () -> Exp () -> Exp ()
-mkMplus e1 = Hs.App () (Hs.App () (Hs.Var () mplusQualName) e1)
-
-mplusQualName :: Hs.QName ()
-mplusQualName = Qual () (ModuleName () "M") (Ident () "mplus")
-
-mkShareLet :: Hs.Exp () -> [(Hs.Name (), Hs.Exp (), VarUse)] -> Hs.Exp ()
-mkShareLet e [] = e
-mkShareLet e bs
-  | all (\(_, _, m) -> notMany m) bs = foldr mkShareBind e bs
-  | otherwise = mkBind (mkMFix fixLam) bindLam
-  where
-    notMany Many = False
-    notMany _    = True
-    lamHead = Lambda () [mkLazyTuplePat $ map (\(v, _, _) -> PVar () v) bs]
-    fixLam = lamHead $ mkApplicativeChain (mkTupleCon (length bs))
-                     $ map (\(_, e',_) -> mkShare e') bs
-    bindLam = lamHead e
-
-mkTupleCon :: Int -> Exp ()
-mkTupleCon 0 = Hs.Var () (Special () (UnitCon ()))
-mkTupleCon 1 = Hs.Var () (Qual () (ModuleName () "P") (Ident () "id"))
-mkTupleCon n = Hs.Var () (Special () (TupleCon () Boxed n))
-
-mkLazyTuplePat :: [Hs.Pat ()] -> Hs.Pat ()
-mkLazyTuplePat [p] = PParen () p
-mkLazyTuplePat xs  = PParen () $ PIrrPat () $ PTuple () Boxed xs
-
-mkMFix :: Hs.Exp () -> Hs.Exp ()
-mkMFix = Hs.App () (Hs.Var () (Qual () (ModuleName () "M") (Ident () "mfix")))
-
-data VarUse = None | One | Many
-  deriving (Eq, Ord, Enum, Show)
-
-instance Semigroup VarUse where
-  None <> x = x
-  x <> None = x
-  _ <> _ = Many
-
-instance Monoid VarUse where
-  mempty = None
-
-countVarUse :: AExpr a -> VarIndex -> VarUse
-countVarUse (AVar _ idx) vidx = if idx == vidx then One else None
-countVarUse (AComb _ _ _ args) vidx = mconcat (map (`countVarUse` vidx) args)
-countVarUse (ALet _ bs e) vidx = case mconcat (map (\((_, _), b) -> countVarUse b vidx) bs) of
-  None -> countVarUse e vidx
-  _ -> Many
-countVarUse (AFree _ _ e) vidx = countVarUse e vidx
-countVarUse (AOr _ e1 e2) vidx = max (countVarUse e1 vidx) (countVarUse e2 vidx)
-countVarUse (ACase _ _ e bs) vidx = max (countVarUse e vidx) (maximum (map (\(ABranch _ e') -> countVarUse e' vidx) bs))
-countVarUse (ALit _ _) _ = None
-countVarUse (ATyped _ e _) vidx = countVarUse e vidx
-
-mkShareBind :: (Hs.Name (), Exp (), VarUse) -> Exp () -> Exp ()
-mkShareBind (_, _, None) e2 = e2
-mkShareBind (v, e1, One ) e2 = Hs.Let () (BDecls () [PatBind () (PVar () v) (UnGuardedRhs () e1) Nothing]) e2
-mkShareBind (v, e1, Many) e2 = mkBind (mkShare e1) (Lambda () [PVar () v] e2)
-
-mkShare :: Exp () -> Exp ()
-mkShare = Hs.App () (Hs.Var () shareQualName)
-
-mkFree :: Exp ()
-mkFree = Hs.Var () freeQualName
-
-freeQualName :: Hs.QName ()
-freeQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "free")
-
-mkBind :: Exp () -> Exp () -> Exp ()
-mkBind e1 = Hs.InfixApp () e1 (QConOp () bindQualName)
-
-bindQualName :: Hs.QName ()
-bindQualName = Hs.Qual () (ModuleName () "M") (Symbol () ">>=")
-
-shareQualName :: Hs.QName ()
-shareQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "share")
-
-mkReturn :: Exp () -> Exp ()
-mkReturn = Hs.App () (Hs.Var () returnQualName)
-
-returnQualName :: Hs.QName ()
-returnQualName = Hs.Qual () (ModuleName () "M") (Ident () "return")
-
-mkReturnFunc :: Exp () -> Exp ()
-mkReturnFunc = Hs.App () (Hs.Var () returnFuncQualName)
-
-returnFuncQualName :: Hs.QName ()
-returnFuncQualName = Hs.Qual () (ModuleName () "BasicDefinitions") (Ident () "returnFunc")
 
 type instance HsEquivalent (ABranchExpr (TypeExpr, NDInfo)) = Alt ()
 instance ToHs (ABranchExpr (TypeExpr, NDInfo)) where
@@ -703,6 +636,7 @@ defaultPragmas =
   , LanguagePragma () [Ident () "ImpredicativeTypes"]
   , LanguagePragma () [Ident () "QuantifiedConstraints"]
   , LanguagePragma () [Ident () "LambdaCase"]
+  , LanguagePragma () [Ident () "MultiParamTypeClasses"]
   , OptionsPragma () (Just GHC) "-w " -- Space is important here
   ]
 
@@ -717,7 +651,10 @@ defaultImports =
 
 -- |Compute the filename of the Haskell file for a source file
 haskellName :: FilePath -> FilePath
-haskellName = ("Curry_" ++) . flip replaceExtension haskellExt
+haskellName = flip updateBaseName ("Curry_"++) . flip replaceExtension haskellExt
+
+updateBaseName :: FilePath -> (String -> String) -> FilePath
+updateBaseName p f = replaceBaseName p (f (takeBaseName p))
 
 -- |Compute the filename of the external definition file for a source file
 externalName :: FilePath -> FilePath

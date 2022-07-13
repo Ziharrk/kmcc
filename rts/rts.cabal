@@ -1,0 +1,67 @@
+cabal-version: 3.0
+name:          rts
+version:       0.1.0.0
+license:       BSD-3-Clause
+license-file:  LICENSE
+copyright:     (c) 2020-2022, Kai-Oliver Prott, Finn Teegen
+maintainer:    kai.prott@hotmail.de
+author:        Kai-Oliver Prott, Finn Teegen
+category:      Language
+build-type:    Simple
+stability:     experimental
+
+common deps
+  build-depends:
+    base             ^>= 4.16,
+    ghc-prim         ^>= 0.8,
+    template-haskell ^>= 2.18,
+    containers       ^>= 0.6.0,
+    deque            ^>= 0.4.3,
+    transformers     ^>= 0.5.6,
+    mtl              ^>= 2.2.2,
+    syb              ^>= 0.7.1,
+    extra            ^>= 1.7.3,
+    tree-monad       ^>= 0.3.1,
+    kan-extensions   ^>= 5.2.2,
+    sbv              ^>= 8.17,
+    adjunctions      ^>= 4.4,
+    deepseq
+  ghc-options:      -Wall
+  default-language: GHC2021
+  other-extensions:
+    TupleSections,
+    RecursiveDo,
+    EmptyCase,
+    LambdaCase,
+    OverloadedStrings,
+    TypeFamilies,
+    RankNTypes,
+    ScopedTypeVariables,
+    ExistentialQuantification,
+    TypeOperators,
+    FlexibleContexts,
+    FlexibleInstances,
+    UndecidableInstances,
+    FunctionalDependencies,
+    DeriveFunctor,
+    DeriveGeneric,
+    DeriveDataTypeable,
+    GeneralizedNewtypeDeriving,
+    DeriveAnyClass,
+    EmptyDataDeriving,
+    StandaloneDeriving,
+    DefaultSignatures,
+    MultiParamTypeClasses,
+    TemplateHaskell
+  other-modules:
+    NormalForm
+    Narrowable
+    HasPrimitiveInfo
+
+library
+  import: deps
+  exposed-modules:
+    Classes
+    Tree
+    MemoizedCurry
+    BasicDefinitions

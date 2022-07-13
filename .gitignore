@@ -1,5 +1,11 @@
 .stack-work/
 .vscode/
 .curry/
+bin/curry-frontend
+bin/kmcc
 
 *.lock
+*.hi
+*.hi-boot
+*.o
+*.o-boot

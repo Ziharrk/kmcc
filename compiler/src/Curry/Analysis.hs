@@ -53,8 +53,8 @@ analyzeNondet tps opts = handleRes $ runExceptT $ flip evalStateT Map.empty $ ru
     mapM process' (zip tps [1..])
   where
     total = length tps
-    deps = map (\(_, _, dep) -> dep) tps
     process' ((tprog, m, fn), idx) = process opts (idx, total) tprog m fn deps
+      where deps = map (\(_, _, dep) -> dep) (take idx tps)
     handleRes act = act >>= \case
       Left msgs -> abortWithMessages msgs
       Right res -> return res

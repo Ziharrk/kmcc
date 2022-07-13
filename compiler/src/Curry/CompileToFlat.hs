@@ -1,4 +1,4 @@
-module Curry.CompileToFlat where
+module Curry.CompileToFlat (getDependencies, compileFileToFcy, checkForMain) where
 
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe ( mapMaybe, fromMaybe, catMaybes )
@@ -9,7 +9,7 @@ import Base.Messages ( status )
 import Curry.Base.Monad ( CYIO )
 import Curry.Base.Pretty ( Pretty(..) )
 import Curry.Base.Ident ( ModuleIdent )
-import Curry.FlatCurry.Typed.Type ( TProg )
+import Curry.FlatCurry.Typed.Type ( TProg (..), TFuncDecl (..), TypeExpr (..) )
 import Curry.Files.Filenames
 import qualified Curry.Syntax.ShowModule as CS
 import qualified CompilerOpts as Frontend
@@ -102,3 +102,12 @@ compileModule opts m fn = do
   ((env, il), mdl'') <- transModule opts qmdl'
   writeFlat opts env (snd mdl'') il
   return $ genTypedFlatCurry $ genAnnotatedFlatCurry env (snd mdl'') il
+
+checkForMain :: [TProg] -> Bool
+checkForMain [] = False
+checkForMain xs = case last xs of
+  TProg _ _ _ fs _ -> any isMainFunc fs
+  where
+    isMainFunc (TFunc (_, nm) _ _ ty _) = nm == "main" && isMainType ty
+    isMainType (TCons ("Prelude", "IO") [TCons ("Prelude", "()") []]) = True
+    isMainType _ = False

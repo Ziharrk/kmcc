@@ -1,4 +1,4 @@
-module Curry.Annotate (annotateND, isFunFree) where
+module Curry.Annotate (annotateND, isFunFree, exprAnn) where
 
 import Control.Arrow (second)
 import qualified Data.Map as Map
@@ -9,27 +9,16 @@ import Curry.FlatCurry.Annotated.Type (AExpr(..), ABranchExpr (..), APattern(..)
 
 import Curry.Analysis (NDInfo(..), NDAnalysisResult)
 
-exprAnn :: AExpr a -> a
-exprAnn (AVar a _) = a
-exprAnn (ALit a _) = a
-exprAnn (AComb a _ _ _) = a
-exprAnn (AFree a _ _) = a
-exprAnn (AOr a _ _) = a
-exprAnn (ACase a _ _ _) = a
-exprAnn (ATyped a _ _) = a
-exprAnn (ALet a _ _) = a
-
-altAnn :: ABranchExpr a -> a
-altAnn (ABranch _ e) = exprAnn e
-
 annotateND :: NDAnalysisResult -> TExpr -> AExpr (TypeExpr, NDInfo)
 annotateND _ (TVarE ty x) = AVar (ty, NonDet) x
 annotateND _ (TLit ty l) = ALit (ty, Det) l
 annotateND analysis (TComb ty ct qname args) =
-  AComb (ty, ann) ct (qname, (ty, annHere)) args'
+  AComb (ty, ann) ct (qname, (ty', annHere)) args'
   where
+    argTys = map typeOf args
+    ty' = foldr FuncType ty argTys
     annHere = case Map.lookup qname analysis of
-                Nothing -> if all isFunFree (funArgs ty) then Det else NonDet
+                Nothing -> if all isFunFree argTys then Det else NonDet
                 Just det -> det
     args' = map (annotateND analysis) args
     ann = maximum (annHere : map (snd . exprAnn) args')
@@ -62,12 +51,21 @@ annotatePat :: TPattern -> APattern (TypeExpr, NDInfo)
 annotatePat (TPattern ty qname args) = APattern (ty, Det) (qname, (ty, Det)) (map (second (,NonDet)) args)
 annotatePat (TLPattern ty l) = ALPattern (ty, Det) l
 
-funArgs :: TypeExpr ->  [TypeExpr]
-funArgs (FuncType t1 t2) = t1 : funArgs t2
-funArgs _ = []
-
 isFunFree :: TypeExpr -> Bool
 isFunFree (FuncType _ _) = False
 isFunFree (TVar _) = False
 isFunFree (ForallType _ ty) = isFunFree ty
 isFunFree (TCons _ args) = all isFunFree args
+
+exprAnn :: AExpr a -> a
+exprAnn (AVar a _) = a
+exprAnn (ALit a _) = a
+exprAnn (AComb a _ _ _) = a
+exprAnn (AFree a _ _) = a
+exprAnn (AOr a _ _) = a
+exprAnn (ACase a _ _ _) = a
+exprAnn (ATyped a _ _) = a
+exprAnn (ALet a _ _) = a
+
+altAnn :: ABranchExpr a -> a
+altAnn (ABranch _ e) = exprAnn e

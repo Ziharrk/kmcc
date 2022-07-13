@@ -12,3 +12,6 @@ cradle:
     - path: compiler/src
       component: "kmcc:exe:kmcc"
       stackYaml: "stack.yaml"
+    - path: rts
+      component: "rts:lib"
+      stackYaml: "stack.yaml"
