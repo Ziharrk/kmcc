@@ -32,14 +32,16 @@ stackInvokeGHCArgs :: [String]
 stackInvokeGHCArgs = ["--silent", "--stack-yaml", "bin/stackForCurry.yaml" , "ghc"]
 
 invokeGHCDefaultArgs :: [String]
-invokeGHCDefaultArgs = ["--make", "-O2"]
+invokeGHCDefaultArgs = ["--make"]
 
 getGHCOptsFor :: Bool -> [(ModuleIdent, Source)] -> FilePath -> KMCCOpts -> [String]
-getGHCOptsFor hasMain deps targetFile KMCCOpts { frontendOpts, optCompilerVerbosity } =
+getGHCOptsFor hasMain deps targetFile
+  KMCCOpts { frontendOpts, optCompilerVerbosity, optOptimizationBaseLevel } =
   ["-fforce-recomp" | optForce frontendOpts] ++
   ["-v" | optCompilerVerbosity > 3] ++
   (if hasMain then ["-main-is", mainId] else ["-no-hs-main"]) ++
   ["-i rts"] ++
+  ["-O " ++ show optOptimizationBaseLevel] ++
   getGHCSrcDirOpts deps frontendOpts ++
   [targetFile]
   where

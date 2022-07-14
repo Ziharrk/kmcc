@@ -18,9 +18,18 @@ data KMCCOpts = KMCCOpts {
     optTarget :: FilePath,
     optCompileOnly :: Bool,
     optInfo :: (Bool, Bool, Bool),
-    optCompilerVerbosity :: Int, -- between 0 and 4, but 4 is only for GHC. Default: 1
+    optCompilerVerbosity :: Int,
+    optOptimizationBaseLevel :: Int,
+    optOptimizationDeterminism :: Bool,
     frontendOpts :: Options
   }
+
+-- Verbosity between 0 and 4. Default: 1
+-- 0: no output except for errors
+-- 1: status messages
+-- 2: adds some debug output
+-- 3: additionally dumps all intermediate files and formats to stdout
+-- 4: passes -v to GHC as well
 
 data ActionMode = Version | Compile
 
@@ -30,12 +39,10 @@ defaultOpts = KMCCOpts
   , optCompileOnly = False
   , optInfo = (False, False, False)
   , optCompilerVerbosity = 1
+  , optOptimizationBaseLevel = 1
+  , optOptimizationDeterminism = True
   , frontendOpts = defaultFrontendOpts
   }
--- missing:
--- optimization opts (O1/2 and turning on/of det-analysis)
--- verbosity, logging, quiet
--- debug
 
 defaultFrontendOpts :: Options
 defaultFrontendOpts = defaultOptions

@@ -134,7 +134,6 @@ instance ToHs TProgWithFilePath where
             extract Nothing = []
         let insts = concatMap genInstances tys
         let ds = insts ++ coerce (tyds ++ tydsM) ++ concatMap @[] extract (coerce (funds ++ fundsM))
-        -- TODO: deriving stuff?
         return (header, im', ds)
     (extPragmas, extImports, extDs) <- liftIO $ doesFileExist fp >>= \case
       True -> do

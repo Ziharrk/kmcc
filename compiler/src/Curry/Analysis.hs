@@ -13,7 +13,7 @@ import Control.Monad.Except ( ExceptT (..), MonadError (..), runExceptT )
 import Control.Monad.State ( StateT (..), MonadState, evalStateT, get, put, modify' )
 import Data.Binary ( decodeFileOrFail, Binary, encodeFile )
 import Data.Map ( Map )
-import qualified Data.Map as Map ( empty, restrictKeys, lookup, insert, findWithDefault, unions, union )
+import qualified Data.Map as Map ( empty, restrictKeys, lookup, insert, findWithDefault, unions, union, map )
 import Data.Set ( Set )
 import qualified Data.Set as Set ( empty, insert )
 import GHC.Generics ( Generic )
@@ -27,7 +27,7 @@ import Curry.Base.Ident ( ModuleIdent )
 import CurryBuilder ( smake, compMessage )
 import CompilerOpts ( Options(..) )
 import Curry.Files.Filenames ( addOutDirModule )
-import Options ( KMCCOpts (frontendOpts), dumpMessage )
+import Options ( KMCCOpts (frontendOpts, optOptimizationDeterminism), dumpMessage )
 
 type NDAnalysisResult = Map QName NDInfo
 
@@ -63,7 +63,10 @@ analyzeNondet tps kmccopts = handleRes $ runExceptT $ flip evalStateT Map.empty 
 process :: KMCCOpts -> (Int, Int) -> TProg
         -> ModuleIdent -> FilePath -> [FilePath] -> AM 'Global NDAnalysisResult
 process kmccopts idx tprog m fn deps
-  | optForce opts = compile
+  -- if we are not doing determinism analysis,
+  -- go to compile so that we can fill the analysis infos with default values.
+  | not (optOptimizationDeterminism kmccopts) ||
+    optForce opts = compile
   | otherwise     = smake [destFile] deps compile skip
   where
     opts = frontendOpts kmccopts
@@ -87,7 +90,7 @@ process kmccopts idx tprog m fn deps
     compile = do
       res@(analysis, _) <- runLocalState $ do
         status opts $ compMessage idx (11, 16) "Analyzing" m (fn, destFile)
-        analyzeTProg tprog
+        analyzeTProg kmccopts tprog
       liftIO $ encodeFile (tgtDir (analysisName fn)) res
       return analysis
 
@@ -103,9 +106,12 @@ runLocalState a = do
           return (allInfos, exportedQNames)
   handle $ runExceptT $ flip runStateT (st, Set.empty) $ runAM a
 
-analyzeTProg :: TProg -> AM 'Local ()
-analyzeTProg = trTProg (\_ _ _ funcs _ -> mapM_ (trTFunc initAnalysis) funcs >>
-                                          fixedPoint (or <$> mapM (trTFunc analyzeFunc) funcs))
+analyzeTProg :: KMCCOpts -> TProg -> AM 'Local ()
+analyzeTProg opts = trTProg $ \_ _ _ funcs _ -> do
+  mapM_ (trTFunc initAnalysis) funcs -- do an initial run to initialize all functions and collect visibility infos
+  if optOptimizationDeterminism opts
+    then fixedPoint (or <$> mapM (trTFunc analyzeFunc) funcs)
+    else modify' (first (Map.map (const NonDet))) -- fill infos with default value
 
 initAnalysis :: QName -> a -> Visibility -> c -> TRule -> AM 'Local ()
 initAnalysis qname _ vis _ rule = do
