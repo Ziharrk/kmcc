@@ -22,12 +22,12 @@ import System.FilePath ( replaceExtension )
 import Curry.Base.Message ( Message(..) )
 import Base.Messages ( abortWithMessages, status )
 import Curry.FlatCurry.Typed.Type ( TProg, QName, TRule (..), Visibility (..) )
-import qualified CompilerOpts as Frontend
 import Curry.FlatCurry.Typed.Goodies ( trTProg, trTFunc, trTExpr )
 import Curry.Base.Ident ( ModuleIdent )
 import CurryBuilder ( smake, compMessage )
 import CompilerOpts ( Options(..) )
 import Curry.Files.Filenames ( addOutDirModule )
+import Options ( KMCCOpts (frontendOpts), dumpMessage )
 
 type NDAnalysisResult = Map QName NDInfo
 
@@ -47,25 +47,26 @@ newtype AM s a = AnalysisMonad {
 
 deriving newtype instance (x ~ NDAnalysisState s) => MonadState x (AM s)
 
-analyzeNondet :: [(TProg, ModuleIdent, FilePath)] -> Frontend.Options
+analyzeNondet :: [(TProg, ModuleIdent, FilePath)] -> KMCCOpts
               -> IO NDAnalysisResult
-analyzeNondet tps opts = handleRes $ runExceptT $ flip evalStateT Map.empty $ runAM $ Map.unions <$>
+analyzeNondet tps kmccopts = handleRes $ runExceptT $ flip evalStateT Map.empty $ runAM $ Map.unions <$>
     mapM process' (zip tps [1..])
   where
     total = length tps
-    process' ((tprog, m, fn), idx) = process opts (idx, total) tprog m fn deps
+    process' ((tprog, m, fn), idx) = process kmccopts (idx, total) tprog m fn deps
       where deps = map (\(_, _, dep) -> dep) (take idx tps)
     handleRes act = act >>= \case
       Left msgs -> abortWithMessages msgs
       Right res -> return res
 
 -- |Analyze a single flat curry module.
-process :: Frontend.Options -> (Int, Int) -> TProg
+process :: KMCCOpts -> (Int, Int) -> TProg
         -> ModuleIdent -> FilePath -> [FilePath] -> AM 'Global NDAnalysisResult
-process opts idx tprog m fn deps
+process kmccopts idx tprog m fn deps
   | optForce opts = compile
   | otherwise     = smake [destFile] deps compile skip
   where
+    opts = frontendOpts kmccopts
     destFile = tgtDir (analysisName fn)
     skip = do
       status opts $ compMessage idx (11, 16) "Skipping" m (fn, destFile)
@@ -81,6 +82,7 @@ process opts idx tprog m fn deps
           compile
         Right (analysis, exportedNames) -> do
           modify' (Map.union (Map.restrictKeys analysis exportedNames))
+          liftIO $ dumpMessage kmccopts $ "Loaded cached analysis:\n" ++ show analysis
           return analysis
     compile = do
       res@(analysis, _) <- runLocalState $ do

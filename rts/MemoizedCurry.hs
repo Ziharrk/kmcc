@@ -447,7 +447,13 @@ instance Monad Curry where
 instance Functor Curry where
   fmap = liftM
 
+{-# RULES
+"ret/bind" forall x f. pureCurry x >>= f = f x
+"bind/ret" forall x. x >>= pureCurry = x
+  #-}
+
 instance Applicative Curry where
+  {-# INLINE pure #-}
   pure = pureCurry
   (<*>) = ap
 
@@ -468,7 +474,7 @@ instance MonadFix Curry where
 Curry ma ? Curry mb = Curry $ mplus ma mb
 
 instance Alternative Curry where
-  empty = mzero
+  empty = Curry $ mzero
   (<|>) = (?)
 
 instance MonadPlus Curry

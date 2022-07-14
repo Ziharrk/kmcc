@@ -216,8 +216,17 @@ lazyUnifyQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "unifyL
 addToVarHeapQualName :: QName ()
 addToVarHeapQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "addToVarHeapM")
 
-mainWrapperQualName :: QName ()
-mainWrapperQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "mainWrapper")
+mainWrapperDetQualName :: QName ()
+mainWrapperDetQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "mainWrapperDet")
+
+mainWrapperNDetQualName :: QName ()
+mainWrapperNDetQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "mainWrapperNDet")
+
+exprWrapperDetQualName :: QName ()
+exprWrapperDetQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "exprWrapperDet")
+
+exprWrapperNDetQualName :: QName ()
+exprWrapperNDetQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "exprWrapperNDet")
 
 appendName :: String -> Name () -> Name ()
 appendName suff (Ident  () s) = Ident  () (s ++ suff)

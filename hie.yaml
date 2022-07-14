@@ -10,7 +10,7 @@ cradle:
       component: "curry-frontend:test:test-frontend"
       stackYaml: "stack.yaml"
     - path: compiler/src
-      component: "kmcc:exe:kmcc"
+      component: "kmcc:exe:kmcc_c"
       stackYaml: "stack.yaml"
     - path: rts
       component: "rts:lib"

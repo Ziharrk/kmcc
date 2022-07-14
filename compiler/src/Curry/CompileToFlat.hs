@@ -6,13 +6,13 @@ import Data.Binary (decodeFileOrFail)
 import System.FilePath ((</>))
 
 import Base.Messages ( status )
+import Control.Monad (msum)
 import Curry.Base.Monad ( CYIO )
 import Curry.Base.Pretty ( Pretty(..) )
 import Curry.Base.Ident ( ModuleIdent )
 import Curry.FlatCurry.Typed.Type ( TProg (..), TFuncDecl (..), TypeExpr (..) )
 import Curry.Files.Filenames
 import qualified Curry.Syntax.ShowModule as CS
-import qualified CompilerOpts as Frontend
 import CurryBuilder ( findCurry, processPragmas, adjustOptions, smake, compMessage)
 import CurryDeps ( flatDeps, Source(..) )
 import CompilerOpts ( Options(..), TargetType(..), DumpLevel (..) )
@@ -23,23 +23,26 @@ import Exports ( exportInterface )
 import Generators (genTypedFlatCurry, genAnnotatedFlatCurry)
 
 import Curry.FrontendUtils ( runCurryFrontendAction )
+import Options (KMCCOpts (..), dumpMessage)
 
-getDependencies :: FilePath -> Frontend.Options -> IO [(ModuleIdent, Source)]
-getDependencies file opts =
-  runCurryFrontendAction opts (findCurry opts file >>= flatDeps opts)
+getDependencies :: KMCCOpts -> IO [(ModuleIdent, Source)]
+getDependencies opts = do
+  deps <- runCurryFrontendAction (frontendOpts opts) (findCurry (frontendOpts opts) (optTarget opts) >>= flatDeps (frontendOpts opts))
+  dumpMessage opts $ "Dependencies: " ++ show deps
+  return deps
 
-compileFileToFcy :: Frontend.Options -> [(ModuleIdent, Source)]
+compileFileToFcy :: KMCCOpts -> [(ModuleIdent, Source)]
                  -> IO [(TProg, ModuleIdent, FilePath)]
-compileFileToFcy opts srcs = runCurryFrontendAction opts $
+compileFileToFcy opts srcs = runCurryFrontendAction (frontendOpts opts) $
   catMaybes <$> mapM process' (zip [1 ..] srcs)
   where
     total    = length srcs
-    tgtDir m = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
+    tgtDir m = addOutDirModule (optUseOutDir (frontendOpts opts)) (optOutDir (frontendOpts opts)) m
 
     process' :: (Int, (ModuleIdent, Source)) -> CYIO (Maybe (TProg, ModuleIdent, FilePath))
     process' (n, (m, Source fn ps is)) = do
-      opts' <- processPragmas opts ps
-      Just . (, m, fn) <$> process (adjustOptions (n == total) opts') (n, total) m fn deps
+      opts' <- processPragmas (frontendOpts opts) ps
+      Just . (, m, fn) <$> process (opts { frontendOpts = adjustOptions (n == total) opts' }) (n, total) m fn deps
       where
         deps = fn : mapMaybe curryInterface is
 
@@ -50,9 +53,9 @@ compileFileToFcy opts srcs = runCurryFrontendAction opts $
     process' _ = return Nothing
 
 -- |Compile a single source module to typed flat curry.
-process :: Frontend.Options -> (Int, Int)
+process :: KMCCOpts -> (Int, Int)
         -> ModuleIdent -> FilePath -> [FilePath] -> CYIO TProg
-process opts idx m fn deps
+process kmccopts idx m fn deps
   | optForce opts = compile
   | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile skip
   where
@@ -68,10 +71,16 @@ process opts idx m fn deps
             , err
             , "Retrying compilation from source..." ]
           compile
-        Right res -> return res
+        Right res -> do
+          liftIO $ dumpMessage kmccopts $ "Read cached flat curry file:\n" ++ show res
+          return res
     compile = do
       status opts $ compMessage idx (11, 16) "Compiling" m (fn, head destFiles)
-      compileModule opts m fn
+      res <- compileModule opts m fn
+      liftIO $ dumpMessage kmccopts $ "Generated flat curry file:\n" ++ show res
+      return res
+
+    opts = frontendOpts kmccopts
 
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
@@ -103,11 +112,11 @@ compileModule opts m fn = do
   writeFlat opts env (snd mdl'') il
   return $ genTypedFlatCurry $ genAnnotatedFlatCurry env (snd mdl'') il
 
-checkForMain :: [TProg] -> Bool
-checkForMain [] = False
+checkForMain :: [TProg] -> Maybe TypeExpr
+checkForMain [] = Nothing
 checkForMain xs = case last xs of
-  TProg _ _ _ fs _ -> any isMainFunc fs
+  TProg _ _ _ fs _ -> msum (map isMainFunc fs)
   where
-    isMainFunc (TFunc (_, nm) _ _ ty _) = nm == "main" && isMainType ty
-    isMainType (TCons ("Prelude", "IO") [TCons ("Prelude", "()") []]) = True
-    isMainType _ = False
+    isMainFunc (TFunc (_, nm) _ _ ty _)
+      | nm == "main" = Just ty
+      | otherwise    = Nothing

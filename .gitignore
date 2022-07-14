@@ -3,6 +3,7 @@
 .curry/
 bin/curry-frontend
 bin/kmcc
+bin/kmcc_c
 
 *.lock
 *.hi

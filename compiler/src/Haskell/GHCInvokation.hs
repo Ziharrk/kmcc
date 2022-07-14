@@ -12,7 +12,7 @@ import CurryDeps (Source(..))
 import Curry.Files.Filenames (addOutDirModule)
 import Curry.Base.Ident (ModuleIdent(..))
 
-import Options (KMCCOpts (..))
+import Options (KMCCOpts (..), debugMessage, statusMessage)
 import Curry.ConvertToHs (haskellName)
 
 invokeGHC :: Bool -> [(ModuleIdent, Source)] -> KMCCOpts -> IO ()
@@ -21,9 +21,12 @@ invokeGHC hasMain deps opts = do
   let targetFile = tgtDir (frontendOpts opts) (fst (last deps)) (haskellName (optTarget opts))
   case mbEx of
     Nothing -> fail "Executable 'stack' not found. Please install the Haskell tool \"Stack\""
-    Just p  -> callProcess p $ stackInvokeGHCArgs ++
-                 "--" : invokeGHCDefaultArgs ++ getGHCOptsFor hasMain deps targetFile opts
-  when hasMain $ copyExecutable targetFile
+    Just p  -> do
+      let args = stackInvokeGHCArgs ++
+                   "--" : invokeGHCDefaultArgs ++ getGHCOptsFor hasMain deps targetFile opts
+      debugMessage opts $ "Invoking GHC with: " ++ unwords args
+      callProcess p args
+  when hasMain $ copyExecutable targetFile opts
 
 stackInvokeGHCArgs :: [String]
 stackInvokeGHCArgs = ["--silent", "--stack-yaml", "bin/stackForCurry.yaml" , "ghc"]
@@ -32,15 +35,16 @@ invokeGHCDefaultArgs :: [String]
 invokeGHCDefaultArgs = ["--make", "-O2"]
 
 getGHCOptsFor :: Bool -> [(ModuleIdent, Source)] -> FilePath -> KMCCOpts -> [String]
-getGHCOptsFor hasMain deps targetFile KMCCOpts { frontendOpts } =
+getGHCOptsFor hasMain deps targetFile KMCCOpts { frontendOpts, optCompilerVerbosity } =
   ["-fforce-recomp" | optForce frontendOpts] ++
+  ["-v" | optCompilerVerbosity > 3] ++
   (if hasMain then ["-main-is", mainId] else ["-no-hs-main"]) ++
   ["-i rts"] ++
   getGHCSrcDirOpts deps frontendOpts ++
   [targetFile]
   where
     mainId = case last deps of
-      (ModuleIdent _ ms, _) -> "Curry_" ++ intercalate "." ms ++ ".main"
+      (ModuleIdent _ ms, _) -> "Curry_" ++ intercalate "." ms ++ ".main##"
 
 getGHCSrcDirOpts :: [(ModuleIdent, Source)] -> Options -> [String]
 getGHCSrcDirOpts deps opts = mapMaybe (\(mid, src) -> case src of
@@ -51,10 +55,10 @@ getGHCSrcDirOpts deps opts = mapMaybe (\(mid, src) -> case src of
 tgtDir :: Options -> ModuleIdent -> FilePath -> FilePath
 tgtDir opts = addOutDirModule (optUseOutDir opts) (optOutDir opts)
 
-copyExecutable :: FilePath -> IO ()
-copyExecutable fp = do
+copyExecutable :: FilePath -> KMCCOpts -> IO ()
+copyExecutable fp opts = do
   copyFile exeFile destinationFile
-  putStrLn ("Copied executable to \"" ++ destinationFile ++ "\"")
+  statusMessage opts ("Copied executable to \"" ++ destinationFile ++ "\"")
   where
     destinationFile = replaceDirectory newBaseName "./" -- copy to current directory
     exeFile = replaceExtension fp exeExtension -- add executable extension (if platform requires it)

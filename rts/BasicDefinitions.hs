@@ -24,6 +24,7 @@ import Narrowable
 import HasPrimitiveInfo
 import Classes
 import NormalForm
+import Tree
 
 type family HsEquivalent (a :: k) = (b :: k) | b -> a
 
@@ -37,7 +38,7 @@ class FromHs a where
   from :: HsEquivalent a -> a
 
 fromHaskell :: FromHs a => HsEquivalent a -> Curry a
-fromHaskell x = unsafePerformIO $ catch (return <$> evaluate (from x))
+fromHaskell x = unsafePerformIO $ catch (evaluate (from x) >>= \x' -> return (return x'))
                                 $ \Failed -> return mzero
 
 class (ToHs a, FromHs a, Shareable Curry a, Unifiable a, NormalForm a, HasPrimitiveInfo a) => Curryable a
@@ -158,11 +159,18 @@ instance NormalForm (LiftedFunc a b) where
 
 instance Curryable (LiftedFunc a b)
 
+{-# INLINE [1] app #-}
 app :: Curry (LiftedFunc a b) -> Curry a -> Curry b
 app mf arg = mf >>= \(Func f) -> f arg
 
+{-# INLINE [1] returnFunc #-}
 returnFunc :: (Curry a -> Curry b) -> Curry (LiftedFunc a b)
 returnFunc f = return (Func f)
+
+{-# RULES
+"app/returnFunc0" forall f. app (returnFunc f) = f
+"app/returnFunc1" forall f x. app (returnFunc f) x = f x
+  #-}
 
 addToVarHeapM :: ID -> Curry a -> Curry ()
 addToVarHeapM i x = modify (addToVarHeap i x)
@@ -214,10 +222,26 @@ bindIONDImpl = return $ Func $ \ioND -> return $ Func $ \fND -> do
 returnIONDImpl :: Curry (LiftedFunc a (IO a))
 returnIONDImpl = return $ Func $ \x -> fmap return x
 
-mainWrapper :: Curry (IO a) -> IO ()
-mainWrapper x = case evalCurry (ensureOneResult x) of
-  Single x' -> void x'
+mainWrapperDet :: (ForeignType a, Foreign a ~ String) => IO a -> IO ()
+mainWrapperDet ma = ma >>= putStrLn . toForeign
+
+mainWrapperNDet :: (ForeignType b, Foreign b ~ String, ToHs a, HsEquivalent a ~ b) => Curry (IO a) -> IO ()
+mainWrapperNDet x = case evalCurry (ensureOneResult x) of
+  Single x' -> x' >>= putStrLn . toForeign . unSingle . evalCurry . ensureOneResult . to
   _         -> error "mainWrapper: not a single result"
+
+unSingle :: MemoizedCurry.Tree n f l -> l
+unSingle (Single x) = x
+unSingle _ = error "mainWrapper: not a single result"
+
+exprWrapperDet :: (ForeignType a, Foreign a ~ String) => a -> IO ()
+exprWrapperDet a = catch (evaluate (toForeign a)) (\Failed -> return "**No value found") >>= putStrLn
+
+exprWrapperNDet :: (ForeignType b, Foreign b ~ String, ToHs a, HsEquivalent a ~ b) => Curry a -> IO ()
+exprWrapperNDet a = printRes (bfs $ evalCurryTree (toHaskell a))
+  where printRes [] = putStrLn "**No value found"
+        printRes xs = mapM_ (putStrLn . toForeign) xs
+
 
 class ForeignType a where
   type Foreign a = b | b -> a

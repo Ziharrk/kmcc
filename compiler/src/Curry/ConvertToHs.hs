@@ -26,10 +26,10 @@ import Curry.FlatCurry hiding (Let)
 import Curry.FlatCurry.Annotated.Type (APattern(..), ABranchExpr(..), AExpr(..))
 import Curry.FlatCurry.Typed.Type (TRule(..), TFuncDecl(..), TProg(..))
 import Curry.Files.Filenames (addOutDirModule)
-import qualified CompilerOpts as Frontend
 import CompilerOpts (Options(..))
 import CurryBuilder (smake, compMessage)
 
+import Options (KMCCOpts(..), dumpMessage)
 import Curry.Analysis (NDAnalysisResult, NDInfo (..))
 import Curry.Annotate (annotateND, isFunFree)
 import Curry.ConvertUtils
@@ -55,28 +55,28 @@ freshVarName = do
   modify succ
   return (Ident () $  "x_" ++ show i)
 
-compileToHs :: Bool -> [(TProg, ModuleIdent, FilePath)] -> NDAnalysisResult -> Frontend.Options
+compileToHs :: Maybe TypeExpr -> [(TProg, ModuleIdent, FilePath)] -> NDAnalysisResult -> KMCCOpts
             -> IO ()
-compileToHs hasMain mdls ndInfo opts =
+compileToHs mainType mdls ndInfo opts =
   evalCM (mapM_ process' (zip [1 ..] (addMainInfo mdls))) ndInfo
   where
     addMainInfo [] = []
-    addMainInfo [(x, y, z)] = [(x, y, z, hasMain)]
-    addMainInfo ((x, y, z):xs) = (x, y, z, False) : addMainInfo xs
+    addMainInfo [(x, y, z)] = [(x, y, z, mainType)]
+    addMainInfo ((x, y, z):xs) = (x, y, z, Nothing) : addMainInfo xs
     total = length mdls
     process' (n, (prog, m, fp, mi)) = process opts (n, total) prog m fp mi deps
       where deps = map (\(_, _, dep) -> dep) (take n mdls)
 
-process :: Frontend.Options -> (Int, Int) -> TProg
-        -> ModuleIdent -> FilePath -> Bool -> [FilePath] -> CM ()
-process opts idx tprog m fn mi deps
+process :: KMCCOpts -> (Int, Int) -> TProg
+        -> ModuleIdent -> FilePath -> Maybe TypeExpr -> [FilePath] -> CM ()
+process kopts idx tprog m fn mi deps
   | optForce opts = compile
   | otherwise     = smake [destFile] deps compile skip
   where
     destFile = tgtDir (haskellName fn)
     skip = do
       status opts $ compMessage idx (11, 16) "Skipping" m (fn, destFile)
-      when False $ do -- TODO: implement check file when dumping stuff only
+      when (optCompilerVerbosity kopts > 2) $ do -- TODO: implement check file when dumping stuff only
         eithRes <- liftIO (parseFile' destFile)
         case eithRes of
           ParseFailed loc err -> do
@@ -89,12 +89,17 @@ process opts idx tprog m fn mi deps
               , prettyPrintStyleMode hsPrettyPrintStyle hsPrettyPrintMode loc
               , "Retrying compilation from analyzed flat curry ..." ]
             compile
-          ParseOk _ -> return ()
+          ParseOk res ->
+            liftIO $ dumpMessage kopts $ "Read cached Haskell file:\n" ++ prettyPrint res
     compile = do
       status opts $ compMessage idx (11, 16) "Translating" m (fn, destFile)
-      res <- convertToHs (TWFP (tprog, externalName fn, mi))
-      liftIO $ writeUTF8File' (tgtDir (haskellName fn)) (prettyPrint res)
+      res <- convertToHs (TWFP (tprog, externalName fn, mi, kopts))
+      let printed = prettyPrint res
+      liftIO $ dumpMessage kopts $ "Generated Haskell file:\n" ++ printed
+      liftIO $ writeUTF8File' (tgtDir (haskellName fn)) printed
       return ()
+
+    opts = frontendOpts kopts
 
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
@@ -112,10 +117,10 @@ class ToHs a where
 class ToMonadicHs a where
   convertToMonadicHs :: a -> CM (HsEquivalent a)
 
-newtype TProgWithFilePath = TWFP (TProg, FilePath, Bool)
+newtype TProgWithFilePath = TWFP (TProg, FilePath, Maybe TypeExpr, KMCCOpts)
 type instance HsEquivalent TProgWithFilePath = Module ()
 instance ToHs TProgWithFilePath where
-  convertToHs (TWFP (TProg nm im tys fs _, fp, mi)) = do
+  convertToHs (TWFP (TProg nm im tys fs _, fp, mi, opts)) = do
     (header, curryImports, curryDs) <- do
         im' <- mapM (convertToHs . IS) im
         tyds <- mapM convertToHs tys
@@ -150,7 +155,9 @@ instance ToHs TProgWithFilePath where
     let ps' = defaultPragmas ++ extPragmas
     let im' = defaultImports ++ extImports ++ curryImports
     let ds' = extDs ++ curryDs
-    let (header', ds'') = if mi then patchMain header ds' else (header, ds')
+    let (header', ds'') = case mi of
+          Just ty -> patchMain ty opts header ds'
+          Nothing -> (header, ds')
     return (Module () (Just header') ps' im' ds'')
     where
       getVisT (Type qname Public _ cs) = Just (qname, mapMaybe getVisC cs)
@@ -167,14 +174,21 @@ instance ToHs TProgWithFilePath where
       getVisF (TFunc qname _ Public _ _) = Just qname
       getVisF _ = Nothing
 
-patchMain :: ModuleHead () -> [Decl ()] -> (ModuleHead (), [Decl ()])
-patchMain (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds'
-  | mainExport `notElem` es = (ModuleHead () nm w (Just (ExportSpecList () (mainExport:es))), mainDecl:ds')
+patchMain :: TypeExpr -> KMCCOpts -> ModuleHead () -> [Decl ()] -> (ModuleHead (), [Decl ()])
+patchMain ty _ (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds' = -- TODO: pass options to wrapper
+  (ModuleHead () nm w (Just (ExportSpecList () (mainExport:es))), mainDecl:ds')
   where
-    mainExport = EVar () (Qual () nm (Ident () "main"))
-    mainDecl = PatBind () (PVar () (Ident () "main")) mainRHS Nothing
-    mainRHS = UnGuardedRhs () (App () (Hs.Var () mainWrapperQualName) (Hs.Var () (Qual () nm (Ident () "mainND"))))
-patchMain h ds = (h, ds)
+    hasDetMain = EVar () (Qual () nm (Ident () "main")) `elem` es
+    mainExport = EVar () (Qual () nm (Ident () "main##"))
+    mainDecl = PatBind () (PVar () (Ident () "main##")) mainRHS Nothing
+    mainRHS = UnGuardedRhs () $ case ty of
+      TCons ("Prelude","IO") _
+        | hasDetMain -> App () (Hs.Var () mainWrapperDetQualName) (Hs.Var () (Qual () nm (Ident () "main")))
+        | otherwise  -> App () (Hs.Var () mainWrapperNDetQualName) (Hs.Var () (Qual () nm (Ident () "mainND")))
+      _
+        | hasDetMain -> App () (Hs.Var () exprWrapperDetQualName) (Hs.Var () (Qual () nm (Ident () "main")))
+        | otherwise  -> App () (Hs.Var () exprWrapperNDetQualName) (Hs.Var () (Qual () nm (Ident () "mainND")))
+patchMain _ _ h ds = (h, ds)
 
 genInstances :: TypeDecl -> [Decl ()]
 genInstances (Type _ _ _ []) = []
@@ -636,6 +650,7 @@ defaultPragmas =
   , LanguagePragma () [Ident () "ImpredicativeTypes"]
   , LanguagePragma () [Ident () "QuantifiedConstraints"]
   , LanguagePragma () [Ident () "LambdaCase"]
+  , LanguagePragma () [Ident () "MagicHash"]
   , LanguagePragma () [Ident () "MultiParamTypeClasses"]
   , OptionsPragma () (Just GHC) "-w " -- Space is important here
   ]
