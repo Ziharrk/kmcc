@@ -17,12 +17,16 @@ import Paths_kmcc ( version )
 data KMCCOpts = KMCCOpts {
     optTarget :: FilePath,
     optCompileOnly :: Bool,
-    optInfo :: (Bool, Bool, Bool),
+    optInfo :: [InfoCommand],
+    optVarNames :: [(String, Int)],
+    optShowBindings :: Bool,
     optCompilerVerbosity :: Int,
     optOptimizationBaseLevel :: Int,
     optOptimizationDeterminism :: Bool,
     frontendOpts :: Options
   }
+
+data InfoCommand = CompilerName | NumericVersion | BaseVersion
 
 -- Verbosity between 0 and 4. Default: 1
 -- 0: no output except for errors
@@ -37,7 +41,9 @@ defaultOpts :: KMCCOpts
 defaultOpts = KMCCOpts
   { optTarget = ""
   , optCompileOnly = False
-  , optInfo = (False, False, False)
+  , optInfo = []
+  , optVarNames = []
+  , optShowBindings = False
   , optCompilerVerbosity = 1
   , optOptimizationBaseLevel = 1
   , optOptimizationDeterminism = True

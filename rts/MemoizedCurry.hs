@@ -354,14 +354,20 @@ evalCurryTreeNF ma = convertTree $ evalCurryNF ma
     convertTree (Choice _ l r) = Tree.Node (convertTree l) (convertTree r)
 
 evalCurry :: Curry a -> Tree Level (NDState, Level) a
-evalCurry ma =
-  unVal <$> evalND (unCurry ma) (initialNDState ())
-  where
-    unVal (Val _ x) = x
-    unVal (Var _ _) = error "evalCurry: Variable"
+evalCurry = fmap snd . runCurry
 
 evalCurryTree :: Curry a -> Tree.Tree a
-evalCurryTree ma = convertTree $ evalCurry ma
+evalCurryTree = fmap snd . runCurryTree
+
+runCurry :: Curry a -> Tree Level (NDState, Level) (NDState, a)
+runCurry ma =
+  unVal <$> runND (unCurry ma) (initialNDState ())
+  where
+    unVal (s, Val _ x) = (s, x)
+    unVal (_, Var _ _) = error "evalCurry: Variable"
+
+runCurryTree :: Curry a -> Tree.Tree (NDState, a)
+runCurryTree ma = convertTree $ runCurry ma
   where
     convertTree (Single x)     = Tree.Leaf x
     convertTree (Fail   _)     = Tree.Empty
@@ -474,7 +480,7 @@ instance MonadFix Curry where
 Curry ma ? Curry mb = Curry $ mplus ma mb
 
 instance Alternative Curry where
-  empty = Curry $ mzero
+  empty = Curry mzero
   (<|>) = (?)
 
 instance MonadPlus Curry

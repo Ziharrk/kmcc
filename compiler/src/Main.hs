@@ -1,6 +1,5 @@
 module Main where
 
-import Control.Monad ( when )
 import Data.Maybe ( isJust )
 import Data.Version ( showVersion )
 import System.Environment ( getExecutablePath )
@@ -10,7 +9,7 @@ import CompilerOpts ( Options(..) )
 import Base.Utils ( fst3 )
 
 import CmdParser ( getCmdOpts )
-import Options ( KMCCOpts(..), deriveBaseVersion, statusMessage )
+import Options ( KMCCOpts(..), InfoCommand (..), deriveBaseVersion, statusMessage )
 import Curry.CompileToFlat ( getDependencies, compileFileToFcy, checkForMain )
 import Curry.Analysis ( analyzeNondet )
 import Curry.ConvertToHs ( compileToHs )
@@ -29,19 +28,19 @@ main = do
         }
   kmccopts <- includeLibDir <$> getCmdOpts
   case optInfo kmccopts of
-    (cn, cv, bv)
-      | not (or [cn, cv, bv]) -> do
-        deps <- getDependencies kmccopts
-        statusMessage kmccopts "Compiling..."
-        progs <- compileFileToFcy kmccopts deps
-        statusMessage kmccopts "Analyzing..."
-        let mainType = if optCompileOnly kmccopts then Nothing else checkForMain (map fst3 progs)
-        ndInfos <- analyzeNondet progs kmccopts
-        statusMessage kmccopts "Converting to Haskell..."
-        compileToHs mainType progs ndInfos kmccopts
-        statusMessage kmccopts "Invoking GHC..."
-        invokeGHC (isJust mainType) deps kmccopts
-      | otherwise -> do
-        when cn $ putStrLn "kmcc"
-        when cv $ putStrLn (showVersion version)
-        when bv $ putStrLn (deriveBaseVersion (showVersion version))
+    [] -> do
+      deps <- getDependencies kmccopts
+      statusMessage kmccopts "Compiling..."
+      progs <- compileFileToFcy kmccopts deps
+      statusMessage kmccopts "Analyzing..."
+      let mainType = if optCompileOnly kmccopts then Nothing else checkForMain (map fst3 progs)
+      ndInfos <- analyzeNondet progs kmccopts
+      statusMessage kmccopts "Converting to Haskell..."
+      compileToHs mainType progs ndInfos kmccopts
+      statusMessage kmccopts "Invoking GHC..."
+      invokeGHC (isJust mainType) deps kmccopts
+    xs -> mapM_ printVersionOpt xs
+  where
+    printVersionOpt CompilerName   = putStrLn "kmcc"
+    printVersionOpt NumericVersion = putStrLn (showVersion version)
+    printVersionOpt BaseVersion    = putStrLn (deriveBaseVersion (showVersion version))

@@ -33,7 +33,8 @@ annotateND analysis ex@(TCase ct e alts) =
     e' = annotateND analysis e
     alts' = map (annotateAlt analysis) alts
 annotateND analysis (TTyped e ty) =
-  ATyped (ty, Det) (annotateND analysis e) ty
+  let e' = annotateND analysis e
+  in  ATyped (exprAnn e') e' ty
 annotateND analysis (TLet bs e) =
   ALet (typeOf e, ann) bs' e'
   where

@@ -1,7 +1,9 @@
 {-# LANGUAGE BangPatterns           #-}
+{-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE KindSignatures         #-}
 {-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE MagicHash              #-}
+{-# LANGUAGE TupleSections          #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE UndecidableInstances   #-}
 import qualified Prelude as P
@@ -104,6 +106,361 @@ type IOND# = P.IO
 type CArrow# = (->)
 
 type CArrowND# = BasicDefinitions.LiftedFunc
+
+-- -----------------------------------------------------------------------------
+-- ShowFree for Lists, Tuples and Strings (overlaps!)
+-- -----------------------------------------------------------------------------
+
+data ListInfo = FullList | FreeElem | FreeList
+  deriving (P.Eq, P.Ord)
+
+instance ShowFree a => ShowFree (CListND a) where
+  showsFreePrec _ CListND s = BasicDefinitions.showsStringCurry "[]" s
+  showsFreePrec _ xs      s = (P.fst s,) $ do
+    (ys, b) <- gatherContents (`BasicDefinitions.showFree` P.fst s) (`BasicDefinitions.showFree` P.fst s) P.id xs
+    case b of
+      FullList -> P.snd $ BasicDefinitions.showsStringCurry ("["  P.++ P.intercalate "," ys P.++ "]") s
+      FreeElem -> P.snd $ BasicDefinitions.showsStringCurry ("["  P.++ P.intercalate "," ys P.++ "]") s
+      FreeList -> P.snd $ BasicDefinitions.showsStringCurry (          P.intercalate ":" ys         ) s
+
+instance {-# OVERLAPS #-} ShowFree (CListND CharND) where
+  showsFreePrec _ CListND s = BasicDefinitions.showsStringCurry "\"\"" s
+  showsFreePrec _ xs      s = (P.fst s,) $ do
+    (ys, b) <- gatherContents (\c -> P.return [c]) (P.return . P.show) (\s -> "'" P.++ P.show (P.head s) P.++ "'") xs
+    case b of
+      FullList -> P.snd $ BasicDefinitions.showsStringCurry ("\"" P.++ P.concat ys          P.++ "\"") s
+      FreeElem -> P.snd $ BasicDefinitions.showsStringCurry ("["  P.++ P.intercalate "," ys P.++ "]" ) s
+      FreeList -> P.snd $ BasicDefinitions.showsStringCurry (          P.intercalate ":" ys          ) s
+
+-- first arg: use this to show the element if it is a full list
+-- second arg: use this to show the element if there is a free element/list
+-- third arg: use this to convert an arg produced by the first arg to one by the second arg.
+gatherContents :: (a -> Curry P.String) -> (a -> Curry P.String) -> (P.String -> P.String)
+               -> CListND a -> BasicDefinitions.Curry ([P.String], ListInfo)
+gatherContents _ _ _ CListND = P.return ([], FullList)
+gatherContents f g h (CConsND x xs) = BasicDefinitions.Curry $ do
+  c <- deref x
+  rest <- deref xs
+  unCurry (case rest of
+    BasicDefinitions.Var _ i -> case c of
+      BasicDefinitions.Var _ j ->
+        P.return (["_" P.++ P.show j, "_" P.++ P.show i], FreeList)
+      BasicDefinitions.Val _ u -> do
+        e <- g u
+        P.return ([e, "_" P.++ P.show i], FreeList)
+    BasicDefinitions.Val _ v -> do
+      (ys, b) <- gatherContents f g h v
+      case c of
+        BasicDefinitions.Var _ j -> case b of
+          FullList -> do
+            let ys' = P.fmap h ys
+            P.return (("_" P.++ P.show j) : ys', FreeElem)
+          _        ->
+            P.return (("_" P.++ P.show j) : ys , b)
+        BasicDefinitions.Val _ u -> case b of
+          FullList -> do
+            e <- f u
+            P.return (e : ys, b)
+          _        -> do
+            e <- g u
+            P.return (e : ys, b))
+
+instance ShowFree CUnitND where
+  showsFreePrec _ CUnitND = BasicDefinitions.showsStringCurry "()"
+
+instance (ShowFree x, ShowFree y) => ShowFree (CTuple2ND x y) where
+  showsFreePrec _ (CTuple2ND x y) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z) => ShowFree (CTuple3ND x y z) where
+  showsFreePrec _ (CTuple3ND x y z) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w) => ShowFree (CTuple4ND x y z w) where
+  showsFreePrec _ (CTuple4ND x y z w) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v) => ShowFree (CTuple5ND x y z w v) where
+  showsFreePrec _ (CTuple5ND x y z w t) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 t .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u) => ShowFree (CTuple6ND x y z w v u) where
+  showsFreePrec _ (CTuple6ND x y z w t s) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 s .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 t .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t) => ShowFree (CTuple7ND x y z w v u t) where
+  showsFreePrec _ (CTuple7ND x y z w t s r) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 r .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 s .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 t .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s) => ShowFree (CTuple8ND x y z w v u t s) where
+  showsFreePrec _ (CTuple8ND x y z w t s r q) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 q .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 r .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 s .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 t .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r) => ShowFree (CTuple9ND x y z w v u t s r) where
+  showsFreePrec _ (CTuple9ND x y z w t s r q p) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 p .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 q .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 r .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 s .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 t .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q) => ShowFree (CTuple10ND x y z w v u t s r q) where
+  showsFreePrec _ (CTuple10ND x y z w t s r q p o) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 o .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 p .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 q .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 r .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 s .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 t .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q, ShowFree p) => ShowFree (CTuple11ND x y z w v u t s r q p) where
+  showsFreePrec _ (CTuple11ND x y z w t s r q p o n) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 n .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 o .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 p .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 q .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 r .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 s .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 t .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q, ShowFree p, ShowFree o) => ShowFree (CTuple12ND x y z w v u t s r q p o) where
+  showsFreePrec _ (CTuple12ND x y z w t s r q p o n m) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 m .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 n .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 o .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 p .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 q .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 r .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 s .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 t .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q, ShowFree p, ShowFree o, ShowFree n) => ShowFree (CTuple13ND x y z w v u t s r q p o n) where
+  showsFreePrec _ (CTuple13ND x y z w t s r q p o n m l) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 l .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 m .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 n .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 o .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 p .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 q .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 r .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 s .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 t .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q, ShowFree p, ShowFree o, ShowFree n, ShowFree m) => ShowFree (CTuple14ND x y z w v u t s r q p o n m) where
+  showsFreePrec _ (CTuple14ND x y z w t s r q p o n m l k) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 k .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 l .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 m .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 n .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 o .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 p .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 q .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 r .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 s .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 t .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
+
+instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q, ShowFree p, ShowFree o, ShowFree n, ShowFree m, ShowFree l) => ShowFree (CTuple15ND x y z w v u t s r q p o n m l) where
+  showsFreePrec _ (CTuple15ND x y z w t s r q p o n m l k j) =
+    showsStringCurry ")" .
+    showsFreePrecCurry 0 j .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 k .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 l .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 m .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 n .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 o .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 p .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 q .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 r .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 s .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 t .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 w .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 z .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 y .
+    showsStringCurry "," .
+    showsFreePrecCurry 0 x .
+    showsStringCurry "("
 
 -- -----------------------------------------------------------------------------
 -- Foreign Conversion

@@ -39,11 +39,12 @@ getGHCOptsFor hasMain deps targetFile
   KMCCOpts { frontendOpts, optCompilerVerbosity, optOptimizationBaseLevel } =
   ["-fforce-recomp" | optForce frontendOpts] ++
   ["-v" | optCompilerVerbosity > 3] ++
-  (if hasMain then ["-main-is", mainId] else ["-no-hs-main"]) ++
+  ["-v0" | optCompilerVerbosity == 0] ++
+  (if hasMain then ["-main-is", mainId] else []) ++
   ["-i rts"] ++
   ["-O " ++ show optOptimizationBaseLevel] ++
   getGHCSrcDirOpts deps frontendOpts ++
-  [targetFile]
+  [takeBaseName targetFile]
   where
     mainId = case last deps of
       (ModuleIdent _ ms, _) -> "Curry_" ++ intercalate "." ms ++ ".main##"

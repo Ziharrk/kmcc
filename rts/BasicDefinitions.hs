@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes    #-}
 {-# LANGUAGE DerivingStrategies     #-}
 {-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
@@ -16,6 +17,7 @@ import Control.Exception
 import Control.Monad
 import Control.Monad.Codensity
 import Control.Monad.State
+import Data.List
 import System.IO.Unsafe
 import GHC.IO.Exception
 
@@ -41,7 +43,40 @@ fromHaskell :: FromHs a => HsEquivalent a -> Curry a
 fromHaskell x = unsafePerformIO $ catch (evaluate (from x) >>= \x' -> return (return x'))
                                 $ \Failed -> return mzero
 
-class (ToHs a, FromHs a, Shareable Curry a, Unifiable a, NormalForm a, HasPrimitiveInfo a) => Curryable a
+class ShowFree a where
+  showsFreePrec :: Int -> a -> ShowSFree
+  showFree :: a -> [(Integer, String)] -> Curry String
+  showFree x fm = snd $ showsFreePrec 0 x (fm, return "")
+
+type ShowSFree = ([(Integer, String)], Curry String) -> ([(Integer, String)], Curry String)
+
+showsFreePrecCurry :: ShowFree a => Int -> Curry a -> ([(Integer, String)], Curry String)
+                   -> ([(Integer, String)], Curry String)
+showsFreePrecCurry p x (fm, s) = (fm,) $ Curry $ do
+  x' <- deref x
+  unCurry $ case x' of
+    Var _ i -> showsVar i fm s
+    Val _ y -> snd $ showsFreePrec p y (fm, s)
+
+showFreeCurry :: ShowFree a => Curry a -> [(Integer, String)] -> Curry String
+showFreeCurry x fm = snd $ showsFreePrecCurry 0 x (fm, return "")
+
+showsBracketsCurry :: Int -> ShowSFree -> ShowSFree
+showsBracketsCurry 0 s = s
+showsBracketsCurry _ s = showsStringCurry ")" . s . showsStringCurry "("
+
+showSpaceCurry :: ShowSFree -> ShowSFree -> ShowSFree
+showSpaceCurry f g = g . showsStringCurry " " . f
+
+showsStringCurry :: String -> ShowSFree
+showsStringCurry s (fm, x) = (fm, fmap (++s) x)
+
+showsVar :: Integer -> [(Integer, String)] -> Curry String -> Curry String
+showsVar i fm = case lookup i fm of
+  Nothing -> fmap (++ ("_" ++ show i))
+  Just s  -> fmap (++ s)
+
+class (ToHs a, FromHs a, ShowFree a, Shareable Curry a, Unifiable a, NormalForm a, HasPrimitiveInfo a) => Curryable a
 
 type instance HsEquivalent Integer = Integer
 
@@ -50,6 +85,9 @@ instance ToHs Integer where
 
 instance FromHs Integer where
   from = id
+
+instance ShowFree Integer where
+  showsFreePrec _ x = showsStringCurry (show x)
 
 instance Curryable Integer
 
@@ -72,6 +110,9 @@ instance Unifiable Double where
 instance NormalForm Double where
   nfWith _ !x = return x
 
+instance ShowFree Double where
+  showsFreePrec _ x = showsStringCurry (show x)
+
 instance Curryable Double
 
 type instance HsEquivalent Char = Char
@@ -92,6 +133,9 @@ instance Unifiable Char where
 
 instance NormalForm Char where
   nfWith _ !x = return x
+
+instance ShowFree Char where
+  showsFreePrec _ x = showsStringCurry (show x)
 
 instance Curryable Char
 
@@ -120,6 +164,9 @@ instance Shareable Curry a => Unifiable (IO a) where
 
 instance NormalForm (IO a) where
   nfWith _ !x = return x
+
+instance ShowFree (IO a) where
+  showsFreePrec _ _ = showsStringCurry "<<IO>>"
 
 instance Curryable a => Curryable (IO a)
 
@@ -156,6 +203,9 @@ instance Unifiable (LiftedFunc a b) where
 
 instance NormalForm (LiftedFunc a b) where
   nfWith _ !x = return x
+
+instance ShowFree (LiftedFunc a b) where
+  showsFreePrec _ _ = showsStringCurry "<<Function>>"
 
 instance Curryable (LiftedFunc a b)
 
@@ -235,13 +285,39 @@ unSingle (Single x) = x
 unSingle _ = error "mainWrapper: not a single result"
 
 exprWrapperDet :: (ForeignType a, Foreign a ~ String) => a -> IO ()
-exprWrapperDet a = catch (evaluate (toForeign a)) (\Failed -> return "**No value found") >>= putStrLn
+exprWrapperDet a = catch (evaluate (toForeign a)) (\Failed -> fail "**No value found") >>= putStrLn
 
-exprWrapperNDet :: (ForeignType b, Foreign b ~ String, ToHs a, HsEquivalent a ~ b) => Curry a -> IO ()
-exprWrapperNDet a = printRes (bfs $ evalCurryTree (toHaskell a))
-  where printRes [] = putStrLn "**No value found"
-        printRes xs = mapM_ (putStrLn . toForeign) xs
+exprWrapperNDet :: ShowFree a => [(String, Integer)] -> Bool -> Curry (CurryVal a, [VarInfo]) -> IO ()
+exprWrapperNDet fvs b ca = printRes (bfs $ evalCurryTree extract)
+  where
+    sortedFvs = map fst $ sortOn snd fvs
 
+    printRes [] = fail "**No value found"
+    printRes xs = mapM_ putStrLn xs
+
+    extract = do
+      (va, ids) <- ca
+      let swapped = map (\(x, y) -> (y, x)) fvs
+      str <- showFreeCurry (Curry (return va)) swapped
+      vs <- mapM (\(VarInfo @a i) -> showFreeCurry (Curry $ deref $ Curry $ return $ Var @a 0 i) swapped) ids
+      let vs' = zipWith (\s n -> n ++ " = " ++ s) vs sortedFvs
+      let str' = if null vs || not b then str else "{ " ++ intercalate "\n, " vs' ++ " } " ++ str
+      return str'
+
+data VarInfo = forall a. (ShowFree a, HasPrimitiveInfo a, Shareable Curry a) => VarInfo Integer
+
+getVarId :: forall a. ShowFree a => Curry a -> ND VarInfo
+getVarId ca = do
+  a <- unCurry ca
+  case a of
+    Var _ i -> return $ VarInfo @a i
+    _ -> error "getVarId: not a variable"
+
+addVarIds :: Curry a -> [ND VarInfo] -> Curry (CurryVal a, [VarInfo])
+addVarIds ca xs = Curry $ do
+  ids <- sequence xs
+  a <- unCurry ca
+  return (Val Shared (a, ids))
 
 class ForeignType a where
   type Foreign a = b | b -> a

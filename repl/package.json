@@ -1,0 +1,18 @@
+{
+    "name": "kmcc-repl",
+    "version": "1.0.0",
+    "author": "Kai-Oliver Prott <kpr@informatik.uni-kiel.de>",
+    "synopsis": "A REPL for KMCC built on top of the universal Curry REPL",
+    "category": [ "Programming" ],
+    "license": "BSD-3-Clause",
+    "licenseFile": "LICENSE",
+    "dependencies": {
+        "base"           : ">=3.0.0, <4.0.0",
+        "curry-repl"     : ">=1.1.0, <2.0.0"
+    },
+    "executable": {
+        "name": "kmcc",
+        "main": "KMCC.ReplConfig"
+    },
+    "configModule": "KMCC.PkgConfig"
+}

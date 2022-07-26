@@ -1,11 +1,12 @@
 module CmdParser where
 
+import Data.Either ( fromLeft, fromRight )
 import Data.Maybe ( fromMaybe )
 import Options.Applicative
 
 import CompilerOpts ( Options(..), KnownExtension, parseOpts, updateOpts, Verbosity (..) )
 
-import Options ( KMCCOpts(..), defaultOpts, defaultFrontendOpts )
+import Options ( KMCCOpts(..), InfoCommand(..), defaultOpts, defaultFrontendOpts )
 
 getCmdOpts :: IO KMCCOpts
 getCmdOpts = customExecParser (prefs showHelpOnEmpty)
@@ -18,10 +19,6 @@ optParser = adjustDefaultOpts
   <*> switch (long "compile" <> short 'c' <> help "Compile only, do not generate an executable")
   <*> switch (long "quiet" <> short 'q' <> help "Suppress all output (equivalent to -v0, overwritten by -vn with n >= 1)")
 
-  <*> switch (long "compiler-name" <> help "Print the compiler name (kmcc) and exit")
-  <*> switch (long "numeric-version" <> help "Print the compiler version and exit")
-  <*> switch (long "base-version" <> help "Print the base package version for this compiler and exit")
-
   <*> optional (option parseVerbosity (long "verbose" <> short 'v' <> metavar "n" <> help "Set verbosity level to n, with 0 <= n <= 4, default = 1"))
   <*> many (strOption (hidden <> long "import-dir" <> short 'i' <> metavar "IDIR" <> help "Add IDIR to the import search path"))
   <*> optional (strOption (hidden <> long "output-dir" <> short 'o' <> metavar "ODIR" <> help "Write output to ODIR"))
@@ -31,8 +28,19 @@ optParser = adjustDefaultOpts
 
   <*> switch (long "disable-det-optimization" <> help "Disable optimization of deterministic programs (not included in -O0)")
   <*> optional (option parseOptimization (long "optimization" <> short 'O' <> metavar "n" <> help "Set optimization level to n, with 0 <= n <= 2, default = 1"))
+  <*> many (option parseVarArg (short 'V' <> internal))
+  <*> switch (long "bindings" <> short 'B' <> help "Enable printing of variable bindings")
 
-  <*> argument str (metavar "FILE" <> help "Curry file to compile" <> completer (bashCompleter "file"))
+  <*> (Left <$> many (
+              flag' CompilerName   (long "compiler-name" <> help "Print the compiler name (kmcc) and exit")
+          <|> flag' NumericVersion (long "numeric-version" <> help "Print the compiler version and exit")
+          <|> flag' BaseVersion    (long "base-version" <> help "Print the base package version for this compiler and exit"))
+      <|> Right <$> argument str (metavar "FILE" <> help "Curry file to compile" <> completer (bashCompleter "file")))
+
+parseVarArg :: ReadM (String, Int)
+parseVarArg = eitherReader $ \s -> case break (== '=') s of
+  (n, '=':v) -> Right (n, read v)
+  _          -> Left $ "Expected NAME=INT, got: " ++ s
 
 parseExtension :: ReadM KnownExtension
 parseExtension = eitherReader $ \s -> case reads s of
@@ -64,16 +72,18 @@ parseOptimization = eitherReader $ \s -> case reads s of
   _                    -> Left $ "Invalid optimization level (0 <= n <= 2): " ++ s
 
 adjustDefaultOpts :: Bool -> Bool -> Bool
-                  -> Bool -> Bool -> Bool
                   -> Maybe Int -> [FilePath] -> Maybe FilePath -> Maybe (Options -> Options) -> [KnownExtension]
                   -> Bool -> Maybe Int
-                  -> FilePath
+                  -> [(String, Int)] -> Bool
+                  -> Either [InfoCommand] FilePath
                   -> KMCCOpts
-adjustDefaultOpts f c q cn cv bv v is o p x dOpt opt t = defaultOpts
-  { optTarget = t
+adjustDefaultOpts f c q v is o p x dOpt opt vars b torv = defaultOpts
+  { optTarget = fromRight "" torv
   , optCompilerVerbosity = verbosity
   , optCompileOnly = c
-  , optInfo = (cn, cv, bv)
+  , optInfo = fromLeft [] torv
+  , optVarNames = vars
+  , optShowBindings = b
   , optOptimizationBaseLevel = fromMaybe (optOptimizationBaseLevel defaultOpts) opt
   , optOptimizationDeterminism = not dOpt && optOptimizationDeterminism defaultOpts
   , frontendOpts = adjustFrontendOpts

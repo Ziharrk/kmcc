@@ -4,6 +4,7 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Curry.ConvertToHs (compileToHs, haskellName) where
 
+import Control.Arrow (first, second)
 import Control.Monad (void, replicateM, when)
 import Control.Monad.Except (ExceptT, MonadError (..), runExceptT)
 import Control.Monad.Reader (ReaderT, MonadReader (..), runReaderT)
@@ -11,7 +12,7 @@ import Control.Monad.State (StateT, MonadState (..), evalStateT, modify)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Coerce (coerce)
 import Data.Char (toLower, toUpper)
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, sort, find, (\\))
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
 import Language.Haskell.Exts hiding (Literal, Cons, Kind, QName)
@@ -20,11 +21,14 @@ import System.Directory (doesFileExist)
 import System.FilePath (replaceExtension, replaceBaseName, takeBaseName)
 import System.IO (openFile, IOMode (..), utf8, hSetEncoding, hPutStr, hClose, hGetContents')
 
-import Base.Messages (status, abortWithMessages, Message, message)
+import Base.Messages (status, abortWithMessages, message)
+import Curry.Base.Message (Message(..))
 import Curry.Base.Ident (ModuleIdent)
+import Curry.Base.Pretty (text)
+import Curry.Base.SpanInfo (SpanInfo(..))
 import Curry.FlatCurry hiding (Let)
 import Curry.FlatCurry.Annotated.Type (APattern(..), ABranchExpr(..), AExpr(..))
-import Curry.FlatCurry.Typed.Type (TRule(..), TFuncDecl(..), TProg(..))
+import Curry.FlatCurry.Typed.Type (TRule(..), TFuncDecl(..), TProg(..), TExpr (..))
 import Curry.Files.Filenames (addOutDirModule)
 import CompilerOpts (Options(..))
 import CurryBuilder (smake, compMessage)
@@ -126,7 +130,10 @@ instance ToHs TProgWithFilePath where
         tyds <- mapM convertToHs tys
         funds <- mapM convertToHs fs
         tydsM <- mapM convertToMonadicHs tys
-        fundsM <- mapM convertToMonadicHs fs
+        fs' <- case mi of
+          Just ty -> patchMainPre ty opts fs
+          Nothing -> return fs
+        fundsM <- mapM convertToMonadicHs fs'
         let visT = mapMaybe getVisT tys
         let visF = mapMaybe getVisF fs
         header <- convertToHs (MS (nm, visT, visF))
@@ -154,9 +161,9 @@ instance ToHs TProgWithFilePath where
     let ps' = defaultPragmas ++ extPragmas
     let im' = defaultImports ++ extImports ++ curryImports
     let ds' = extDs ++ curryDs
-    let (header', ds'') = case mi of
-          Just ty -> patchMain ty opts header ds'
-          Nothing -> (header, ds')
+    (header', ds'') <- case mi of
+          Just ty -> patchMainPost ty opts header ds'
+          Nothing -> return (header, ds')
     return (Module () (Just header') ps' im' ds'')
     where
       getVisT (Type qname Public _ cs) = Just (qname, mapMaybe getVisC cs)
@@ -173,25 +180,98 @@ instance ToHs TProgWithFilePath where
       getVisF (TFunc qname _ Public _ _) = Just qname
       getVisF _ = Nothing
 
-patchMain :: TypeExpr -> KMCCOpts -> ModuleHead () -> [Decl ()] -> (ModuleHead (), [Decl ()])
-patchMain ty _ (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds' = -- TODO: pass options to wrapper
-  (ModuleHead () nm w (Just (ExportSpecList () (mainExport:es))), mainDecl:ds')
-  where
-    hasDetMain = EVar () (Qual () nm (Ident () "main")) `elem` es
-    mainExport = EVar () (Qual () nm (Ident () "main##"))
-    mainDecl = PatBind () (PVar () (Ident () "main##")) mainRHS Nothing
-    mainRHS = UnGuardedRhs () $ case ty of
+
+-- after pre-patching:
+-- main still has the same name, but it gets all variables specified on the cmd as arguments.
+-- However, if main is recursive, the recursive call is unchanged, i.e., wrong for now.
+patchMainPre :: TypeExpr -> KMCCOpts -> [TFuncDecl] -> CM [TFuncDecl]
+patchMainPre ty opts fs = case ty of
+  TCons ("Prelude","IO") _ -> return fs
+  _                        -> do
+    mapM patchMainDecl fs
+    where
+      patchMainDecl (TFunc qname _ vis fty (TRule [] e))
+        | snd qname == "main" = do
+          let (vs, e') = splitFreeVars e
+          let check [] = return []
+              check ((n, i):xs)
+                | Just v <- find ((==i) . fst) vs = (v:) <$> check xs
+                | otherwise         = throwError $ return @[] $ Message NoSpanInfo $ text $
+                  "Variable specified on the command line with name and index " ++
+                  show (n, i) ++
+                  " is not free in the expression."
+          specifiedVs <- check (optVarNames opts)
+          let ty' = foldr (FuncType . snd) fty specifiedVs
+          return (TFunc qname (length specifiedVs) vis ty' (TRule specifiedVs (TFree (vs \\ specifiedVs) e')))
+      patchMainDecl f = return f
+
+-- Now we need to
+-- generate the replacement for the function that was extended with arguments (gets the mainND name)
+-- update the name of the function that was extended with arguments to mainND##
+-- call the wrapper on the mainND## function, or if main is actually deterministic or IO, call the respective wrapper
+patchMainPost :: TypeExpr -> KMCCOpts -> ModuleHead () -> [Decl ()] -> CM (ModuleHead (), [Decl ()])
+patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do -- TODO: pass options to wrapper
+  let hasDetMain = EVar () (Qual () nm (Ident () "main")) `elem` es
+  let mainExport = EVar () (Qual () nm (Ident () "main##"))
+
+  (mainExpr, ds') <- case ty of
       TCons ("Prelude","IO") _
-        | hasDetMain -> App () (Hs.Var () mainWrapperDetQualName) (Hs.Var () (Qual () nm (Ident () "main")))
-        | otherwise  -> App () (Hs.Var () mainWrapperNDetQualName) (Hs.Var () (Qual () nm (Ident () "mainND")))
+        | hasDetMain -> return (App () (Hs.Var () mainWrapperDetQualName) (Hs.Var () (Qual () nm (Ident () "main"))), ds)
+        | otherwise  -> return (App () (Hs.Var () mainWrapperNDetQualName) (Hs.Var () (Qual () nm (Ident () "mainND"))), ds)
       _
-        | hasDetMain -> App () (Hs.Var () exprWrapperDetQualName) (Hs.Var () (Qual () nm (Ident () "main")))
-        | otherwise  -> App () (Hs.Var () exprWrapperNDetQualName) (Hs.Var () (Qual () nm (Ident () "mainND")))
-patchMain _ _ h ds = (h, ds)
+        | hasDetMain -> return (App () (Hs.Var () exprWrapperDetQualName) (Hs.Var () (Qual () nm (Ident () "main"))), ds)
+        | otherwise  -> do
+          let findMainDecl [] = throwError $ return @[] $ Message NoSpanInfo $ text "Main function not found"
+              findMainDecl ((FunBind _ [Match _ (Ident () "mainND") [] (UnGuardedRhs () e) Nothing]):bs) = return (e, bs)
+              findMainDecl (b:bs) = second (b:) <$> findMainDecl bs
+              findMainSig [] = throwError $ return @[] $ Message NoSpanInfo $ text "Main type signature not found"
+              findMainSig ((TypeSig _ [Ident () "mainND"] mainTy):bs) = return (mainTy, bs)
+              findMainSig (b:bs) = second (b:) <$> findMainSig bs
+          (mainRhsE, withoutMainDecl) <- findMainDecl ds
+          (mainType, rest) <- findMainSig withoutMainDecl
+          let mainPats = getLiftedPats mainRhsE
+          let getVar (PVar _ v) = Just v
+              getVar _          = Nothing
+          let mainVs = mapMaybe getVar mainPats
+
+          let mainNDHashDecl = FunBind () [Match () (Ident () "mainND##") [] (UnGuardedRhs () mainRhsE) Nothing]
+          let mainNDHashType = TypeSig () [Ident () "mainND##"] mainType
+
+          let e' = foldl (\e -> mkMonadicApp e . Hs.Var () . UnQual ()) (Hs.Var () (Qual () nm (Ident () "mainND##"))) mainVs
+          let mainNDExpr = foldr mkShareBind e' (zip3 mainVs (repeat mkFree) (repeat One))
+          let mainNDDecl = FunBind () [Match () (Ident () "mainND") [] (UnGuardedRhs () mainNDExpr) Nothing]
+
+          let mainE = mkVarReturn opts mainVs (Hs.Var () (Qual () nm (Ident () "mainND##")))
+          let varInfos = List () $ map (\(s,i) -> Tuple () Boxed [Hs.Lit () (String () s s), Hs.Lit () (Int () (toInteger i) (show i))]) (optVarNames opts)
+          let bindingOpt = Hs.Var () $ if optShowBindings opts then trueQualName else falseQualName
+          return (App () (App () (App () (Hs.Var () exprWrapperNDetQualName) varInfos) bindingOpt) mainE, mainNDDecl:mainNDHashDecl:mainNDHashType:rest)
+
+  let mainDecl = PatBind () (PVar () (Ident () "main##")) (UnGuardedRhs () mainExpr) Nothing
+  return (ModuleHead () nm w (Just (ExportSpecList () (mainExport:es))), mainDecl:ds')
+patchMainPost _ _ h ds = return (h, ds)
+
+getLiftedPats :: Exp () -> [Pat ()]
+getLiftedPats (Hs.App _ _ (Lambda _ [p] e)) = p : getLiftedPats e
+getLiftedPats _ = []
+
+splitFreeVars :: TExpr -> ([(VarIndex, TypeExpr)], TExpr)
+splitFreeVars (TFree vs e) = first (vs++) (splitFreeVars e)
+splitFreeVars e = ([], e)
+
+mkVarReturn :: KMCCOpts -> [Name ()] -> Exp () -> Exp ()
+mkVarReturn opts fvs = go (map snd (optVarNames opts))
+  where
+    go xs e =
+      let mainE = foldl (\e' -> mkMonadicApp e' . Hs.Var () . UnQual ()) e fvs
+          eWithInfo = mkAddVarIds mainE (map (mkGetVarId . Hs.Var () . UnQual () . indexToName) (sort xs))
+      in foldr mkShareBind eWithInfo (zip3 fvs (repeat mkFree) (replicate (length fvs) Many))
 
 genInstances :: TypeDecl -> [Decl ()]
 genInstances (Type _ _ _ []) = []
-genInstances (Type qname _ vs cs) = map hsEquivDecl [0..length vs] ++
+genInstances (Type qname _ vs cs) =
+  [hsShowFreeDecl | not (isListOrTuple qname)]
+  ++
+  map hsEquivDecl [0..length vs] ++
   [ shareableDecl, hsToDecl, hsFromDecl, hsNarrowableDecl
   , hsUnifiableDecl, hsPrimitiveDecl, hsNormalFormDecl, hsCurryDecl ]
   where
@@ -235,6 +315,11 @@ genInstances (Type qname _ vs cs) = map hsEquivDecl [0..length vs] ++
         (IHApp () (IHCon () normalFormQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
           (map (TyVar () . indexToName . fst) vs))))
       (Just [InsDecl () (FunBind () (mapMaybe mkNfWithMatch cs))])
+    hsShowFreeDecl = InstDecl () Nothing
+      (IRule () Nothing (mkCurryCtxt vs)
+        (IHApp () (IHCon () showFreeClassQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
+          (map (TyVar () . indexToName . fst) vs))))
+      (Just [InsDecl () (FunBind () (mapMaybe mkShowsFreePrecMatch cs))])
     hsCurryDecl = InstDecl () Nothing
       (IRule () Nothing (mkCurryCtxt vs)
         (IHApp () (IHCon () curryClassQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
@@ -269,6 +354,9 @@ genInstances (Type qname _ vs cs) = map hsEquivDecl [0..length vs] ++
     mkNfWithMatch (Cons qname2 ar _ _) = fmap (\e -> Match () (Ident () "nfWith")
       [PVar () (Ident () "_f"), PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
       (UnGuardedRhs () e) Nothing) (preventDict mkNfWithImpl qname2 ar)
+    mkShowsFreePrecMatch (Cons qname2 ar _ _) = fmap (\e -> Match () (Ident () "showsFreePrec")
+      [PVar () (Ident () "_p"), PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
+      (UnGuardedRhs () e) Nothing) (preventDict mkShowsFreePrecImpl qname2 ar)
     preventDict f qname2 ar
       | not ("_Dict#" `isPrefixOf` snd qname2) = Just (f qname2 ar)
       | otherwise = Nothing
@@ -309,7 +397,16 @@ genInstances (Type qname _ vs cs) = map hsEquivDecl [0..length vs] ++
                        (Hs.Var () (convertTypeNameToMonadicHs qname2))
                        [1..ar]))
       (map (App () (Hs.Var () (UnQual () (Ident () "_f"))) . Hs.Var () . UnQual () . indexToName) [1..ar])
-    maybeAddReturnTrue [] = [Qualifier () $ mkReturn (Hs.Var () (Qual () (ModuleName () "P") (Ident () "True")))]
+    mkShowsFreePrecImpl qname2 0 = mkShowStringCurry (snd qname2)
+    mkShowsFreePrecImpl qname2 ar
+      | isOpQName qname2 =
+        mkShowsBrackets (Hs.Var () (UnQual () (Ident () "_p")))
+        (mkShowSpace (mkShowSpace (mkShowsCurryHighPrec (indexToName 1)) (mkShowStringCurry (snd qname2)))
+          (mkShowsCurryHighPrec (indexToName 2)))
+      | otherwise        =
+        mkShowsBrackets (Hs.Var () (UnQual () (Ident () "_p")))
+        (foldl1 mkShowSpace (mkShowStringCurry (snd qname2) : map (mkShowsCurryHighPrec . indexToName) [1..ar]))
+    maybeAddReturnTrue [] = [Qualifier () $ mkReturn (Hs.Var () trueQualName)]
     maybeAddReturnTrue xs = xs
     mkLambda [] e = e
     mkLambda ps e = Paren () (Hs.Lambda () ps e)
@@ -489,10 +586,10 @@ instance ToHs RuleInfo where
 instance ToMonadicHs RuleInfo where
   convertToMonadicHs (RI (qname, TRule args expr)) = do
     analysis <- ask
-    e <- convertToMonadicHs (annotateND analysis expr)
-    let e' = foldr (\v -> mkReturnFunc .  Lambda () [PVar () $ indexToName $ fst v]) e args
+    e' <- convertToMonadicHs (annotateND analysis expr)
+    let e'' = foldr (\v -> mkReturnFunc .  Lambda () [PVar () $ indexToName $ fst v]) e' args
     return $ Match () (convertFuncNameToMonadicHs (Unqual qname)) []
-      (UnGuardedRhs () e') Nothing
+      (UnGuardedRhs () e'') Nothing
   convertToMonadicHs (RI (qname, TExternal _ str)) = return $
     Match () (convertFuncNameToMonadicHs (Unqual qname)) []
       (UnGuardedRhs () (Hs.Var () (UnQual () (Ident () (escapeFuncName unqualStr ++ "ND#"))))) Nothing
@@ -525,7 +622,7 @@ instance ToHs (AExpr (TypeExpr, NDInfo)) where
     e' <- convertToHs e
     bs' <- mapM convertToHs bs
     return $ Hs.Case () e' (bs' ++ [failedBranch])
-  convertToHs (ATyped _ e ty) = ExpTypeSig () <$> convertToHs e <*> convertQualType ty
+  convertToHs (ATyped _ e ty) = ExpTypeSig () <$> convertToHs e <*> convertToHs ty
 
 failedBranch :: Alt ()
 failedBranch = Alt () (PWildCard ())
@@ -568,7 +665,7 @@ instance ToMonadicHs (AExpr (TypeExpr, NDInfo)) where
     return $ mkBind e' $ Hs.LCase () (bs' ++ [failedMonadicBranch])
   convertToMonadicHs ex@(ATyped (ty, Det) _ _)
     | isFunFree ty = mkFromHaskell <$> convertToHs ex
-  convertToMonadicHs (ATyped _ e ty) = ExpTypeSig () <$> convertToMonadicHs e <*> convertToMonadicHs ty
+  convertToMonadicHs (ATyped _ e ty) = ExpTypeSig () <$> convertToMonadicHs e <*> convertQualType ty
 
 failedMonadicBranch :: Alt ()
 failedMonadicBranch = Alt () (PWildCard ())
@@ -645,12 +742,14 @@ defaultPragmas =
   [ LanguagePragma () [Ident () "NoImplicitPrelude"]
   , LanguagePragma () [Ident () "KindSignatures"]
   , LanguagePragma () [Ident () "TypeOperators"]
+  , LanguagePragma () [Ident () "TypeFamilies"]
   , LanguagePragma () [Ident () "ExplicitForAll"]
   , LanguagePragma () [Ident () "ImpredicativeTypes"]
   , LanguagePragma () [Ident () "QuantifiedConstraints"]
   , LanguagePragma () [Ident () "LambdaCase"]
   , LanguagePragma () [Ident () "MagicHash"]
   , LanguagePragma () [Ident () "MultiParamTypeClasses"]
+  , LanguagePragma () [Ident () "UndecidableInstances"]
   , OptionsPragma () (Just GHC) "-w " -- Space is important here
   ]
 
@@ -704,11 +803,6 @@ escapeName s
   where
     replaceChar c | Just r <- lookup c opRenaming = r
                   | otherwise = return c
-
-tupleStringArity :: String -> Maybe Int
-tupleStringArity s = case s of
-  '(':rest | last s == ')' -> Just $ length rest
-  _                        -> Nothing
 
 opRenaming :: [(Char, String)]
 opRenaming =

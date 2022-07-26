@@ -2,6 +2,7 @@ module Curry.ConvertUtils where
 
 import Language.Haskell.Exts hiding (Kind)
 
+import Curry.Base.Ident (isInfixOp, mkIdent)
 import Curry.FlatCurry (TVarWithKind, Kind (..))
 import Curry.FlatCurry.Annotated.Type (AExpr (..), VarIndex, ABranchExpr (..))
 
@@ -132,6 +133,39 @@ mkLazyUnify e = App () (App () (Var () lazyUnifyQualName) e)
 mkAddToVarHeap :: Exp () -> Exp () -> Exp ()
 mkAddToVarHeap e = App () (App () (Var () addToVarHeapQualName) e)
 
+mkShowStringCurry :: String -> Exp ()
+mkShowStringCurry s = App () (Var () showStringCurryQualName) (Lit () (String () s s))
+
+mkShowsCurryHighPrec :: Name () -> Exp ()
+mkShowsCurryHighPrec n = App () (App () (Var () showsFreePrecCurryQualName) (Lit () (Int () 9 "9"))) (Var () (UnQual () n))
+
+mkShowSpace :: Exp () -> Exp () -> Exp ()
+mkShowSpace e1 = App () (App () (Var () showSpaceCurryQualName) e1)
+
+mkShowsBrackets :: Exp () -> Exp () -> Exp ()
+mkShowsBrackets e1 = App () (App () (Var () showsBracketsCurryQualName) e1)
+
+mkGetVarId :: Exp () -> Exp ()
+mkGetVarId = App () (Var () getVarIdQualName)
+
+mkAddVarIds :: Exp () -> [Exp ()] -> Exp ()
+mkAddVarIds e es = App () (App () (Var () addVarIdsQualName) e) (List () es)
+
+showsBracketsCurryQualName :: QName ()
+showsBracketsCurryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "showsBracketsCurry")
+
+showSpaceCurryQualName :: QName ()
+showSpaceCurryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "showSpaceCurry")
+
+showsFreePrecCurryQualName :: QName ()
+showsFreePrecCurryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "showsFreePrecCurry")
+
+getVarIdQualName :: QName ()
+getVarIdQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "getVarId")
+
+addVarIdsQualName :: QName ()
+addVarIdsQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "addVarIds")
+
 mplusQualName :: QName ()
 mplusQualName = Qual () (ModuleName () "M") (Ident () "mplus")
 
@@ -195,6 +229,12 @@ curryClassQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Curry
 normalFormQualName :: QName ()
 normalFormQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "NormalForm")
 
+showFreeClassQualName :: QName ()
+showFreeClassQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "ShowFree")
+
+showStringCurryQualName :: QName ()
+showStringCurryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "showsStringCurry")
+
 primitiveQualName :: QName ()
 primitiveQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "HasPrimitiveInfo")
 
@@ -228,6 +268,26 @@ exprWrapperDetQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "e
 exprWrapperNDetQualName :: QName ()
 exprWrapperNDetQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "exprWrapperNDet")
 
+trueQualName :: QName ()
+trueQualName = Qual () (ModuleName () "P") (Ident () "True")
+
+falseQualName :: QName ()
+falseQualName = Qual () (ModuleName () "P") (Ident () "False")
+
 appendName :: String -> Name () -> Name ()
 appendName suff (Ident  () s) = Ident  () (s ++ suff)
 appendName suff (Symbol () s) = Symbol () (s ++ suff)
+
+isListOrTuple :: (String, String) -> Bool
+isListOrTuple ("Prelude", "[]")   = True
+isListOrTuple ("Prelude", xs)
+  | Just _ <- tupleStringArity xs = True
+isListOrTuple _                   = False
+
+tupleStringArity :: String -> Maybe Int
+tupleStringArity s = case s of
+  '(':rest | last s == ')' -> Just $ length rest
+  _                        -> Nothing
+
+isOpQName :: (String , String) -> Bool
+isOpQName (_, s) = isInfixOp (mkIdent s)

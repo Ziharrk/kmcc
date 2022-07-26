@@ -1,9 +1,10 @@
 .stack-work/
 .vscode/
 .curry/
-bin/curry-frontend
-bin/kmcc
+bin/kmcc-frontend
+bin/kmcc_repl
 bin/kmcc_c
+*/.cpm/
 
 *.lock
 *.hi
