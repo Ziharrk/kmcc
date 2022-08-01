@@ -78,7 +78,9 @@ countVarUse (ALet _ bs e) vidx = case mconcat (map (\((_, _), b) -> countVarUse 
   _ -> Many
 countVarUse (AFree _ _ e) vidx = countVarUse e vidx
 countVarUse (AOr _ e1 e2) vidx = max (countVarUse e1 vidx) (countVarUse e2 vidx)
-countVarUse (ACase _ _ e bs) vidx = max (countVarUse e vidx) (maximum (map (\(ABranch _ e') -> countVarUse e' vidx) bs))
+countVarUse (ACase _ _ e bs) vidx = maximum (map (\(ABranch _ e') -> scrUse <> countVarUse e' vidx) bs)
+  where
+    scrUse = countVarUse e vidx
 countVarUse (ALit _ _) _ = None
 countVarUse (ATyped _ e _) vidx = countVarUse e vidx
 
