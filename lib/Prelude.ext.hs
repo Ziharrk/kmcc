@@ -502,17 +502,13 @@ amp# _     _     = False
 ampND# :: Curry (LiftedFunc BoolND (LiftedFunc BoolND BoolND))
 ampND# = BasicDefinitions.liftConvert2 amp#
 
-eqcolonlteq# :: a -> a -> Bool
-eqcolonlteq# a1 a2 = P.undefined -- TODO
+eqcolonlteqND# :: Curryable a => Curry (LiftedFunc a (LiftedFunc a BoolND))
+eqcolonlteqND# = BasicDefinitions.returnFunc (\a1 -> BasicDefinitions.returnFunc
+  (BasicDefinitions.unifyL a1 P.>=> (BasicDefinitions.fromHaskell . fromForeign)))
 
-eqcolonlteqND# :: Curry (LiftedFunc a (LiftedFunc a BoolND))
-eqcolonlteqND# = P.undefined -- TODO
-
-eqcoloneq# :: a -> a -> Bool
-eqcoloneq# a1 a2 = P.undefined -- TODO
-
-eqcoloneqND# :: Curry (LiftedFunc a (LiftedFunc a BoolND))
-eqcoloneqND# = P.undefined -- TODO
+eqcoloneqND# :: Curryable a => Curry (LiftedFunc a (LiftedFunc a BoolND))
+eqcoloneqND# = BasicDefinitions.returnFunc (\a1 -> BasicDefinitions.returnFunc
+  (BasicDefinitions.unify a1 P.>=> (BasicDefinitions.fromHaskell . fromForeign)))
 
 cond# :: Bool -> a -> a
 cond# True a = a

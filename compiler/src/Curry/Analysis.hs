@@ -13,7 +13,7 @@ import Control.Monad.Except ( ExceptT (..), MonadError (..), runExceptT )
 import Control.Monad.State ( StateT (..), MonadState, evalStateT, get, put, modify' )
 import Data.Binary ( decodeFileOrFail, Binary, encodeFile )
 import Data.Map ( Map )
-import qualified Data.Map as Map ( empty, restrictKeys, lookup, insert, findWithDefault, unions, union, map )
+import qualified Data.Map as Map ( empty, restrictKeys, lookup, insert, findWithDefault, unions, union, map, fromList )
 import Data.Set ( Set )
 import qualified Data.Set as Set ( empty, insert )
 import GHC.Generics ( Generic )
@@ -28,6 +28,7 @@ import CurryBuilder ( smake, compMessage )
 import CompilerOpts ( Options(..) )
 import Curry.Files.Filenames ( addOutDirModule )
 import Options ( KMCCOpts (frontendOpts, optOptimizationDeterminism), dumpMessage )
+import Debug.Trace (traceShow)
 
 type NDAnalysisResult = Map QName NDInfo
 
@@ -147,10 +148,13 @@ checkDeterministic (TRule _ expr) mp = trTExpr var lit comb lt free o cse branch
     cse _ e bs = max e (maximum (minBound : bs))
     branch _ e = e
     typed e _ = e
-checkDeterministic (TExternal _ ext) _ = Map.findWithDefault Det ext externalInfoMap
+checkDeterministic (TExternal _ ext) _ = let res = Map.findWithDefault Det ext externalInfoMap in traceShow (ext, res) res
 
 externalInfoMap :: Map String NDInfo
-externalInfoMap = mempty -- Map.fromList []
+externalInfoMap = Map.fromList
+  [ ("Prelude.=:<=", NonDet)
+  , ("Prelude.=:=" , NonDet)
+  ]
 
 -- |Compute the filename of the analysis file for a source file
 analysisName :: FilePath -> FilePath
