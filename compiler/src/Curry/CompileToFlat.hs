@@ -20,7 +20,6 @@ import CompilerOpts ( Options(..), TargetType(..), DumpLevel (..) )
 import Modules hiding ( compileModule )
 import Transformations ( qual )
 import Checks ( expandExports )
-import Exports ( exportInterface )
 import Generators ( genTypedFlatCurry, genAnnotatedFlatCurry )
 
 import Curry.FrontendUtils ( runCurryFrontendAction )

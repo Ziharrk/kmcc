@@ -28,7 +28,6 @@ import CurryBuilder ( smake, compMessage )
 import CompilerOpts ( Options(..) )
 import Curry.Files.Filenames ( addOutDirModule )
 import Options ( KMCCOpts (frontendOpts, optOptimizationDeterminism), dumpMessage )
-import Debug.Trace (traceShow)
 
 type NDAnalysisResult = Map QName NDInfo
 
@@ -148,7 +147,7 @@ checkDeterministic (TRule _ expr) mp = trTExpr var lit comb lt free o cse branch
     cse _ e bs = max e (maximum (minBound : bs))
     branch _ e = e
     typed e _ = e
-checkDeterministic (TExternal _ ext) _ = let res = Map.findWithDefault Det ext externalInfoMap in traceShow (ext, res) res
+checkDeterministic (TExternal _ ext) _ = Map.findWithDefault Det ext externalInfoMap
 
 externalInfoMap :: Map String NDInfo
 externalInfoMap = Map.fromList
