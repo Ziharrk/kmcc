@@ -1,12 +1,13 @@
 module Curry.CompileToFlat (getDependencies, compileFileToFcy, checkForMain) where
 
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class ( liftIO )
+import Data.Bifunctor ( second )
+import Data.Binary ( decodeFileOrFail)
 import Data.Maybe ( mapMaybe, fromMaybe, catMaybes )
-import Data.Binary (decodeFileOrFail)
-import System.FilePath ((</>))
+import System.FilePath ( (</>) )
 
 import Base.Messages ( status )
-import Control.Monad (msum)
+import Control.Monad ( msum, void )
 import Curry.Base.Monad ( CYIO )
 import Curry.Base.Pretty ( Pretty(..) )
 import Curry.Base.Ident ( ModuleIdent )
@@ -16,11 +17,11 @@ import qualified Curry.Syntax.ShowModule as CS
 import CurryBuilder ( findCurry, processPragmas, adjustOptions, smake, compMessage)
 import CurryDeps ( flatDeps, Source(..) )
 import CompilerOpts ( Options(..), TargetType(..), DumpLevel (..) )
-import Modules (loadAndCheckModule, dumpWith, writeInterface, writeFlat, transModule)
-import Transformations (qual)
-import Checks (expandExports)
+import Modules hiding ( compileModule )
+import Transformations ( qual )
+import Checks ( expandExports )
 import Exports ( exportInterface )
-import Generators (genTypedFlatCurry, genAnnotatedFlatCurry)
+import Generators ( genTypedFlatCurry, genAnnotatedFlatCurry )
 
 import Curry.FrontendUtils ( runCurryFrontendAction )
 import Options (KMCCOpts (..), dumpMessage)
@@ -104,6 +105,13 @@ compileModule :: Options -> ModuleIdent -> FilePath -> CYIO TProg
 compileModule opts m fn = do
   mdl <- loadAndCheckModule opts m fn
   mdl' <- expandExports opts mdl
+  writeTokens   opts (fst mdl)
+  writeComments opts (fst mdl)
+  writeParsed   opts mdl
+  writeAST      opts (second void mdl)
+  let qmdl = qual mdl
+  writeHtml     opts qmdl
+  writeShortAST opts (second void qmdl)
   qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   -- generate interface file
   let intf = uncurry exportInterface qmdl'
