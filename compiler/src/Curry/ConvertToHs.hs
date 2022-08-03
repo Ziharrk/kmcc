@@ -118,6 +118,9 @@ type family HsEquivalent a = hs | hs -> a
 class ToHs a where
   convertToHs :: a -> CM (HsEquivalent a)
 
+class ToFlatHs a where
+  convertToFlatHs :: a -> CM (HsEquivalent a)
+
 class ToMonadicHs a where
   convertToMonadicHs :: a -> CM (HsEquivalent a)
 
@@ -129,6 +132,7 @@ instance ToHs TProgWithFilePath where
         im' <- mapM (convertToHs . IS) im
         tyds <- mapM convertToHs tys
         funds <- mapM convertToHs fs
+        fundsF <- mapM convertToFlatHs fs
         tydsM <- mapM convertToMonadicHs tys
         fs' <- case mi of
           Just ty -> patchMainPre ty opts fs
@@ -140,7 +144,7 @@ instance ToHs TProgWithFilePath where
         let extract (Just (x, y)) = [x,y]
             extract Nothing = []
         let insts = concatMap genInstances tys
-        let ds = insts ++ coerce (tyds ++ tydsM) ++ concatMap @[] extract (coerce (funds ++ fundsM))
+        let ds = insts ++ coerce (tyds ++ tydsM) ++ concatMap @[] extract (coerce (funds ++ fundsF ++ fundsM))
         return (header, im', ds)
     (extPragmas, extImports, extDs) <- liftIO $ doesFileExist fp >>= \case
       True -> do
@@ -435,8 +439,9 @@ instance ToHs ModuleHeadStuff where
       funcItem qname = do
         analysis <- ask
         return (EVar () (convertFuncNameToMonadicHs qname) : case Map.lookup qname analysis of
-          Just Det -> [EVar () $ convertFuncNameToHs qname]
-          _        -> [])
+          Just Det        -> [EVar () $ convertFuncNameToHs qname]
+          Just FlatNonDet -> [EVar () $ convertFuncNameToHs qname, EVar () $ convertFuncNameToFlatHs qname]
+          _               -> [])
 
 newtype ImportString = IS String
 type instance HsEquivalent ImportString = ImportDecl ()
@@ -497,18 +502,27 @@ instance ToHs TypeExpr where
   convertToHs (TCons qn tys) = foldl (TyApp ()) (TyCon () (convertTypeNameToHs qn)) <$> mapM convertToHs tys
   convertToHs (ForallType vs t) = TyForall () (Just $ map toTyVarBndr vs) Nothing <$> convertToHs t
 
+instance ToFlatHs TypeExpr where
+  convertToFlatHs (TVar idx) = return $ TyVar () (indexToName idx)
+  convertToFlatHs (FuncType t1 t2) = TyFun () . mkCurry . mkCurry <$> convertToFlatHs t1 <*> convertToFlatHs t2
+  convertToFlatHs (TCons qn tys) = foldl (TyApp ()) (TyCon () (convertTypeNameToFlatHs qn)) <$> mapM convertToFlatHs tys
+  convertToFlatHs (ForallType vs t) = TyForall () (Just (map toTyVarBndr vs)) (mkCurryCtxt vs) <$> convertQualTypeWith convertToFlatHs t
+
 instance ToMonadicHs TypeExpr where
   convertToMonadicHs (TVar idx) = return $ TyVar () (indexToName idx)
   convertToMonadicHs (FuncType t1 t2) = mkLiftedFunc <$> convertToMonadicHs t1 <*> convertToMonadicHs t2
   convertToMonadicHs (TCons qn tys) = foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qn)) <$> mapM convertToMonadicHs tys
-  convertToMonadicHs (ForallType vs t) = TyForall () (Just (map toTyVarBndr vs)) (mkCurryCtxt vs) <$> convertQualType t
+  convertToMonadicHs (ForallType vs t) = TyForall () (Just (map toTyVarBndr vs)) (mkCurryCtxt vs) <$> convertQualTypeWith convertToFlatHs t
 
 convertQualType :: TypeExpr -> CM (Type ())
-convertQualType ty
+convertQualType = convertQualTypeWith convertToMonadicHs
+
+convertQualTypeWith :: (TypeExpr -> CM (Type ())) -> TypeExpr -> CM (Type ())
+convertQualTypeWith f ty
   | ForallType _ _ <- ty = ty'
   | otherwise            = mkCurry <$> ty'
   where
-    ty' = convertToMonadicHs ty
+    ty' = f ty
 
 mkCurryCtxt :: [TVarWithKind] -> Maybe (Context ())
 mkCurryCtxt = mkQuantifiedCtxt mkCurryClassType
@@ -538,6 +552,18 @@ instance ToHs TFuncDecl where
         ty <- convertToHs texpr
         let tsig = TypeSig () [convertFuncNameToHs (Unqual qname)] ty
         match <- convertToHs (RI (qname, rule))
+        let f = FunBind () [match]
+        return $ HFD $ Just (tsig, f)
+      _ -> return $ HFD Nothing
+
+instance ToFlatHs TFuncDecl where
+  convertToFlatHs (TFunc qname _ _ texpr rule) = do
+    analysis <- ask
+    case Map.lookup qname analysis of
+      Just FlatNonDet -> do
+        ty <- convertQualTypeWith convertToFlatHs (normalizeCurryType texpr)
+        let tsig = TypeSig () [convertFuncNameToFlatHs (Unqual qname)] ty
+        match <- convertToFlatHs (RI (qname, rule))
         let f = FunBind () [match]
         return $ HFD $ Just (tsig, f)
       _ -> return $ HFD Nothing
@@ -578,6 +604,20 @@ instance ToHs RuleInfo where
   convertToHs (RI (qname, TExternal _ str)) = return $
     Match () (convertFuncNameToHs (Unqual qname)) []
       (UnGuardedRhs () (Hs.Var () (UnQual () (Ident () (escapeFuncName unqualStr ++ "#"))))) Nothing
+    where unqualStr = case dropWhile (/= '.') str of
+            ""  -> str
+            "." -> str
+            _:s -> s
+
+instance ToFlatHs RuleInfo where
+  convertToFlatHs (RI (qname, TRule args expr)) = do
+    analysis <- ask
+    e' <- convertToFlatHs (annotateND analysis expr)
+    return $ Match () (convertFuncNameToMonadicHs (Unqual qname)) (map (PVar () . indexToName . fst) args)
+      (UnGuardedRhs () e') Nothing
+  convertToFlatHs (RI (qname, TExternal _ str)) = return $
+    Match () (convertFuncNameToMonadicHs (Unqual qname)) []
+      (UnGuardedRhs () (Hs.Var () (UnQual () (Ident () (escapeFuncName unqualStr ++ "Flat#"))))) Nothing
     where unqualStr = case dropWhile (/= '.') str of
             ""  -> str
             "." -> str
@@ -628,6 +668,52 @@ failedBranch :: Alt ()
 failedBranch = Alt () (PWildCard ())
   (UnGuardedRhs ()
     (Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "failed")))) Nothing
+
+instance ToFlatHs (AExpr (TypeExpr, NDInfo)) where
+  convertToFlatHs (AVar _ idx) = return $ Hs.Var () (UnQual () (indexToName idx))
+  convertToFlatHs (ALit _ lit) = return $ mkReturn $ Hs.Lit () (convertLit lit)
+  convertToFlatHs ex@(AComb (ty, Det) FuncCall _ _)
+    | isFunFree ty = mkFromHaskell <$> convertToHs ex
+  convertToFlatHs ex@(AComb (ty, Det) ConsCall  _ _)
+    | isFunFree ty = mkFromHaskell <$> convertToHs ex
+  convertToFlatHs (AComb (ty, _) FuncCall  (_, (_, Det)) _)
+    | isFunFree ty = undefined -- TODO
+  convertToFlatHs (AComb _ ConsCall (qname, _) args) = do
+    undefined
+    -- args' <- mapM convertToFlatHs args -- TODO Constructor is not FlatNonDet
+    -- return $ mkReturn $ foldl (App ()) (Hs.Var () (convertTypeNameToFlatHs qname)) args'
+  convertToFlatHs (AComb _ (ConsPartCall missing) (qname, _) args) = do
+    undefined
+    -- args' <- mapM convertToFlatHs args
+    -- missingVs <- replicateM missing freshVarName
+    -- let mkLam e = foldr (\v -> mkReturnFunc .  Lambda () [PVar () v]) e missingVs
+    -- return $ mkLam $ mkReturn $ foldl (App ()) (Hs.Var () (convertTypeNameToFlatHs qname)) (args' ++ map (Hs.Var () . UnQual ()) missingVs)
+  convertToFlatHs (AComb _ _ (qname, _) args) = do -- (Partial) FuncCall
+    undefined -- TODO
+    -- args' <- mapM convertToFlatHs args
+    -- return $ foldl mkMonadicApp (Hs.Var () (convertFuncNameToFlatHs qname)) args'
+  convertToFlatHs ex@(ALet (ty, Det) _ _)
+    | isFunFree ty = mkFromHaskell <$> convertToHs ex
+  convertToFlatHs ex@(ALet _ bs e) = do
+    undefined -- TODO
+    -- e' <- convertToFlatHs e
+    -- bs' <- mapM (\((a, _), b) -> (indexToName a, , countVarUse ex a) <$> convertToFlatHs b) bs
+    -- return $ mkShareLet e' bs'
+  convertToFlatHs AFree {} = throwError [message "Encountered a free variable in an expression inferred to be flat non-deterministic"]
+  convertToFlatHs AOr {} = throwError [message "Encountered an 'or' in an expression inferred to be flat non-deterministic"]
+  convertToFlatHs ex@(ACase (ty, Det) _ _ _)
+    | isFunFree ty = mkFromHaskell <$> convertToHs ex
+  convertToFlatHs (ACase (_, _) _  e bs) = do
+    undefined -- TODO
+    -- e' <- convertToFlatHs e
+    -- bs' <- mapM convertToFlatHs bs
+    -- return $ mkBind e' $ Hs.LCase () (bs' ++ [failedFlatBranch])
+  convertToFlatHs ex@(ATyped (ty, Det) _ _)
+    | isFunFree ty = mkFromHaskell <$> convertToHs ex
+  convertToFlatHs (ATyped _ e ty) = ExpTypeSig () <$> convertToFlatHs e <*> convertQualTypeWith convertToFlatHs ty
+
+failedFlatBranch :: Alt ()
+failedFlatBranch = failedMonadicBranch
 
 instance ToMonadicHs (AExpr (TypeExpr, NDInfo)) where
   convertToMonadicHs (AVar _ idx) = return $ Hs.Var () (UnQual () (indexToName idx))
@@ -714,15 +800,23 @@ class ToHsName a where
   convertTypeNameToHs :: a -> HsEquivalent a
   convertFuncNameToHs :: a -> HsEquivalent a
 
-class ToMonadicHsName a where
+class ToHsName a => ToFlatHsName a where
+  convertTypeNameToFlatHs :: a -> HsEquivalent a
+  convertTypeNameToFlatHs = convertTypeNameToHs
+  convertFuncNameToFlatHs :: a -> HsEquivalent a
+
+class ToFlatHsName a => ToMonadicHsName a where
   convertTypeNameToMonadicHs :: a -> HsEquivalent a
   convertFuncNameToMonadicHs :: a -> HsEquivalent a
 
 newtype UnqualName = Unqual QName
 type instance HsEquivalent UnqualName = Name ()
 instance ToHsName UnqualName where
-  convertTypeNameToHs (Unqual (_, s)) = Ident () $ escapeTypeName s
-  convertFuncNameToHs (Unqual (_, s)) = Ident () $ escapeFuncName s
+  convertTypeNameToHs (Unqual (_, s)) = Ident () $ escapeTypeName s ++ "D"
+  convertFuncNameToHs (Unqual (_, s)) = Ident () $ escapeFuncName s ++ "D"
+
+instance ToFlatHsName UnqualName where
+  convertFuncNameToFlatHs (Unqual (_, s)) = Ident () $ escapeFuncName s ++ "Flat"
 
 instance ToMonadicHsName UnqualName where
   convertTypeNameToMonadicHs (Unqual (_, s)) = Ident () $ escapeTypeName s ++ "ND"
@@ -732,6 +826,9 @@ type instance HsEquivalent QName = Hs.QName ()
 instance ToHsName QName where
   convertTypeNameToHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertTypeNameToHs (Unqual n))
   convertFuncNameToHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertFuncNameToHs (Unqual n))
+
+instance ToFlatHsName QName where
+  convertFuncNameToFlatHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertFuncNameToFlatHs (Unqual n))
 
 instance ToMonadicHsName QName where
   convertTypeNameToMonadicHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertTypeNameToMonadicHs (Unqual n))

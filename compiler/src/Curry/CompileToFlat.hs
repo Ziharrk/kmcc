@@ -36,8 +36,8 @@ compileFileToFcy :: KMCCOpts -> [(ModuleIdent, Source)]
 compileFileToFcy opts srcs = runCurryFrontendAction (frontendOpts opts) $
   catMaybes <$> mapM process' (zip [1 ..] srcs)
   where
-    total    = length srcs
-    tgtDir m = addOutDirModule (optUseOutDir (frontendOpts opts)) (optOutDir (frontendOpts opts)) m
+    total  = length srcs
+    tgtDir = addOutDirModule (optUseOutDir (frontendOpts opts)) (optOutDir (frontendOpts opts))
 
     process' :: (Int, (ModuleIdent, Source)) -> CYIO (Maybe (TProg, ModuleIdent, FilePath))
     process' (n, (m, Source fn ps is)) = do

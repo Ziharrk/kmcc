@@ -37,7 +37,7 @@ type family NDAnalysisState s = a | a -> s where
   NDAnalysisState 'Local  = (NDAnalysisResult, Set QName)
   NDAnalysisState 'Global = NDAnalysisResult
 
-data NDInfo = Det | NonDet
+data NDInfo = Det | FlatNonDet | NonDet
   deriving (Binary, Generic, Eq, Ord, Show, Bounded)
 
 newtype AM s a = AnalysisMonad {
@@ -151,8 +151,9 @@ checkDeterministic (TExternal _ ext) _ = Map.findWithDefault Det ext externalInf
 
 externalInfoMap :: Map String NDInfo
 externalInfoMap = Map.fromList
-  [ ("Prelude.=:<=", NonDet)
-  , ("Prelude.=:=" , NonDet)
+  [ ("Prelude.=:<=", FlatNonDet)
+  , ("Prelude.=:=" , FlatNonDet)
+  , ("Prelude.$##" , FlatNonDet)
   ]
 
 -- |Compute the filename of the analysis file for a source file

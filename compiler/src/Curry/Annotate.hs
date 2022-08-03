@@ -21,7 +21,9 @@ annotateND analysis (TComb ty ct qname args) =
                 Nothing -> if all isFunFree argTys then Det else NonDet
                 Just det -> det
     args' = map (annotateND analysis) args
-    ann = maximum (annHere : map (snd . exprAnn) args')
+    ann = case annHere of
+            FlatNonDet -> FlatNonDet
+            _          -> maximum (annHere : map (snd . exprAnn) args')
 annotateND analysis (TFree bs e) =
   AFree (typeOf e, NonDet) (map (second (,NonDet)) bs) (annotateND analysis e)
 annotateND analysis (TOr e1 e2) =
