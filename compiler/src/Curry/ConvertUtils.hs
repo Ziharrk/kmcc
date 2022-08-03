@@ -1,12 +1,21 @@
+
+{-# LANGUAGE TypeFamilyDependencies #-}
 module Curry.ConvertUtils where
 
 import Language.Haskell.Exts hiding (Kind)
 
 import Curry.Base.Ident (isInfixOp, mkIdent)
 import Curry.FlatCurry (TVarWithKind, Kind (..))
+import qualified Curry.FlatCurry as Curry
 import Curry.FlatCurry.Annotated.Type (AExpr (..), VarIndex, ABranchExpr (..))
 
 import Haskell.ExtsInstances ()
+
+newtype UnqualName = Unqual Curry.QName
+
+type instance HsEquivalent UnqualName = Name ()
+type instance HsEquivalent Curry.QName = QName ()
+type family HsEquivalent a = hs | hs -> a
 
 indexToName :: Int -> Name ()
 indexToName i = [Ident () (c : rest) | n <- [0 :: Int ..], let rest = if n == 0 then "" else show n, c <- ['a'..'z']] !! i
@@ -83,6 +92,11 @@ countVarUse (ACase _ _ e bs) vidx = maximum (map (\(ABranch _ e') -> scrUse <> c
     scrUse = countVarUse e vidx
 countVarUse (ALit _ _) _ = None
 countVarUse (ATyped _ e _) vidx = countVarUse e vidx
+
+mkFromHaskellBind :: Int -> Exp () -> Exp ()
+mkFromHaskellBind i = Let () (BDecls ()
+  [PatBind () (PVar () (appendName "_nd" (indexToName i)))
+    (UnGuardedRhs () (mkFromHaskell (Var () (UnQual () (indexToName i))))) Nothing])
 
 mkShareBind :: (Name (), Exp (), VarUse) -> Exp () -> Exp ()
 mkShareBind (_, _, None) e2 = e2
