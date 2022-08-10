@@ -532,7 +532,7 @@ memo (Curry m) = Curry $ do
             insertID = if wasND
                           then branchID ndState3
                           else branchID ndState1
-            insertH h = insertHeap insertID (toShared y, wasND) h
+            insertH = insertHeap insertID (toShared y, wasND)
         unsafePerformIO (modifyIORef taskMap insertH)
           `seq` return (toShared y)
   where

@@ -4,7 +4,10 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Curry.ConvertToHs
   ( compileToHs, haskellName
-  , mkCurryCtxt, HsEquivalent, ToHsName(..), ToMonadicHsName(..), UnqualName(..)
+  , mkCurryCtxt
+  , HsEquivalent
+  , ToHsName(..), ToMonadicHsName(..), UnqualName(..)
+  , convertQualNameToFlatName, convertQualNameToFlatQualName
   ) where
 
 import Control.Arrow (first, second)
@@ -15,7 +18,7 @@ import Control.Monad.State (StateT, MonadState (..), evalStateT, modify)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Coerce (coerce)
 import Data.Char (toLower, toUpper)
-import Data.List (isPrefixOf, sort, find, (\\), isSuffixOf)
+import Data.List (isPrefixOf, sort, find, (\\))
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Maybe (mapMaybe)
@@ -34,12 +37,13 @@ import Curry.FlatCurry hiding (Let)
 import Curry.FlatCurry.Annotated.Type (APattern(..), ABranchExpr(..), AExpr(..))
 import Curry.FlatCurry.Typed.Type (TRule(..), TFuncDecl(..), TProg(..), TExpr (..))
 import Curry.Files.Filenames (addOutDirModule)
+import Generators.GenTypedFlatCurry (genTypedExpr)
 import CompilerOpts (Options(..))
 import CurryBuilder (smake, compMessage)
 
 import Options (KMCCOpts(..), dumpMessage)
 import Curry.Analysis (NDAnalysisResult, NDInfo (..))
-import Curry.Annotate (annotateND, isFunFree, exprAnn)
+import Curry.Annotate (annotateND, isFunFree, exprAnn, annotateND')
 import Curry.GenInstances (genInstances)
 import Curry.ConvertUtils
 
@@ -99,11 +103,12 @@ process kopts idx tprog m fn mi deps
               , "Retrying compilation from analyzed flat curry ..." ]
             compile
           ParseOk res ->
-            liftIO $ dumpMessage kopts $ "Read cached Haskell file:\n" ++ prettyPrint res
+            liftIO $ dumpMessage kopts $ "Read cached Haskell file:\n" ++
+                        prettyPrintStyleMode hsPrettyPrintStyle hsPrettyPrintMode res
     compile = do
       status opts $ compMessage idx (11, 16) "Translating" m (fn, destFile)
       res <- convertToHs (TWFP (tprog, externalName fn, mi, kopts))
-      let printed = prettyPrint res
+      let printed = prettyPrintStyleMode hsPrettyPrintStyle hsPrettyPrintMode res
       liftIO $ dumpMessage kopts $ "Generated Haskell file:\n" ++ printed
       liftIO $ writeUTF8File' (tgtDir (haskellName fn)) printed
       return ()
@@ -116,7 +121,7 @@ hsPrettyPrintMode :: PPHsMode
 hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPOffsideRule False
 
 hsPrettyPrintStyle :: Style
-hsPrettyPrintStyle = Style LeftMode 500 2
+hsPrettyPrintStyle = Style PageMode 500 2
 
 class ToHs a where
   convertToHs :: a -> CM (HsEquivalent a)
@@ -174,10 +179,10 @@ instance ToHs TProgWithFilePath where
       getVisT (TypeNew qname Public _ c) = Just (qname, maybe [] return (getVisN c))
       getVisT _ = Nothing
 
-      getVisC (Cons qname _ Public _) = Just qname
+      getVisC (Cons qname _ Public vs) = Just (qname, not (null vs))
       getVisC _ = Nothing
 
-      getVisN (NewCons qname Public _) = Just qname
+      getVisN (NewCons qname Public _) = Just (qname, True)
       getVisN _ = Nothing
 
       getVisF (TFunc qname _ Public _ _) = Just qname
@@ -269,7 +274,7 @@ mkVarReturn opts fvs = go (map snd (optVarNames opts))
           eWithInfo = mkAddVarIds mainE (map (mkGetVarId . Hs.Var () . UnQual () . indexToName) (sort xs))
       in foldr mkShareBind eWithInfo (zip3 fvs (repeat mkFree) (replicate (length fvs) Many))
 
-newtype ModuleHeadStuff = MS (String, [(QName, [QName])], [QName])
+newtype ModuleHeadStuff = MS (String, [(QName, [(QName, Bool)])], [QName])
 type instance HsEquivalent ModuleHeadStuff = ModuleHead ()
 instance ToHs ModuleHeadStuff where
   convertToHs (MS (s, qnamesT, qnamesF)) = do
@@ -281,11 +286,13 @@ instance ToHs ModuleHeadStuff where
       typeItem (qname, [])      = map (EAbs () (NoNamespace ()))
         [convertTypeNameToHs qname, convertTypeNameToMonadicHs qname]
       typeItem (qname, csNames) = map (uncurry (EThingWith () (NoWildcard ())))
-        [ (convertTypeNameToHs qname, map conItem csNames)
-        , (convertTypeNameToMonadicHs qname, map conItemMonadic csNames) ]
+        [ (convertTypeNameToHs qname, concatMap conItem csNames)
+        , (convertTypeNameToMonadicHs qname, concatMap conItemMonadic csNames) ]
 
-      conItem qname = ConName () (convertTypeNameToHs (Unqual qname))
-      conItemMonadic qname = ConName () (convertTypeNameToMonadicHs (Unqual qname))
+      conItem (qname, _) = [ConName () (convertTypeNameToHs (Unqual qname))]
+      conItemMonadic (qname, False) = [ConName () (convertTypeNameToMonadicHs (Unqual qname))]
+      conItemMonadic (qname, True)  = [ ConName () (convertTypeNameToMonadicHs (Unqual qname))
+                                      , ConName () (convertQualNameToFlatName qname) ]
 
       funcItem qname = do
         analysis <- ask
@@ -336,9 +343,15 @@ instance ToMonadicHs TypeDecl where
 
 convertConstrToMonadic :: ConsDecl -> CM [QualConDecl ()]
 convertConstrToMonadic c@(Cons _ 0 _ _) = return <$> convertToMonadicHs c
-convertConstrToMonadic c@(Cons qname arity vis ty) = do
-  let qname' = second (++ "#Det") qname
-  c1 <- convertToHs (Cons qname' arity vis ty)
+convertConstrToMonadic c@(Cons qname _ _ _) = do
+  c1 <- convertToMonadicHs c >>= \case
+    QualConDecl _ _ _ (ConDecl _ _ tys)
+      -> return $ QualConDecl () Nothing Nothing $
+                  ConDecl () (convertQualNameToFlatName qname) (map mkHsEquiv tys)
+      where
+        mkHsEquiv (TyApp _ _ ty) = TyApp () (TyCon () hsEquivQualName) ty
+        mkHsEquiv ty = TyApp () (TyCon () hsEquivQualName) ty
+    _ -> error "ConvertToHs: Record constructor"
   c2 <- convertToMonadicHs c
   return [c1,c2]
 
@@ -527,9 +540,15 @@ convertExprToMonadicHs vset (AFree _ vs e) = do
 convertExprToMonadicHs vset (AOr _ e1 e2) = mkMplus <$> convertExprToMonadicHs vset e1 <*> convertExprToMonadicHs vset e2
 convertExprToMonadicHs _ ex@(ACase (ty, Det) _ _ _)
   | isFunFree ty = mkFromHaskell <$> convertToHs ex
-convertExprToMonadicHs vset (ACase (_, _) _  e bs) = do
+convertExprToMonadicHs vset (ACase (_, _) _  e bs)
+  | (ty, Det) <- exprAnn e,
+    isFunFree ty = do
+      e' <- convertToHs e
+      bs' <- mapM (convertDetBranchToMonadic vset) bs
+      return $ Hs.Case () e' (bs' ++ [failedMonadicBranch])
+  | otherwise = do
   e' <- convertExprToMonadicHs vset e
-  bs' <- mapM (convertBranchToMonadicHs vset) bs
+  bs' <- concat <$> mapM (convertBranchToMonadicHs vset) bs
   return $ mkBind e' $ Hs.LCase () (bs' ++ [failedMonadicBranch])
 convertExprToMonadicHs _ ex@(ATyped (ty, Det) _ _)
   | isFunFree ty = mkFromHaskell <$> convertToHs ex
@@ -547,25 +566,53 @@ instance ToHs (ABranchExpr (TypeExpr, NDInfo)) where
     pat' <- convertToHs pat
     return $ Alt () pat' (UnGuardedRhs () e') Nothing
 
-convertBranchToMonadicHs :: Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM (Alt ())
+convertDetBranchToMonadic :: Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM (Alt ())
+convertDetBranchToMonadic vSet (ABranch pat e)
+  | (ty, annot) <- exprAnn e,
+    Det <- annot,
+    isFunFree ty = do
+      e' <- convertToHs e
+      pat' <- convertToHs pat
+      return (Alt () pat' (UnGuardedRhs () (mkFromHaskell e')) Nothing)
+  | otherwise = do
+      pat' <- convertToHs pat
+      let vsNames = case pat of
+                      APattern _ _ args -> map fst args
+                      _                 -> []
+      let vSet' = Set.union vSet (Set.fromList vsNames)
+      e' <- convertExprToMonadicHs vSet' e
+      return (Alt () pat' (UnGuardedRhs () (foldr mkFromHaskellBind e' vsNames)) Nothing)
+
+convertBranchToMonadicHs :: Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM [Alt ()]
 convertBranchToMonadicHs vSet (ABranch pat e)
   | let (ty, annot) = exprAnn e,
     Det <- annot,
     isFunFree ty = do
       e' <- convertToHs e
-      pat' <- convertToHs pat
-      return $ Alt () pat' (UnGuardedRhs () (mkFromHaskell e')) Nothing
-  | APattern _ ((_, baseName), _) vs <- pat,
-    "#Det" `isSuffixOf` baseName = do
-      let vsNames = map fst vs
-      let vSet' = Set.union vSet (Set.fromList vsNames)
-      e' <- convertExprToMonadicHs vSet' e
-      pat' <- convertToHs pat
-      return $ Alt () pat' (UnGuardedRhs () (foldr mkFromHaskellBind e' vsNames)) Nothing
+      let pat' = case pat of
+                   APattern _ (qname, _) [] ->
+                    PApp () (convertTypeNameToMonadicHs qname) []
+                   APattern _ (qname, _) args ->
+                    PApp () (convertQualNameToFlatQualName qname)
+                            (map (PVar () . indexToName. fst) args)
+                   ALPattern _ lit ->
+                    PLit () (litSign lit) (convertLit lit)
+      return [Alt () pat' (UnGuardedRhs () (mkFromHaskell e')) Nothing]
   | otherwise = do
-      e' <- convertExprToMonadicHs vSet e
-      (pat', vs) <- convertPatToMonadic pat e
-      return $ Alt () pat' (UnGuardedRhs () (foldr mkShareBind e' vs)) Nothing
+      alt1 <- do
+        e' <- convertExprToMonadicHs vSet e
+        (pat', vs) <- convertPatToMonadic pat e
+        return $ Alt () pat' (UnGuardedRhs () (foldr mkShareBind e' vs)) Nothing
+      case pat of
+        APattern _ (qname@(_, baseName), _) vs@(_:_)
+          | not ("_Dict#" `isPrefixOf` baseName) -> do
+          let vsNames = map fst vs
+          let vSet' = Set.union vSet (Set.fromList vsNames)
+          analysis <- ask
+          e' <- convertExprToMonadicHs vSet' (annotateND' analysis (Map.fromSet (const Det) vSet') (genTypedExpr (fmap fst e)))
+          let pat' = PApp () (convertQualNameToFlatQualName qname) (map (PVar () . indexToName) vsNames)
+          return [alt1, Alt () pat' (UnGuardedRhs () (foldr mkFromHaskellBind e' vsNames)) Nothing]
+        _ -> return [alt1]
 
 type instance HsEquivalent (APattern (TypeExpr, NDInfo)) = Pat ()
 instance ToHs (APattern (TypeExpr, NDInfo)) where
@@ -606,6 +653,7 @@ instance ToHsName UnqualName where
 
 instance ToMonadicHsName UnqualName where
   convertTypeNameToMonadicHs (Unqual (_, s)) = Ident () $ escapeTypeName s ++ "ND"
+  convertFuncNameToMonadicHs :: UnqualName -> HsEquivalent UnqualName
   convertFuncNameToMonadicHs (Unqual (_, s)) = Ident () $ escapeFuncName s ++ "ND"
 
 instance ToHsName QName where
@@ -615,6 +663,16 @@ instance ToHsName QName where
 instance ToMonadicHsName QName where
   convertTypeNameToMonadicHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertTypeNameToMonadicHs (Unqual n))
   convertFuncNameToMonadicHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertFuncNameToMonadicHs (Unqual n))
+
+convertQualNameToFlatName :: QName -> Name ()
+convertQualNameToFlatName qname =
+  case convertTypeNameToHs (Unqual qname) of
+    Ident  _ s -> Ident () (s ++ "Flat#")
+    Symbol _ s -> Ident () (s ++ "$#")
+
+convertQualNameToFlatQualName :: QName -> Hs.QName ()
+convertQualNameToFlatQualName qname@(m, _) =
+  Qual () (ModuleName () ("Curry_" ++ m)) $ convertQualNameToFlatName qname
 
 defaultPragmas :: [ModulePragma ()]
 defaultPragmas =
@@ -628,6 +686,7 @@ defaultPragmas =
   , LanguagePragma () [Ident () "LambdaCase"]
   , LanguagePragma () [Ident () "MagicHash"]
   , LanguagePragma () [Ident () "MultiParamTypeClasses"]
+  , LanguagePragma () [Ident () "UnboxedTuples"]
   , LanguagePragma () [Ident () "UndecidableInstances"]
   , OptionsPragma () (Just GHC) "-w " -- Space is important here
   ]

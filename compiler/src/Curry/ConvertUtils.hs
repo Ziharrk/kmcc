@@ -68,6 +68,9 @@ mkFailed = Var () failedQualName
 mkUnify :: Exp () -> Exp () -> Exp ()
 mkUnify e = App () (App () (Var () unifyQualName) e)
 
+mkUnifyWith :: Exp () -> Exp () -> Exp () -> Exp ()
+mkUnifyWith e1 e2 = App () (App () (App () (Var () unifyWithQualName) e1) e2)
+
 data VarUse = None | One | Many
   deriving (Eq, Ord, Enum, Show)
 
@@ -118,6 +121,18 @@ mkReturn = App () (Var () returnQualName)
 mkBind :: Exp () -> Exp () -> Exp ()
 mkBind e1 = InfixApp () e1 (QConOp () bindQualName)
 
+mkRight :: Exp () -> Exp ()
+mkRight = App () (Var () rightQualName)
+
+mkLeft :: Exp () -> Exp ()
+mkLeft = App () (Var () leftQualName)
+
+mkValUnshared :: Exp () -> Exp ()
+mkValUnshared = App () (App () (Var () valQualName) (Var () unsharedQualName))
+
+mkEitherToCurry :: Exp () -> Exp ()
+mkEitherToCurry = App () (Var () eitherToCurryQualName)
+
 mkShareLet :: Exp () -> [(Name (), Exp (), VarUse)] -> Exp ()
 mkShareLet e [] = e
 mkShareLet e bs
@@ -152,8 +167,8 @@ mkAddToVarHeap e = App () (App () (Var () addToVarHeapQualName) e)
 mkShowStringCurry :: String -> Exp ()
 mkShowStringCurry s = App () (Var () showStringCurryQualName) (Lit () (String () s s))
 
-mkShowsCurryHighPrec :: Name () -> Exp ()
-mkShowsCurryHighPrec n = App () (App () (Var () showsFreePrecCurryQualName) (Lit () (Int () 9 "9"))) (Var () (UnQual () n))
+mkShowsCurryHighPrec :: Exp () -> Exp ()
+mkShowsCurryHighPrec = App () (App () (Var () showsFreePrecCurryQualName) (Lit () (Int () 9 "9")))
 
 mkShowSpace :: Exp () -> Exp () -> Exp ()
 mkShowSpace e1 = App () (App () (Var () showSpaceCurryQualName) e1)
@@ -257,14 +272,32 @@ primitiveQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "HasPri
 returnQualName :: QName ()
 returnQualName = Qual () (ModuleName () "M") (Ident () "return")
 
+rightQualName :: QName ()
+rightQualName = Qual () (ModuleName () "P") (Ident () "Right")
+
+leftQualName :: QName ()
+leftQualName = Qual () (ModuleName () "P") (Ident () "Left")
+
 mkReturnFunc :: Exp () -> Exp ()
 mkReturnFunc = App () (Var () returnFuncQualName)
 
 returnFuncQualName :: QName ()
 returnFuncQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "returnFunc")
 
+valQualName :: QName ()
+valQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Val")
+
+unsharedQualName :: QName ()
+unsharedQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Unshared")
+
+eitherToCurryQualName :: QName ()
+eitherToCurryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "eitherToCurry")
+
 unifyQualName :: QName ()
 unifyQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "unify")
+
+unifyWithQualName :: QName ()
+unifyWithQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "unifyWith")
 
 lazyUnifyQualName :: QName ()
 lazyUnifyQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "unifyL")

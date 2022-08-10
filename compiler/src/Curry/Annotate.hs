@@ -1,4 +1,4 @@
-module Curry.Annotate (annotateND, isFunFree, exprAnn) where
+module Curry.Annotate (annotateND, annotateND', isFunFree, exprAnn) where
 
 import Control.Arrow (second)
 import qualified Data.Map as Map
@@ -36,7 +36,7 @@ annotateND' analysis vMap ex@(TCase ct e alts) =
     annScr = snd $ exprAnn e'
     ann = maximum (annScr : map (snd . altAnn) alts')
     e' = annotateND' analysis vMap e
-    alts' = concatMap (annotateAlt analysis vMap annScr) alts
+    alts' = map (annotateAlt analysis vMap annScr) alts
 annotateND' analysis vMap (TTyped e ty) =
   let e' = annotateND' analysis vMap e
   in  ATyped (exprAnn e') e' ty
@@ -51,20 +51,13 @@ annotateND' analysis vMap (TLet bs e) =
       in ((x, exprAnn e2'), e2')
 
 annotateAlt :: NDAnalysisResult -> Map.Map Int NDInfo -> NDInfo -> TBranchExpr
-            -> [ABranchExpr (TypeExpr, NDInfo)]
-annotateAlt analysis vMap ann (TBranch x e) =
-  case altAnn normalBranch of
-    (_, Det)    -> [normalBranch]
-    (_, NonDet) -> [normalBranch, alternativeBranch]
+            -> ABranchExpr (TypeExpr, NDInfo)
+annotateAlt analysis vMap ann (TBranch x e) = normalBranch
   where
     normalBranch = ABranch (annotatePat x) (annotateND' analysis vMapNormal e)
-    alternativeBranch = ABranch (annotatePat (toAlternativePat x)) (annotateND' analysis vMapAlternative e)
     vMapNormal = Map.union vMap (Map.fromList (map ((,ann) . fst) (patArgs x)))
-    vMapAlternative = Map.union vMap (Map.fromList (map ((,Det) . fst) (patArgs x)))
     patArgs (TPattern _ _ args) = args
     patArgs (TLPattern _ _)     = []
-    toAlternativePat (TPattern ty qname args) = TPattern ty (second (++ "#Det") qname) args
-    toAlternativePat p = p
 
 annotatePat :: TPattern -> APattern (TypeExpr, NDInfo)
 annotatePat (TPattern ty qname args) = APattern (ty, Det) (qname, (ty, Det)) (map (second (,NonDet)) args)

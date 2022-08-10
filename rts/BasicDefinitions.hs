@@ -8,7 +8,6 @@ module BasicDefinitions
  ( module BasicDefinitions
  , module MemoizedCurry
  , module Narrowable
- , module NormalForm
  , module HasPrimitiveInfo
  , module Classes
  ) where
@@ -21,11 +20,10 @@ import Data.List
 import System.IO.Unsafe
 import GHC.IO.Exception
 
-import MemoizedCurry
+import MemoizedCurry hiding (normalForm, groundNormalForm)
 import Narrowable
 import HasPrimitiveInfo
 import Classes
-import NormalForm
 import Tree
 
 type family HsEquivalent (a :: k) = (b :: k) | b -> a
@@ -76,6 +74,38 @@ showsVar i fm = case lookup i fm of
   Nothing -> fmap (++ ("_" ++ show i))
   Just s  -> fmap (++ s)
 
+-- Class to pull all non-determinisim to the top
+class NormalForm a where
+  nfWith :: (forall x. NormalForm x => Curry x -> ND (Either (CurryVal x) (HsEquivalent x)))
+         -> a -> ND (Either (CurryVal a) (HsEquivalent a))
+
+normalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent a))
+normalForm' a = do
+  a' <- deref a
+  case a' of
+    Val _   x -> nfWith normalForm' x
+    Var lvl i -> return (Left (Var lvl i))
+
+normalForm :: (NormalForm a, FromHs a) => Curry a -> Curry a
+normalForm a = ndEitherToCurry (normalForm' a)
+
+ndEitherToCurry :: FromHs a => ND (Either (CurryVal a) (HsEquivalent a)) -> Curry a
+ndEitherToCurry a = Curry $ a >>= either return (unCurry . fromHaskell)
+
+groundNormalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent a))
+groundNormalForm' a = deref a >>= \case
+  Val _   x -> nfWith groundNormalForm' x
+  Var lvl i -> groundNormalForm' (instantiate lvl i)
+
+groundNormalForm :: (NormalForm a, FromHs a) => Curry a -> Curry a
+groundNormalForm a = ndEitherToCurry (groundNormalForm' a)
+
+dollarBangBangNDImpl :: (NormalForm a, FromHs a) => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
+dollarBangBangNDImpl = returnFunc (\f -> returnFunc (\a -> f `app` normalForm a))
+
+dollarHashHashNDImpl :: (NormalForm a, FromHs a) => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
+dollarHashHashNDImpl = returnFunc (\f -> returnFunc (\a -> f `app` groundNormalForm a))
+
 class (ToHs a, FromHs a, ShowFree a, Shareable Curry a, Unifiable a, NormalForm a, HasPrimitiveInfo a) => Curryable a
 
 type instance HsEquivalent Integer = Integer
@@ -88,6 +118,9 @@ instance FromHs Integer where
 
 instance ShowFree Integer where
   showsFreePrec _ x = showsStringCurry (show x)
+
+instance NormalForm Integer where
+  nfWith _ !x = return (Right x)
 
 instance Curryable Integer
 
@@ -108,7 +141,7 @@ instance Unifiable Double where
   lazyUnifyVar n i = modify (addToVarHeap i (return n)) >> return True
 
 instance NormalForm Double where
-  nfWith _ !x = return x
+  nfWith _ !x = return (Right x)
 
 instance ShowFree Double where
   showsFreePrec _ x = showsStringCurry (show x)
@@ -132,7 +165,7 @@ instance Unifiable Char where
   lazyUnifyVar n i = modify (addToVarHeap i (return n)) >> return True
 
 instance NormalForm Char where
-  nfWith _ !x = return x
+  nfWith _ !x = return (Right x)
 
 instance ShowFree Char where
   showsFreePrec _ x = showsStringCurry (show x)
@@ -163,7 +196,7 @@ instance Shareable Curry a => Unifiable (IO a) where
   lazyUnifyVar _ _ = error "lazily unifying an IO action is not possible"
 
 instance NormalForm (IO a) where
-  nfWith _ !x = return x
+  nfWith _ !x = return (Left (Val Shared x))
 
 instance ShowFree (IO a) where
   showsFreePrec _ _ = showsStringCurry "<<IO>>"
@@ -202,7 +235,7 @@ instance Unifiable (LiftedFunc a b) where
   lazyUnifyVar _ = error "lazily unifying a function is not possible"
 
 instance NormalForm (LiftedFunc a b) where
-  nfWith _ !x = return x
+  nfWith _ !x = return (Left (Val Shared x))
 
 instance ShowFree (LiftedFunc a b) where
   showsFreePrec _ _ = showsStringCurry "<<Function>>"
@@ -360,8 +393,79 @@ dollarBangNDImpl =
       Val _ x   -> x `seq` (f `app` return x)
       Var lvl i -> f `app` Curry (return (Var lvl i)))))
 
-dollarBangBangNDImpl :: NormalForm a => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
-dollarBangBangNDImpl = returnFunc (\f -> returnFunc (\a -> f `app` normalForm a))
+data ListTest a = Nil | ListDet (HsEquivalent a) (HsEquivalent (ListTest a)) | ListND (Curry a) (Curry (ListTest a))
 
-dollarHashHashNDImpl :: NormalForm a => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
-dollarHashHashNDImpl = returnFunc (\f -> returnFunc (\a -> f `app` groundNormalForm a))
+type instance HsEquivalent (ListTest a) = [HsEquivalent a]
+
+instance Curryable a => NormalForm (ListTest a) where
+  nfWith _ Nil = return (Right [])
+  nfWith _ (ListDet x xs) = return (Right (x:xs))
+  nfWith f (ListND x xs) = do
+    x' <- f x
+    xs' <- f xs
+    case (x', xs') of
+      (Right x'', Right xs'') -> return (Right (x'' : xs''))
+      _ -> return (Left (Val Unshared (ListND (eitherToCurry x') (eitherToCurry xs'))))
+
+eitherToCurry :: FromHs a => Either (CurryVal a) (HsEquivalent a) -> Curry a
+eitherToCurry = either (Curry . return) fromHaskell
+
+instance FromHs (ListTest a) where
+  from = \case
+    []   -> Nil
+    x:xs -> ListDet x xs
+
+instance Curryable a => Narrowable (ListTest a) where
+  narrow = [Nil, ListND free free]
+  narrowConstr Nil = Nil
+  narrowConstr (ListDet _ _) = ListND free free
+  narrowConstr (ListND  _ _) = ListND free free
+
+instance Curryable a => HasPrimitiveInfo (ListTest a)
+
+instance Curryable a => Shareable Curry (ListTest a) where
+  shareArgs Nil = return Nil
+  shareArgs (ListND x xs) = ListND <$> share x <*> share xs
+  shareArgs x = return x
+
+instance Curryable a => ToHs (ListTest a) where
+  to Nil = return []
+  to (ListDet x xs) = return (x:xs)
+  to (ListND x xs) = (:) <$> toHaskell x <*> toHaskell xs
+
+instance Curryable a => Unifiable (ListTest a) where
+  unifyWith _ Nil Nil = return True
+  unifyWith f (ListDet x xs) y =
+    unifyWith f (ListND (fromHaskell x) (fromHaskell xs)) y
+  unifyWith f y (ListDet x xs) =
+    unifyWith f y (ListND (fromHaskell x) (fromHaskell xs))
+  unifyWith f (ListND x xs) (ListND y ys) =
+    f x y >> f xs ys
+  unifyWith _ _ _ = mzero
+
+  lazyUnifyVar Nil i = do
+    BasicDefinitions.addToVarHeapM i (return Nil)
+    return True
+  lazyUnifyVar (ListDet x xs) i = do
+    BasicDefinitions.addToVarHeapM i (return (ListDet x xs))
+    return True
+  lazyUnifyVar (ListND x xs) i = do
+    x_s <- share free
+    xs_s <- share free
+    BasicDefinitions.addToVarHeapM i (return (ListND x xs))
+    _ <- unifyL x x_s
+    unifyL xs xs_s
+
+instance Curryable a => ShowFree (ListTest a) where
+  showsFreePrec _ Nil = showsStringCurry "Nil"
+  showsFreePrec p (ListDet x xs) = showsBracketsCurry p $
+    showsStringCurry "List" `showSpaceCurry`
+    showsFreePrecCurry p (fromHaskell x) `showSpaceCurry`
+    showsFreePrecCurry p (fromHaskell xs)
+  showsFreePrec p (ListND x xs) = showsBracketsCurry p $
+    showsStringCurry "List" `showSpaceCurry`
+    showsFreePrecCurry p x `showSpaceCurry`
+    showsFreePrecCurry p xs
+
+
+instance Curryable a => Curryable (ListTest a)

@@ -114,7 +114,7 @@ type CArrowND# = BasicDefinitions.LiftedFunc
 data ListInfo = FullList | FreeElem | FreeList
   deriving (P.Eq, P.Ord)
 
-instance ShowFree a => ShowFree (CListND a) where
+instance Curryable a => ShowFree (CListND a) where
   showsFreePrec _ CListND s = BasicDefinitions.showsStringCurry "[]" s
   showsFreePrec _ xs      s = (P.fst s,) $ do
     (ys, b) <- gatherContents (`BasicDefinitions.showFree` P.fst s) (`BasicDefinitions.showFree` P.fst s) P.id xs
@@ -135,9 +135,10 @@ instance {-# OVERLAPS #-} ShowFree (CListND CharND) where
 -- first arg: use this to show the element if it is a full list
 -- second arg: use this to show the element if there is a free element/list
 -- third arg: use this to convert an arg produced by the first arg to one by the second arg.
-gatherContents :: (a -> Curry P.String) -> (a -> Curry P.String) -> (P.String -> P.String)
+gatherContents :: Curryable a => (a -> Curry P.String) -> (a -> Curry P.String) -> (P.String -> P.String)
                -> CListND a -> BasicDefinitions.Curry ([P.String], ListInfo)
 gatherContents _ _ _ CListND = P.return ([], FullList)
+gatherContents f g h (CConsFlat# x xs) = gatherContents f g h (CConsND (fromHaskell x) (fromHaskell xs))
 gatherContents f g h (CConsND x xs) = BasicDefinitions.Curry $ do
   c <- deref x
   rest <- deref xs
@@ -168,15 +169,16 @@ gatherContents f g h (CConsND x xs) = BasicDefinitions.Curry $ do
 instance ShowFree CUnitND where
   showsFreePrec _ CUnitND = BasicDefinitions.showsStringCurry "()"
 
-instance (ShowFree x, ShowFree y) => ShowFree (CTuple2ND x y) where
+instance (Curryable x, Curryable y) => ShowFree (CTuple2ND x y) where
   showsFreePrec _ (CTuple2ND x y) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 y .
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple2Flat# x y) = showsFreePrec p' (CTuple2ND (fromHaskell x) (fromHaskell y))
 
-instance (ShowFree x, ShowFree y, ShowFree z) => ShowFree (CTuple3ND x y z) where
+instance (Curryable x, Curryable y, Curryable z) => ShowFree (CTuple3ND x y z) where
   showsFreePrec _ (CTuple3ND x y z) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 z .
@@ -185,8 +187,9 @@ instance (ShowFree x, ShowFree y, ShowFree z) => ShowFree (CTuple3ND x y z) wher
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple3Flat# x y z) = showsFreePrec p' (CTuple3ND (fromHaskell x) (fromHaskell y) (fromHaskell z))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w) => ShowFree (CTuple4ND x y z w) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w) => ShowFree (CTuple4ND x y z w) where
   showsFreePrec _ (CTuple4ND x y z w) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 w .
@@ -197,8 +200,9 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w) => ShowFree (CTuple4ND
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple4Flat# x y z w) = showsFreePrec p' (CTuple4ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v) => ShowFree (CTuple5ND x y z w v) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w, Curryable v) => ShowFree (CTuple5ND x y z w v) where
   showsFreePrec _ (CTuple5ND x y z w t) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 t .
@@ -211,8 +215,9 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v) => ShowFre
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple5Flat# x y z w t) = showsFreePrec p' (CTuple5ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w) (fromHaskell t))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u) => ShowFree (CTuple6ND x y z w v u) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w, Curryable v, Curryable u) => ShowFree (CTuple6ND x y z w v u) where
   showsFreePrec _ (CTuple6ND x y z w t s) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 s .
@@ -227,8 +232,9 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple6Flat# x y z w t s) = showsFreePrec p' (CTuple6ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w) (fromHaskell t) (fromHaskell s))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t) => ShowFree (CTuple7ND x y z w v u t) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w, Curryable v, Curryable u, Curryable t) => ShowFree (CTuple7ND x y z w v u t) where
   showsFreePrec _ (CTuple7ND x y z w t s r) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 r .
@@ -245,8 +251,9 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple7Flat# x y z w t s r) = showsFreePrec p' (CTuple7ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w) (fromHaskell t) (fromHaskell s) (fromHaskell r))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s) => ShowFree (CTuple8ND x y z w v u t s) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w, Curryable v, Curryable u, Curryable t, Curryable s) => ShowFree (CTuple8ND x y z w v u t s) where
   showsFreePrec _ (CTuple8ND x y z w t s r q) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 q .
@@ -265,8 +272,9 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple8Flat# x y z w t s r q) = showsFreePrec p' (CTuple8ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w) (fromHaskell t) (fromHaskell s) (fromHaskell r) (fromHaskell q))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r) => ShowFree (CTuple9ND x y z w v u t s r) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w, Curryable v, Curryable u, Curryable t, Curryable s, Curryable r) => ShowFree (CTuple9ND x y z w v u t s r) where
   showsFreePrec _ (CTuple9ND x y z w t s r q p) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 p .
@@ -287,8 +295,9 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple9Flat# x y z w t s r q p) = showsFreePrec p' (CTuple9ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w) (fromHaskell t) (fromHaskell s) (fromHaskell r) (fromHaskell q) (fromHaskell p))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q) => ShowFree (CTuple10ND x y z w v u t s r q) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w, Curryable v, Curryable u, Curryable t, Curryable s, Curryable r, Curryable q) => ShowFree (CTuple10ND x y z w v u t s r q) where
   showsFreePrec _ (CTuple10ND x y z w t s r q p o) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 o .
@@ -311,8 +320,9 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple10Flat# x y z w t s r q p o) = showsFreePrec p' (CTuple10ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w) (fromHaskell t) (fromHaskell s) (fromHaskell r) (fromHaskell q) (fromHaskell p) (fromHaskell o))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q, ShowFree p) => ShowFree (CTuple11ND x y z w v u t s r q p) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w, Curryable v, Curryable u, Curryable t, Curryable s, Curryable r, Curryable q, Curryable p) => ShowFree (CTuple11ND x y z w v u t s r q p) where
   showsFreePrec _ (CTuple11ND x y z w t s r q p o n) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 n .
@@ -337,8 +347,9 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple11Flat# x y z w t s r q p o n) = showsFreePrec p' (CTuple11ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w) (fromHaskell t) (fromHaskell s) (fromHaskell r) (fromHaskell q) (fromHaskell p) (fromHaskell o) (fromHaskell n))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q, ShowFree p, ShowFree o) => ShowFree (CTuple12ND x y z w v u t s r q p o) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w, Curryable v, Curryable u, Curryable t, Curryable s, Curryable r, Curryable q, Curryable p, Curryable o) => ShowFree (CTuple12ND x y z w v u t s r q p o) where
   showsFreePrec _ (CTuple12ND x y z w t s r q p o n m) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 m .
@@ -365,8 +376,9 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple12Flat# x y z w t s r q p o n m) = showsFreePrec p' (CTuple12ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w) (fromHaskell t) (fromHaskell s) (fromHaskell r) (fromHaskell q) (fromHaskell p) (fromHaskell o) (fromHaskell n) (fromHaskell m))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q, ShowFree p, ShowFree o, ShowFree n) => ShowFree (CTuple13ND x y z w v u t s r q p o n) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w, Curryable v, Curryable u, Curryable t, Curryable s, Curryable r, Curryable q, Curryable p, Curryable o, Curryable n) => ShowFree (CTuple13ND x y z w v u t s r q p o n) where
   showsFreePrec _ (CTuple13ND x y z w t s r q p o n m l) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 l .
@@ -395,8 +407,9 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple13Flat# x y z w t s r q p o n m l) = showsFreePrec p' (CTuple13ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w) (fromHaskell t) (fromHaskell s) (fromHaskell r) (fromHaskell q) (fromHaskell p) (fromHaskell o) (fromHaskell n) (fromHaskell m) (fromHaskell l))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q, ShowFree p, ShowFree o, ShowFree n, ShowFree m) => ShowFree (CTuple14ND x y z w v u t s r q p o n m) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w, Curryable v, Curryable u, Curryable t, Curryable s, Curryable r, Curryable q, Curryable p, Curryable o, Curryable n, Curryable m) => ShowFree (CTuple14ND x y z w v u t s r q p o n m) where
   showsFreePrec _ (CTuple14ND x y z w t s r q p o n m l k) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 k .
@@ -427,8 +440,9 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple14Flat# x y z w t s r q p o n m l k) = showsFreePrec p' (CTuple14ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w) (fromHaskell t) (fromHaskell s) (fromHaskell r) (fromHaskell q) (fromHaskell p) (fromHaskell o) (fromHaskell n) (fromHaskell m) (fromHaskell l) (fromHaskell k))
 
-instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u, ShowFree t, ShowFree s, ShowFree r, ShowFree q, ShowFree p, ShowFree o, ShowFree n, ShowFree m, ShowFree l) => ShowFree (CTuple15ND x y z w v u t s r q p o n m l) where
+instance (Curryable x, Curryable y, Curryable z, Curryable w, Curryable v, Curryable u, Curryable t, Curryable s, Curryable r, Curryable q, Curryable p, Curryable o, Curryable n, Curryable m, Curryable l) => ShowFree (CTuple15ND x y z w v u t s r q p o n m l) where
   showsFreePrec _ (CTuple15ND x y z w t s r q p o n m l k j) =
     showsStringCurry ")" .
     showsFreePrecCurry 0 j .
@@ -461,6 +475,7 @@ instance (ShowFree x, ShowFree y, ShowFree z, ShowFree w, ShowFree v, ShowFree u
     showsStringCurry "," .
     showsFreePrecCurry 0 x .
     showsStringCurry "("
+  showsFreePrec p' (CTuple15Flat# x y z w t s r q p o n m l k j) = showsFreePrec p' (CTuple15ND (fromHaskell x) (fromHaskell y) (fromHaskell z) (fromHaskell w) (fromHaskell t) (fromHaskell s) (fromHaskell r) (fromHaskell q) (fromHaskell p) (fromHaskell o) (fromHaskell n) (fromHaskell m) (fromHaskell l) (fromHaskell k) (fromHaskell j))
 
 -- -----------------------------------------------------------------------------
 -- Foreign Conversion
@@ -528,13 +543,13 @@ dollarbangND# = BasicDefinitions.dollarBangNDImpl
 dollarbangbang# :: (a -> b) -> a -> b
 dollarbangbang# = ($!)
 
-dollarbangbangND# :: BasicDefinitions.NormalForm a => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
+dollarbangbangND# :: BasicDefinitions.Curryable a => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
 dollarbangbangND# = BasicDefinitions.dollarBangBangNDImpl
 
 dollarhashhash# :: (a -> b) -> a -> b
 dollarhashhash# = ($!)
 
-dollarhashhashND# :: BasicDefinitions.NormalForm a => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
+dollarhashhashND# :: BasicDefinitions.Curryable a => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
 dollarhashhashND# = BasicDefinitions.dollarHashHashNDImpl
 
 ensureNotFree# :: a -> a
