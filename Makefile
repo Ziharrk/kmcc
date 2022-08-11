@@ -11,7 +11,7 @@ bin/kmcc-frontend:
 	mv bin/curry-frontend bin/kmcc-frontend
 
 bin/kmcc_repl: repl/src/KMCC/ReplConfig.curry
-	cd repl && cypm curry :l KMCC.ReplConfig :save :q
+	cd repl && cypm install && cypm curry :l KMCC.ReplConfig :save :q
 	mv repl/KMCC.ReplConfig bin/kmcc_repl
 
 .PHONY: clean
