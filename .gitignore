@@ -11,3 +11,5 @@ bin/kmcc_c
 *.hi-boot
 *.o
 *.o-boot
+
+repl/src/KMCC/PkgConfig.curry
