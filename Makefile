@@ -1,5 +1,5 @@
 .PHONY: all
-all: bin/kmcc_c bin/kmcc-frontend bin/kmcc_repl
+all: bin/kmcc_c bin/kmcc-frontend bin/kmcc_repl prebuild_prelude
 
 .PHONY: bin/kmcc_c
 bin/kmcc_c:
@@ -21,3 +21,8 @@ clean:
 	rm -rf repl/src/.curry
 	rm -rf lib/.curry
 	stack clean
+
+.PHONY: prebuild_prelude
+prebuild_prelude: bin/kmcc_c
+	echo "Pre-Compiling Prelude"
+	bin/kmcc_c lib/Prelude.curry
