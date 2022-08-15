@@ -462,8 +462,11 @@ instance ToHs RuleInfo where
 instance ToMonadicHs RuleInfo where
   convertToMonadicHs (RI (qname, TRule args expr)) = do
     analysis <- ask
+    freshNames <- replicateM (length args) freshVarName
+    let annExpr = annotateND analysis expr
     e' <- convertToMonadicHs (annotateND analysis expr)
-    let e'' = foldr (\v -> mkReturnFunc .  Lambda () [PVar () $ indexToName $ fst v]) e' args
+    let argInfo = zipWith (\(v, _) n -> (v, n, countVarUse annExpr v)) args freshNames
+    let e'' = foldr (\(v, n, occ) -> mkReturnFunc .  Lambda () [PVar () n] . mkShareBind (indexToName v, Hs.Var () (UnQual () n), occ)) e' argInfo
     return $ Match () (convertFuncNameToMonadicHs (Unqual qname)) []
       (UnGuardedRhs () e'') Nothing
   convertToMonadicHs (RI (qname, TExternal _ str)) = return $
