@@ -60,7 +60,6 @@ import           Unsafe.Coerce                      (unsafeCoerce)
 import           Classes                            (MonadShare(..), Shareable(..))
 import qualified Tree
 
-import NormalForm
 import Narrowable
 import HasPrimitiveInfo
 
@@ -336,22 +335,8 @@ newtype Curry a = Curry {
   }
 
 -------------------------------------------------------------------------------
--- For evalutation of Curry values, we compute the ground normal form of the given value.
--- We also provide a funtion that converts results to a non-polymorphic, "normal" tree.
-
-evalCurryNF :: NormalForm a => Curry a -> Tree Level (NDState, Level) a
-evalCurryNF ma =
-  unVal <$> evalND (unCurry (groundNormalForm ma)) (initialNDState ())
-  where
-    unVal (Val _ x) = x
-    unVal (Var _ _) = error "evalCurry: Variable"
-
-evalCurryTreeNF :: NormalForm a => Curry a -> Tree.Tree a
-evalCurryTreeNF ma = convertTree $ evalCurryNF ma
-  where
-    convertTree (Single x)     = Tree.Leaf x
-    convertTree (Fail   _)     = Tree.Empty
-    convertTree (Choice _ l r) = Tree.Node (convertTree l) (convertTree r)
+-- For evalutation of Curry values we provide a funtion
+-- that converts results to a non-polymorphic, "normal" tree.
 
 evalCurry :: Curry a -> Tree Level (NDState, Level) a
 evalCurry = fmap snd . runCurry
@@ -557,21 +542,6 @@ lookupTaskResult ref i s =
     trMap = Map.restrictKeys (unsafePerformIO (readIORef ref)) allIDs
 
 --------------------------------------------------------------------------------
--- We provide two different funtions to compute normal forms.
--- The basic one does not instantiate variables, whereas the ground variant does.
--- Both traverse value arguments to pull up any non-determinism to the top.
-
-normalForm :: NormalForm a => Curry a -> Curry a
-normalForm a = Curry $ do
-  a' <- deref a
-  case a' of
-    Val _ x -> unCurry (nfWith normalForm x)
-    Var lvl i -> return (Var lvl i)
-
-groundNormalForm :: NormalForm a => Curry a -> Curry a
-groundNormalForm a = a >>= nfWith groundNormalForm
-
---------------------------------------------------------------------------------
 -- Unification proceeds as shown in the appendix of the paper.
 -- Our class uses Generics so that we can easily derive instances.
 -- Since we also provide a "lazy" unification operator,
@@ -691,29 +661,6 @@ class Levelable a where
 -- If the argument is not needed by the captured function, the argument is still not evaluated.
 -- Since a 0-arity function bhas no arguments, step 3 is omitted there.
 
-set0 :: NormalForm a
-     => Curry a -> Curry (ListC a)
-set0 f = do
-  lvl <- gets currentLevel
-  modify (\s -> s { setComputation = True })
-  captureWithLvl lvl $ groundNormalForm f
-
-set1 :: (Levelable a, NormalForm b)
-     => (Curry a -> Curry b) -> Curry a -> Curry (ListC b)
-set1 f arg = do
-  lvl <- gets currentLevel
-  modify (\s -> s { setComputation = True })
-  captureWithLvl lvl $ groundNormalForm $ f
-    (setLevelC (succ lvl) arg)
-
-set2 :: (Levelable a, Levelable b, NormalForm c)
-     => (Curry a -> Curry b -> Curry c) -> Curry a -> Curry b -> Curry (ListC c)
-set2 f arg1 arg2 = do
-  lvl <- gets currentLevel
-  modify (\s -> s { setComputation = True })
-  captureWithLvl lvl $ groundNormalForm $ f
-    (setLevelC (succ lvl) arg1)
-    (setLevelC (succ lvl) arg2)
 
 -- So why do we need the setComputation flag?
 -- The answer is complex, but as an intuition:
@@ -914,10 +861,6 @@ instance Levelable Integer where
 data ListC a = NilC | ConsC (Curry a) (Curry (ListC a))
   deriving (Generic, Levelable)
 
-instance NormalForm a => NormalForm (ListC a) where
-  nfWith _ NilC = return NilC
-  nfWith f (ConsC x xs) = (\x' xs' -> ConsC (return x') (return xs')) <$> f x <*> f xs
-
 instance (Shareable Curry a, HasPrimitiveInfo a) => HasPrimitiveInfo (ListC a)
 
 instance (HasPrimitiveInfo a, Shareable Curry a) => Narrowable (ListC a) where
@@ -934,9 +877,6 @@ instance Shareable Curry a => Shareable Curry (ListC a) where
 
 data Tuple2C a b = Tuple2C (Curry a) (Curry b)
   deriving (Generic, Levelable)
-
-instance (NormalForm a, NormalForm b) => NormalForm (Tuple2C a b) where
-  nfWith = defaultNfWith
 
 instance (Shareable Curry a, HasPrimitiveInfo a, Shareable Curry b, HasPrimitiveInfo b)
   => HasPrimitiveInfo (Tuple2C a b)
@@ -986,20 +926,3 @@ showStructure (Fail (_, lvl)) =
   "<Fail_" ++ show lvl ++ ">"
 showStructure (Choice lvl l r) =
   "(" ++ showStructure l ++ ") :" ++ show lvl ++ ": (" ++ showStructure r ++ ")"
-
-instance (NormalForm a, Show a) => Show (ListC a) where
-  show NilC         = "[]"
-  show (ConsC x xs) = show (toHsList x xs)
-    where
-      toHsList x' xs' = case evalCurry x' of
-        Single x''' -> x''' : case evalCurry xs' of
-          Single NilC             -> []
-          Single (ConsC x'' xs'') -> toHsList x'' xs''
-          _                       -> error ""
-        _        -> error ""
-
-instance (NormalForm a, Show a, NormalForm b, Show b)
-  => Show (Tuple2C a b) where
-    show (Tuple2C x y) = case (evalCurry x, evalCurry y) of
-      (Single a, Single b) -> "(" ++ show a ++ "," ++ show b ++ ")"
-      _                    -> error ""

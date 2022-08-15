@@ -54,7 +54,6 @@ common deps
     MultiParamTypeClasses,
     TemplateHaskell
   other-modules:
-    NormalForm
     Narrowable
     HasPrimitiveInfo
 
