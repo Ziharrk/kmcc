@@ -317,8 +317,11 @@ unSingle :: MemoizedCurry.Tree n f l -> l
 unSingle (Single x) = x
 unSingle _ = error "mainWrapper: not a single result"
 
-exprWrapperDet :: (ForeignType a, Foreign a ~ String) => a -> IO ()
-exprWrapperDet a = catch (evaluate (toForeign a)) (\Failed -> fail "**No value found") >>= putStrLn
+exprWrapperDet :: (ShowFree b, HsEquivalent b ~ a, FromHs b) => a -> IO ()
+exprWrapperDet a = case bfs $ evalCurryTree (showFreeCurry (fromHaskell a) []) of
+  []  -> fail "**No value found"
+  [s] -> putStrLn s
+  _   -> error "internalError: More than on result from deterministic expression"
 
 exprWrapperNDet :: ShowFree a => [(String, Integer)] -> Bool -> Curry (CurryVal a, [VarInfo]) -> IO ()
 exprWrapperNDet fvs b ca = printRes (bfs $ evalCurryTree extract)
