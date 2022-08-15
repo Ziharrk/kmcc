@@ -24,7 +24,7 @@ invokeGHC hasMain deps opts = do
     Just p  -> do
       let args = stackInvokeGHCArgs ++ stackPkgArgs ++
                    "--" : invokeGHCDefaultArgs ++ getGHCOptsFor hasMain deps targetFile opts
-      debugMessage opts $ "Invoking GHC with: " ++ unwords args
+      debugMessage opts $ "Invoking GHC via: " ++ unwords args
       callProcess p args
   when hasMain $ copyExecutable targetFile opts
 
@@ -54,7 +54,7 @@ invokeGHCDefaultArgs = ["--make"]
 
 getGHCOptsFor :: Bool -> [(ModuleIdent, Source)] -> FilePath -> KMCCOpts -> [String]
 getGHCOptsFor hasMain deps targetFile
-  KMCCOpts { frontendOpts, optCompilerVerbosity, optOptimizationBaseLevel } =
+  KMCCOpts { frontendOpts, optCompilerVerbosity, optOptimizationBaseLevel, ghcOpts } =
   ["-fforce-recomp" | optForce frontendOpts] ++
   ["-v" | optCompilerVerbosity > 3] ++
   ["-v0" | optCompilerVerbosity == 0] ++
@@ -62,6 +62,7 @@ getGHCOptsFor hasMain deps targetFile
   ["-i rts"] ++
   ["-O " ++ show optOptimizationBaseLevel] ++
   getGHCSrcDirOpts deps frontendOpts ++
+  ghcOpts ++
   [takeBaseName targetFile]
   where
     mainId = case last deps of

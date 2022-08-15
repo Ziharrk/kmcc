@@ -23,7 +23,8 @@ data KMCCOpts = KMCCOpts {
     optCompilerVerbosity :: Int,
     optOptimizationBaseLevel :: Int,
     optOptimizationDeterminism :: Bool,
-    frontendOpts :: Options
+    frontendOpts :: Options,
+    ghcOpts :: [String]
   }
 
 data InfoCommand = CompilerName | NumericVersion | BaseVersion
@@ -48,6 +49,7 @@ defaultOpts = KMCCOpts
   , optOptimizationBaseLevel = 1
   , optOptimizationDeterminism = True
   , frontendOpts = defaultFrontendOpts
+  , ghcOpts = []
   }
 
 defaultFrontendOpts :: Options

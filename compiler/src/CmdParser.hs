@@ -26,6 +26,8 @@ optParser = adjustDefaultOpts
   <*> many (option parseExtension (long "extension" <> short 'X' <> metavar "EXT" <> help "Enable the language extension EXT"
                                 <> completeWith (map show [(minBound :: KnownExtension) .. maxBound])))
 
+  <*> optional (option parseGHCOpts (hidden <> long "ghc-options" <> short 'g' <> metavar "OPTS" <> help "Pass OPTS to the GHC"))
+
   <*> switch (long "disable-det-optimization" <> help "Disable optimization of deterministic programs (not included in -O0)")
   <*> optional (option parseOptimization (long "optimization" <> short 'O' <> metavar "n" <> help "Set optimization level to n, with 0 <= n <= 2, default = 1"))
   <*> many (option parseVarArg (short 'V' <> internal))
@@ -46,6 +48,11 @@ parseExtension :: ReadM KnownExtension
 parseExtension = eitherReader $ \s -> case reads s of
   [(e, "")] -> return e
   _         -> Left $ "Invalid extension: " ++ s
+
+parseGHCOpts :: ReadM [String]
+parseGHCOpts = eitherReader $ \s -> case words s of
+  [] -> Left "Empty ghc-options"
+  xs -> Right xs
 
 parseFrontendOpts :: ReadM (Options -> Options)
 parseFrontendOpts = eitherReader $ \s -> case parseOpts (words s) of
@@ -73,11 +80,12 @@ parseOptimization = eitherReader $ \s -> case reads s of
 
 adjustDefaultOpts :: Bool -> Bool -> Bool
                   -> Maybe Int -> [FilePath] -> Maybe FilePath -> Maybe (Options -> Options) -> [KnownExtension]
+                  -> Maybe [String]
                   -> Bool -> Maybe Int
                   -> [(String, Int)] -> Bool
                   -> Either [InfoCommand] FilePath
                   -> KMCCOpts
-adjustDefaultOpts f c q v is o p x dOpt opt vars b torv = defaultOpts
+adjustDefaultOpts f c q v is o p x ghc dOpt opt vars b torv = defaultOpts
   { optTarget = fromRight "" torv
   , optCompilerVerbosity = verbosity
   , optCompileOnly = c
@@ -87,6 +95,7 @@ adjustDefaultOpts f c q v is o p x dOpt opt vars b torv = defaultOpts
   , optOptimizationBaseLevel = fromMaybe (optOptimizationBaseLevel defaultOpts) opt
   , optOptimizationDeterminism = not dOpt && optOptimizationDeterminism defaultOpts
   , frontendOpts = adjustFrontendOpts
+  , ghcOpts = fromMaybe [] ghc
   }
   where
     verbosity = fromMaybe (if q then 0 else 1) v
