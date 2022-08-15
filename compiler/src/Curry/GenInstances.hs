@@ -198,8 +198,8 @@ genInstances (Type qname _ vs cs) =
     mkNfWithImpl qname2 ar = Do () $
       map (\i -> Generator () (PVar () (appendName "_f" (indexToName i))) $
                   App () (Hs.Var () (UnQual () (Ident () "_f"))) $ Hs.Var () $ UnQual () $ indexToName i) [1..ar] ++
-      [Qualifier () $ Hs.Case () (Tuple () Unboxed (map (Hs.Var () . UnQual () . appendName "_f" . indexToName) [1..ar]))
-        [ Alt () (PTuple () Unboxed (map (PApp () rightQualName . return . PVar ()  . appendName "_d" . indexToName) [1..ar]))
+      [Qualifier () $ Hs.Case () (mkTuple Unboxed (map (Hs.Var () . UnQual () . appendName "_f" . indexToName) [1..ar]))
+        [ Alt () (mkTupleP Unboxed (map (PApp () rightQualName . return . PVar ()  . appendName "_d" . indexToName) [1..ar]))
             (UnGuardedRhs () $ mkReturn $ mkRight $
               foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToHs qname2)
                 (map (Hs.Var () . UnQual () . appendName "_d" . indexToName) [1..ar])) Nothing
@@ -237,3 +237,15 @@ genInstances (Type qname _ vs cs) =
 genInstances TypeSyn {} = []
 genInstances (TypeNew qname1 vis1 vs (NewCons qname2 vis2 ty)) =
   genInstances (Type qname1 vis1 vs [Cons qname2 1 vis2 [ty]])
+
+mkTuple :: Boxed -> [Exp ()] -> Exp ()
+mkTuple _       []  = Hs.Con () (Special () (UnitCon()))
+mkTuple Boxed   [e] = Hs.App () (Hs.Con () (Qual () (ModuleName () "P") (Ident ()"Solo"))) e
+mkTuple Unboxed [e] = e
+mkTuple boxity  es  = Tuple () boxity es
+
+mkTupleP :: Boxed -> [Pat ()] -> Pat ()
+mkTupleP _       []  = PApp () (Special () (UnitCon())) []
+mkTupleP Boxed   [p] = PApp () (Qual () (ModuleName () "P") (Ident ()"Solo")) [p]
+mkTupleP Unboxed [p] = p
+mkTupleP boxity  es  = PTuple () boxity es
