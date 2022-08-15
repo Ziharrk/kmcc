@@ -219,21 +219,21 @@ patchMainPre ty opts fs = case ty of
 -- call the wrapper on the mainND## function, or if main is actually deterministic or IO, call the respective wrapper
 patchMainPost :: TypeExpr -> KMCCOpts -> ModuleHead () -> [Decl ()] -> CM (ModuleHead (), [Decl ()])
 patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do -- TODO: pass options to wrapper
-  let hasDetMain = EVar () (Qual () nm (Ident () "main")) `elem` es
+  let hasDetMain = EVar () (Qual () nm (Ident () "main_Det")) `elem` es
   let mainExport = EVar () (Qual () nm (Ident () "main##"))
 
   (mainExpr, ds') <- case ty of
       TCons ("Prelude","IO") _
-        | hasDetMain -> return (App () (Hs.Var () mainWrapperDetQualName) (Hs.Var () (Qual () nm (Ident () "main"))), ds)
-        | otherwise  -> return (App () (Hs.Var () mainWrapperNDetQualName) (Hs.Var () (Qual () nm (Ident () "mainND"))), ds)
+        | hasDetMain -> return (App () (Hs.Var () mainWrapperDetQualName) (Hs.Var () (Qual () nm (Ident () "main_Det"))), ds)
+        | otherwise  -> return (App () (Hs.Var () mainWrapperNDetQualName) (Hs.Var () (Qual () nm (Ident () "main_ND"))), ds)
       _
-        | hasDetMain -> return (App () (Hs.Var () exprWrapperDetQualName) (Hs.Var () (Qual () nm (Ident () "main"))), ds)
+        | hasDetMain -> return (App () (Hs.Var () exprWrapperDetQualName) (Hs.Var () (Qual () nm (Ident () "main_Det"))), ds)
         | otherwise  -> do
           let findMainDecl [] = throwError $ return @[] $ Message NoSpanInfo $ text "Main function not found"
-              findMainDecl ((FunBind _ [Match _ (Ident () "mainND") [] (UnGuardedRhs () e) Nothing]):bs) = return (e, bs)
+              findMainDecl ((FunBind _ [Match _ (Ident () "main_ND") [] (UnGuardedRhs () e) Nothing]):bs) = return (e, bs)
               findMainDecl (b:bs) = second (b:) <$> findMainDecl bs
               findMainSig [] = throwError $ return @[] $ Message NoSpanInfo $ text "Main type signature not found"
-              findMainSig ((TypeSig _ [Ident () "mainND"] mainTy):bs) = return (mainTy, bs)
+              findMainSig ((TypeSig _ [Ident () "main_ND"] mainTy):bs) = return (mainTy, bs)
               findMainSig (b:bs) = second (b:) <$> findMainSig bs
           (mainRhsE, withoutMainDecl) <- findMainDecl ds
           (mainType, rest) <- findMainSig withoutMainDecl
@@ -247,7 +247,7 @@ patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do -
 
           let e' = foldl (\e -> mkMonadicApp e . Hs.Var () . UnQual ()) (Hs.Var () (Qual () nm (Ident () "mainND##"))) mainVs
           let mainNDExpr = foldr mkShareBind e' (zip3 mainVs (repeat mkFree) (repeat One))
-          let mainNDDecl = FunBind () [Match () (Ident () "mainND") [] (UnGuardedRhs () mainNDExpr) Nothing]
+          let mainNDDecl = FunBind () [Match () (Ident () "main_ND") [] (UnGuardedRhs () mainNDExpr) Nothing]
 
           let mainE = mkVarReturn opts mainVs (Hs.Var () (Qual () nm (Ident () "mainND##")))
           let varInfos = List () $ map (\(s,i) -> Tuple () Boxed [Hs.Lit () (String () s s), Hs.Lit () (Int () (toInteger i) (show i))]) (optVarNames opts)
@@ -310,7 +310,7 @@ type instance HsEquivalent TypeDecl = HsTypeDecl
 instance ToHs TypeDecl where
   convertToHs (Type qname@(mdl, nm) _ vs cs)
     | [] <- cs = return $ HTD $ TypeDecl () (mkTypeHead qname []) $ -- eta reduce -> ignore vars
-      TyCon () (Qual () (ModuleName () ("Curry_" ++ mdl)) (Ident () (escapeTypeName nm ++ "#")))
+      TyCon () (Qual () (ModuleName () ("Curry_" ++ mdl)) (Ident () (escapeTypeName nm ++ "_Det#")))
     | otherwise = do
       cs' <- mapM convertToHs cs
       return $ HTD $
@@ -327,7 +327,7 @@ instance ToHs TypeDecl where
 instance ToMonadicHs TypeDecl where
   convertToMonadicHs (Type qname@(mdl, nm) _ vs cs)
     | [] <- cs = return $ HTD $ TypeDecl () (mkMonadicTypeHead qname []) $ -- eta reduce -> ignore vars
-      TyCon () (Qual () (ModuleName () ("Curry_" ++ mdl)) (Ident () (escapeTypeName nm ++ "ND#")))
+      TyCon () (Qual () (ModuleName () ("Curry_" ++ mdl)) (Ident () (escapeTypeName nm ++ "_ND#")))
     | otherwise = do
       cs' <- concat <$> mapM convertConstrToMonadic cs
       return $ HTD $
@@ -453,7 +453,7 @@ instance ToHs RuleInfo where
       (UnGuardedRhs () e) Nothing
   convertToHs (RI (qname, TExternal _ str)) = return $
     Match () (convertFuncNameToHs (Unqual qname)) []
-      (UnGuardedRhs () (Hs.Var () (UnQual () (Ident () (escapeFuncName unqualStr ++ "#"))))) Nothing
+      (UnGuardedRhs () (Hs.Var () (UnQual () (Ident () (escapeFuncName unqualStr ++ "_Det#"))))) Nothing
     where unqualStr = case dropWhile (/= '.') str of
             ""  -> str
             "." -> str
@@ -471,7 +471,7 @@ instance ToMonadicHs RuleInfo where
       (UnGuardedRhs () e'') Nothing
   convertToMonadicHs (RI (qname, TExternal _ str)) = return $
     Match () (convertFuncNameToMonadicHs (Unqual qname)) []
-      (UnGuardedRhs () (Hs.Var () (UnQual () (Ident () (escapeFuncName unqualStr ++ "ND#"))))) Nothing
+      (UnGuardedRhs () (Hs.Var () (UnQual () (Ident () (escapeFuncName unqualStr ++ "_ND#"))))) Nothing
     where unqualStr = case dropWhile (/= '.') str of
             ""  -> str
             "." -> str
@@ -506,7 +506,7 @@ instance ToHs (AExpr (TypeExpr, NDInfo)) where
 failedBranch :: Alt ()
 failedBranch = Alt () (PWildCard ())
   (UnGuardedRhs ()
-    (Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "failed")))) Nothing
+    (Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "failed_Det")))) Nothing
 
 instance ToMonadicHs (AExpr (TypeExpr, NDInfo)) where
   convertToMonadicHs = convertExprToMonadicHs Set.empty
@@ -560,7 +560,7 @@ convertExprToMonadicHs vset (ATyped _ e ty) = ExpTypeSig () <$> convertExprToMon
 failedMonadicBranch :: Alt ()
 failedMonadicBranch = Alt () (PWildCard ())
   (UnGuardedRhs ()
-    (Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "failedND")))) Nothing
+    (Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "failed_ND")))) Nothing
 
 type instance HsEquivalent (ABranchExpr (TypeExpr, NDInfo)) = Alt ()
 instance ToHs (ABranchExpr (TypeExpr, NDInfo)) where
@@ -651,13 +651,13 @@ class ToMonadicHsName a where
   convertFuncNameToMonadicHs :: a -> HsEquivalent a
 
 instance ToHsName UnqualName where
-  convertTypeNameToHs (Unqual (_, s)) = Ident () $ escapeTypeName s
-  convertFuncNameToHs (Unqual (_, s)) = Ident () $ escapeFuncName s
+  convertTypeNameToHs (Unqual (_, s)) = Ident () $ escapeTypeName s ++ "_Det"
+  convertFuncNameToHs (Unqual (_, s)) = Ident () $ escapeFuncName s ++ "_Det"
 
 instance ToMonadicHsName UnqualName where
-  convertTypeNameToMonadicHs (Unqual (_, s)) = Ident () $ escapeTypeName s ++ "ND"
+  convertTypeNameToMonadicHs (Unqual (_, s)) = Ident () $ escapeTypeName s ++ "_ND"
   convertFuncNameToMonadicHs :: UnqualName -> HsEquivalent UnqualName
-  convertFuncNameToMonadicHs (Unqual (_, s)) = Ident () $ escapeFuncName s ++ "ND"
+  convertFuncNameToMonadicHs (Unqual (_, s)) = Ident () $ escapeFuncName s ++ "_ND"
 
 instance ToHsName QName where
   convertTypeNameToHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertTypeNameToHs (Unqual n))
@@ -668,10 +668,8 @@ instance ToMonadicHsName QName where
   convertFuncNameToMonadicHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertFuncNameToMonadicHs (Unqual n))
 
 convertQualNameToFlatName :: QName -> Name ()
-convertQualNameToFlatName qname =
-  case convertTypeNameToHs (Unqual qname) of
-    Ident  _ s -> Ident () (s ++ "Flat#")
-    Symbol _ s -> Ident () (s ++ "$#")
+convertQualNameToFlatName (_, s) =
+  Ident () (escapeTypeName s ++ "Flat#")
 
 convertQualNameToFlatQualName :: QName -> Hs.QName ()
 convertQualNameToFlatQualName qname@(m, _) =

@@ -18,8 +18,7 @@ test3 :: Int -> Int
 test3 n = factorial $!! (someNumber n)
 
 factorialL :: [Int] -> [Int]
-factorialL [] = []
-factorialL (x:xs) = factorial x : factorialL xs
+factorialL = map factorial
 
 factorial :: Int -> Int
 factorial n | n <= 0    = 0
