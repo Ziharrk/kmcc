@@ -18,7 +18,9 @@ test3 :: Int -> Int
 test3 n = factorial $!! (someNumber n)
 
 factorialL :: [Int] -> [Int]
-factorialL = map factorial
+-- factorialL = map factorial <- map not optimizable, because factorial is passed as higher-order
+factorialL [] = []
+factorialL (n:ns) = factorial n : factorialL ns
 
 factorial :: Int -> Int
 factorial n | n <= 0    = 0

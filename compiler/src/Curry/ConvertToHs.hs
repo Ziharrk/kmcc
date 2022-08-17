@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Curry.ConvertToHs
   ( compileToHs, haskellName
-  , mkCurryCtxt
+  , mkCurryCtxt, mkFlatPattern
   , HsEquivalent
   , ToHsName(..), ToMonadicHsName(..), UnqualName(..)
   , convertQualNameToFlatName, convertQualNameToFlatQualName
@@ -179,10 +179,10 @@ instance ToHs TProgWithFilePath where
       getVisT (TypeNew qname Public _ c) = Just (qname, maybe [] return (getVisN c))
       getVisT _ = Nothing
 
-      getVisC (Cons qname _ Public vs) = Just (qname, not (null vs))
+      getVisC (Cons qname _ Public _vs) = Just qname
       getVisC _ = Nothing
 
-      getVisN (NewCons qname Public _) = Just (qname, True)
+      getVisN (NewCons qname Public _) = Just qname
       getVisN _ = Nothing
 
       getVisF (TFunc qname _ Public _ _) = Just qname
@@ -274,7 +274,7 @@ mkVarReturn opts fvs = go (map snd (optVarNames opts))
           eWithInfo = mkAddVarIds mainE (map (mkGetVarId . Hs.Var () . UnQual () . indexToName) (sort xs))
       in foldr mkShareBind eWithInfo (zip3 fvs (repeat mkFree) (replicate (length fvs) Many))
 
-newtype ModuleHeadStuff = MS (String, [(QName, [(QName, Bool)])], [QName])
+newtype ModuleHeadStuff = MS (String, [(QName, [QName])], [QName])
 type instance HsEquivalent ModuleHeadStuff = ModuleHead ()
 instance ToHs ModuleHeadStuff where
   convertToHs (MS (s, qnamesT, qnamesF)) = do
@@ -287,12 +287,10 @@ instance ToHs ModuleHeadStuff where
         [convertTypeNameToHs qname, convertTypeNameToMonadicHs qname]
       typeItem (qname, csNames) = map (uncurry (EThingWith () (NoWildcard ())))
         [ (convertTypeNameToHs qname, concatMap conItem csNames)
-        , (convertTypeNameToMonadicHs qname, concatMap conItemMonadic csNames) ]
+        , (convertTypeNameToMonadicHs qname, ConName () (convertQualNameToFlatName qname) : map conItemMonadic csNames) ]
 
-      conItem (qname, _) = [ConName () (convertTypeNameToHs (Unqual qname))]
-      conItemMonadic (qname, False) = [ConName () (convertTypeNameToMonadicHs (Unqual qname))]
-      conItemMonadic (qname, True)  = [ ConName () (convertTypeNameToMonadicHs (Unqual qname))
-                                      , ConName () (convertQualNameToFlatName qname) ]
+      conItem qname = [ConName () (convertTypeNameToHs (Unqual qname))]
+      conItemMonadic qname = ConName () (convertTypeNameToMonadicHs (Unqual qname))
 
       funcItem qname = do
         analysis <- ask
@@ -329,7 +327,7 @@ instance ToMonadicHs TypeDecl where
     | [] <- cs = return $ HTD $ TypeDecl () (mkMonadicTypeHead qname []) $ -- eta reduce -> ignore vars
       TyCon () (Qual () (ModuleName () ("Curry_" ++ mdl)) (Ident () (escapeTypeName nm ++ "_ND#")))
     | otherwise = do
-      cs' <- concat <$> mapM convertConstrToMonadic cs
+      cs' <- (mkFlatConstr qname vs :) <$> mapM convertToMonadicHs cs
       return $ HTD $
         DataDecl () (DataType ()) Nothing (mkMonadicTypeHead qname vs) cs' []
   convertToMonadicHs (TypeSyn qname _ vs texpr) =  do
@@ -337,23 +335,17 @@ instance ToMonadicHs TypeDecl where
     return $ HTD $
       TypeDecl () (mkMonadicTypeHead qname vs) ty
   convertToMonadicHs (TypeNew qname _ vs (NewCons cname cvis texpr)) = do
-    cs' <- convertConstrToMonadic (Cons cname 1 cvis [texpr])
+    c' <- convertToMonadicHs (Cons cname 1 cvis [texpr])
+    let cs' = [mkFlatConstr qname vs, c']
     return $ HTD $
       DataDecl () (DataType ()) Nothing (mkMonadicTypeHead qname vs) cs' []
 
-convertConstrToMonadic :: ConsDecl -> CM [QualConDecl ()]
-convertConstrToMonadic c@(Cons _ 0 _ _) = return <$> convertToMonadicHs c
-convertConstrToMonadic c@(Cons qname _ _ _) = do
-  c1 <- convertToMonadicHs c >>= \case
-    QualConDecl _ _ _ (ConDecl _ _ tys)
-      -> return $ QualConDecl () Nothing Nothing $
-                  ConDecl () (convertQualNameToFlatName qname) (map mkHsEquiv tys)
-      where
-        mkHsEquiv (TyApp _ _ ty) = TyApp () (TyCon () hsEquivQualName) ty
-        mkHsEquiv ty = TyApp () (TyCon () hsEquivQualName) ty
-    _ -> error "ConvertToHs: Record constructor"
-  c2 <- convertToMonadicHs c
-  return [c1,c2]
+mkFlatConstr :: QName -> [TVarWithKind] -> QualConDecl ()
+mkFlatConstr qname vs =
+  let hsEquiv = TyApp () (TyCon () hsEquivQualName) $
+                foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname)) $
+                map (TyVar () . indexToName . fst) vs
+  in QualConDecl () Nothing Nothing $ ConDecl () (convertQualNameToFlatName qname) [hsEquiv]
 
 type instance HsEquivalent ConsDecl = QualConDecl ()
 instance ToHs ConsDecl where
@@ -595,9 +587,8 @@ convertBranchToMonadicHs vSet (ABranch pat e)
       let pat' = case pat of
                    APattern _ (qname, _) [] ->
                     PApp () (convertTypeNameToMonadicHs qname) []
-                   APattern _ (qname, _) args ->
-                    PApp () (convertQualNameToFlatQualName qname)
-                            (map (PVar () . indexToName. fst) args)
+                   APattern _ (qname, (ty', _)) args ->
+                    mkFlatPattern qname ty' (map fst args)
                    ALPattern _ lit ->
                     PLit () (litSign lit) (convertLit lit)
       return [Alt () pat' (UnGuardedRhs () (mkFromHaskell e')) Nothing]
@@ -607,15 +598,28 @@ convertBranchToMonadicHs vSet (ABranch pat e)
         (pat', vs) <- convertPatToMonadic pat e
         return $ Alt () pat' (UnGuardedRhs () (foldr mkShareBind e' vs)) Nothing
       case pat of
-        APattern _ (qname@(_, baseName), _) vs@(_:_)
+        APattern _ (qname@(_, baseName), (ty', _)) vs
           | not ("_Dict#" `isPrefixOf` baseName) -> do
           let vsNames = map fst vs
           let vSet' = Set.union vSet (Set.fromList vsNames)
           analysis <- ask
-          e' <- convertExprToMonadicHs vSet' (annotateND' analysis (Map.fromSet (const Det) vSet') (genTypedExpr (fmap fst e)))
-          let pat' = PApp () (convertQualNameToFlatQualName qname) (map (PVar () . indexToName) vsNames)
+          let annE = annotateND' analysis (Map.fromSet (const Det) vSet') (genTypedExpr (fmap fst e))
+          e' <- convertExprToMonadicHs vSet' annE
+          let pat' = mkFlatPattern qname ty' vsNames
           return [alt1, Alt () pat' (UnGuardedRhs () (foldr mkFromHaskellBind e' vsNames)) Nothing]
         _ -> return [alt1]
+
+mkFlatPattern :: QName -> TypeExpr -> [Int] -> Pat ()
+mkFlatPattern qname ty args =
+  PApp () (convertQualNameToFlatQualName (typeExprQualName ty)) $
+  return $
+  PApp () (convertTypeNameToHs qname) $
+  map (PVar () . indexToName) args
+  where
+   typeExprQualName x = case x of
+     TCons qname' _   -> qname'
+     ForallType _ ty' -> typeExprQualName ty'
+     _                -> error "mkFlatPattern: typeExprQualName"
 
 type instance HsEquivalent (APattern (TypeExpr, NDInfo)) = Pat ()
 instance ToHs (APattern (TypeExpr, NDInfo)) where

@@ -4,11 +4,13 @@ module Curry.ConvertToHs where
 import Language.Haskell.Exts ( Context, Name )
 import qualified Language.Haskell.Exts as Hs
 
-import Curry.FlatCurry.Type ( TVarWithKind, QName )
+import Curry.FlatCurry.Type ( TVarWithKind, QName, TypeExpr )
 
 import Curry.ConvertUtils ( HsEquivalent, UnqualName )
 
 mkCurryCtxt :: [TVarWithKind] -> Maybe (Context ())
+
+mkFlatPattern :: QName -> TypeExpr -> [Int] -> Hs.Pat ()
 
 class ToHsName a where
   convertTypeNameToHs :: a -> HsEquivalent a
