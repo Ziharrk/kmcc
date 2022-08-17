@@ -20,6 +20,7 @@ optParser = adjustDefaultOpts
   <*> switch (long "quiet" <> short 'q' <> help "Suppress all output (equivalent to -v0, overwritten by -vn with n >= 1)")
 
   <*> optional (option parseVerbosity (long "verbose" <> short 'v' <> metavar "n" <> help "Set verbosity level to n, with 0 <= n <= 4, default = 1"))
+  <*> switch (hidden <> long "time-compilation" <> short 't' <> help "Output time of compilation phases")
   <*> many (strOption (hidden <> long "import-dir" <> short 'i' <> metavar "IDIR" <> help "Add IDIR to the import search path"))
   <*> optional (strOption (hidden <> long "output-dir" <> short 'o' <> metavar "ODIR" <> help "Write output to ODIR"))
   <*> optional (option parseFrontendOpts (hidden <> long "parse-options" <> short 'p' <> metavar "OPTS" <> help "Pass OPTS to the frontend"))
@@ -79,15 +80,16 @@ parseOptimization = eitherReader $ \s -> case reads s of
   _                    -> Left $ "Invalid optimization level (0 <= n <= 2): " ++ s
 
 adjustDefaultOpts :: Bool -> Bool -> Bool
-                  -> Maybe Int -> [FilePath] -> Maybe FilePath -> Maybe (Options -> Options) -> [KnownExtension]
+                  -> Maybe Int -> Bool -> [FilePath] -> Maybe FilePath -> Maybe (Options -> Options) -> [KnownExtension]
                   -> Maybe [String]
                   -> Bool -> Maybe Int
                   -> [(String, Int)] -> Bool
                   -> Either [InfoCommand] FilePath
                   -> KMCCOpts
-adjustDefaultOpts f c q v is o p x ghc dOpt opt vars b torv = defaultOpts
+adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b torv = defaultOpts
   { optTarget = fromRight "" torv
   , optCompilerVerbosity = verbosity
+  , optShowTimings = t
   , optCompileOnly = c
   , optInfo = fromLeft [] torv
   , optVarNames = vars

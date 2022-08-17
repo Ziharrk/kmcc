@@ -2,6 +2,7 @@ module Options where
 
 import Control.Monad ( when )
 import qualified Data.Map as Map
+import Data.Time ( NominalDiffTime )
 import Data.Version ( showVersion )
 import System.FilePath ( (</>) )
 
@@ -21,6 +22,7 @@ data KMCCOpts = KMCCOpts {
     optVarNames :: [(String, Int)],
     optShowBindings :: Bool,
     optCompilerVerbosity :: Int,
+    optShowTimings :: Bool,
     optOptimizationBaseLevel :: Int,
     optOptimizationDeterminism :: Bool,
     frontendOpts :: Options,
@@ -46,6 +48,7 @@ defaultOpts = KMCCOpts
   , optVarNames = []
   , optShowBindings = False
   , optCompilerVerbosity = 1
+  , optShowTimings = False
   , optOptimizationBaseLevel = 1
   , optOptimizationDeterminism = True
   , frontendOpts = defaultFrontendOpts
@@ -73,3 +76,6 @@ debugMessage ops s = when (optCompilerVerbosity ops > 1) $ putStrLn s
 
 dumpMessage :: KMCCOpts -> String -> IO ()
 dumpMessage ops s = when (optCompilerVerbosity ops > 2) $ putStrLn s
+
+timeMessage :: KMCCOpts -> String -> NominalDiffTime -> IO ()
+timeMessage ops s t = when (optShowTimings ops) $ putStrLn $ s ++ ": " ++ show t
