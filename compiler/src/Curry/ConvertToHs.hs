@@ -588,14 +588,14 @@ convertBranchToMonadicHs vSet (ABranch pat e)
     Det <- annot,
     isFunFree ty = do
       e' <- convertToHs e
-      let pat' = case pat of
-                   APattern _ (qname, _) [] ->
-                    PApp () (convertTypeNameToMonadicHs qname) []
+      let transE = mkFromHaskell e'
+      (pat1, vs) <- convertPatToMonadic pat e
+      let alt2 = case pat of
                    APattern _ (qname, (ty', _)) args ->
-                    mkFlatPattern qname ty' (map fst args)
-                   ALPattern _ lit ->
-                    PLit () (litSign lit) (convertLit lit)
-      return [Alt () pat' (UnGuardedRhs () (mkFromHaskell e')) Nothing]
+                    [Alt () (mkFlatPattern qname ty' (map fst args)) (UnGuardedRhs () transE) Nothing]
+                   ALPattern _ _ -> []
+      let alt1 = Alt () pat1 (UnGuardedRhs () (foldr mkShareBind transE vs)) Nothing
+      return (alt1:alt2)
   | otherwise = do
       alt1 <- do
         e' <- convertExprToMonadicHs vSet e
