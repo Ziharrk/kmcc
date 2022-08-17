@@ -55,7 +55,7 @@ compileFileToFcy opts srcs = runCurryFrontendAction (frontendOpts opts) $
 -- |Compile a single source module to typed flat curry.
 process :: KMCCOpts -> (Int, Int)
         -> ModuleIdent -> FilePath -> [FilePath] -> CYIO TProg
-process kmccopts idx m fn deps
+process kmccopts idx@(thisIdx,maxIdx) m fn deps
   | optForce opts = compile
   | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile skip
   where
@@ -72,12 +72,17 @@ process kmccopts idx m fn deps
             , "Retrying compilation from source..." ]
           compile
         Right res -> do
-          liftIO $ dumpMessage kmccopts $ "Read cached flat curry file:\n" ++ show res
+          if thisIdx == maxIdx
+            then liftIO $ dumpMessage kmccopts $ "Read cached flat curry file:\n" ++ show res
+            else liftIO $ dumpMessage kmccopts "Read cached flat curry file."
           return res
     compile = do
       status opts $ compMessage idx (11, 16) "Compiling" m (fn, head destFiles)
       res <- compileModule opts m fn
-      liftIO $ dumpMessage kmccopts $ "Generated flat curry file:\n" ++ show res
+      if thisIdx == maxIdx
+        then liftIO $ dumpMessage kmccopts $ "Generated flat curry file:\n" ++ show res
+        else liftIO $ dumpMessage kmccopts "Generated flat curry file."
+
       return res
 
     opts = frontendOpts kmccopts

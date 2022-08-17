@@ -82,7 +82,7 @@ compileToHs mainType mdls ndInfo opts =
 
 process :: KMCCOpts -> (Int, Int) -> TProg
         -> ModuleIdent -> FilePath -> Maybe TypeExpr -> [FilePath] -> CM ()
-process kopts idx tprog m fn mi deps
+process kopts idx@(thisIdx,maxIdx) tprog m fn mi deps
   | optForce opts = compile
   | otherwise     = smake [destFile] deps compile skip
   where
@@ -103,13 +103,17 @@ process kopts idx tprog m fn mi deps
               , "Retrying compilation from analyzed flat curry ..." ]
             compile
           ParseOk res ->
-            liftIO $ dumpMessage kopts $ "Read cached Haskell file:\n" ++
+            if thisIdx == maxIdx
+              then liftIO $ dumpMessage kopts $ "Read cached Haskell file:\n" ++
                         prettyPrintStyleMode hsPrettyPrintStyle hsPrettyPrintMode res
+              else liftIO $ dumpMessage kopts "Read cached Haskell file"
     compile = do
       status opts $ compMessage idx (11, 16) "Translating" m (fn, destFile)
       res <- convertToHs (TWFP (tprog, externalName fn, mi, kopts))
       let printed = prettyPrintStyleMode hsPrettyPrintStyle hsPrettyPrintMode res
-      liftIO $ dumpMessage kopts $ "Generated Haskell file:\n" ++ printed
+      if thisIdx == maxIdx
+        then liftIO $ dumpMessage kopts $ "Generated Haskell file:\n" ++ printed
+        else liftIO $ dumpMessage kopts $ "Generated Haskell file."
       liftIO $ writeUTF8File' (tgtDir (haskellName fn)) printed
       return ()
 

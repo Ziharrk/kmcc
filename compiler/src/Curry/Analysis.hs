@@ -62,7 +62,7 @@ analyzeNondet tps kmccopts = handleRes $ runExceptT $ flip evalStateT Map.empty 
 -- |Analyze a single flat curry module.
 process :: KMCCOpts -> (Int, Int) -> TProg
         -> ModuleIdent -> FilePath -> [FilePath] -> AM 'Global NDAnalysisResult
-process kmccopts idx tprog m fn deps
+process kmccopts idx@(thisIdx,maxIdx) tprog m fn deps
   -- if we are not doing determinism analysis,
   -- go to compile so that we can fill the analysis infos with default values.
   | not (optOptimizationDeterminism kmccopts) ||
@@ -85,13 +85,18 @@ process kmccopts idx tprog m fn deps
           compile
         Right (analysis, exportedNames) -> do
           modify' (Map.union (Map.restrictKeys analysis exportedNames))
-          liftIO $ dumpMessage kmccopts $ "Loaded cached analysis:\n" ++ show analysis
+          if thisIdx == maxIdx
+            then liftIO $ dumpMessage kmccopts $ "Loaded cached analysis:\n" ++ show analysis
+            else liftIO $ dumpMessage kmccopts "Loaded cached analysis."
           return analysis
     compile = do
       res@(analysis, _) <- runLocalState $ do
         status opts $ compMessage idx (11, 16) "Analyzing" m (fn, destFile)
         analyzeTProg kmccopts tprog
       liftIO $ encodeFile (tgtDir (analysisName fn)) res
+      if thisIdx == maxIdx
+        then liftIO $ dumpMessage kmccopts $ "Analysis finished:\n" ++ show analysis
+        else liftIO $ dumpMessage kmccopts "Analysis finished."
       return analysis
 
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
