@@ -14,6 +14,7 @@ import qualified Data.List as P
 import qualified GHC.IO.Exception as P
 import qualified GHC.Magic as P
 import qualified System.IO.Unsafe as P
+import qualified Data.SBV as SBV
 import BasicDefinitions
 import Prelude ((.), ($), ($!), (+), (-), (*), (/), (==), (<=),(>>=))
 
@@ -612,23 +613,23 @@ minusInt_Det# = (-)
 timesInt_Det# :: Int_Det -> Int_Det -> Int_Det
 timesInt_Det# = (*)
 
-primuscoreplusFloat_Det# :: Float_Det -> Float_Det -> Float_Det
-primuscoreplusFloat_Det# = (+)
+plusFloat_Det# :: Float_Det -> Float_Det -> Float_Det
+plusFloat_Det# = (+)
 
-primuscoreminusFloat_Det# :: Float_Det -> Float_Det -> Float_Det
-primuscoreminusFloat_Det# = (-)
+minusFloat_Det# :: Float_Det -> Float_Det -> Float_Det
+minusFloat_Det# = (-)
 
-primuscoretimesFloat_Det# :: Float_Det -> Float_Det -> Float_Det
-primuscoretimesFloat_Det# = (*)
+timesFloat_Det# :: Float_Det -> Float_Det -> Float_Det
+timesFloat_Det# = (*)
 
 negateFloat_Det# :: Float_Det -> Float_Det
 negateFloat_Det# = P.negate
 
-primuscoreintToFloat_Det# :: Int_Det -> Float_Det
-primuscoreintToFloat_Det# = P.fromIntegral
+intToFloat_Det# :: Int_Det -> Float_Det
+intToFloat_Det# = P.fromIntegral
 
-primuscoredivFloat_Det# :: Float_Det -> Float_Det -> Float_Det
-primuscoredivFloat_Det# = (/)
+divFloat_Det# :: Float_Det -> Float_Det -> Float_Det
+divFloat_Det# = (/)
 
 divInt_Det# :: Int_Det -> Int_Det -> Int_Det
 divInt_Det# = P.div
@@ -642,56 +643,56 @@ quotInt_Det# = P.quot
 remInt_Det# :: Int_Det -> Int_Det -> Int_Det
 remInt_Det# = P.rem
 
-primuscoretruncateFloat_Det# :: Float_Det -> Int_Det
-primuscoretruncateFloat_Det# = P.truncate
+truncateFloat_Det# :: Float_Det -> Int_Det
+truncateFloat_Det# = P.truncate
 
-primuscoreroundFloat_Det# :: Float_Det -> Int_Det
-primuscoreroundFloat_Det# = P.round
+roundFloat_Det# :: Float_Det -> Int_Det
+roundFloat_Det# = P.round
 
-primuscorelogFloat_Det# :: Float_Det -> Float_Det
-primuscorelogFloat_Det# = P.log
+logFloat_Det# :: Float_Det -> Float_Det
+logFloat_Det# = P.log
 
-primuscoreexpFloat_Det# :: Float_Det -> Float_Det
-primuscoreexpFloat_Det# = P.exp
+expFloat_Det# :: Float_Det -> Float_Det
+expFloat_Det# = P.exp
 
-primuscoresqrtFloat_Det# :: Float_Det -> Float_Det
-primuscoresqrtFloat_Det# = P.sqrt
+sqrtFloat_Det# :: Float_Det -> Float_Det
+sqrtFloat_Det# = P.sqrt
 
-primuscoresinFloat_Det# :: Float_Det -> Float_Det
-primuscoresinFloat_Det# = P.sin
+sinFloat_Det# :: Float_Det -> Float_Det
+sinFloat_Det# = P.sin
 
-primuscorecosFloat_Det# :: Float_Det -> Float_Det
-primuscorecosFloat_Det# = P.cos
+cosFloat_Det# :: Float_Det -> Float_Det
+cosFloat_Det# = P.cos
 
-primuscoretanFloat_Det# :: Float_Det -> Float_Det
-primuscoretanFloat_Det# = P.tan
+tanFloat_Det# :: Float_Det -> Float_Det
+tanFloat_Det# = P.tan
 
-primuscoreasinFloat_Det# :: Float_Det -> Float_Det
-primuscoreasinFloat_Det# = P.asin
+asinFloat_Det# :: Float_Det -> Float_Det
+asinFloat_Det# = P.asin
 
-primuscoreacosFloat_Det# :: Float_Det -> Float_Det
-primuscoreacosFloat_Det# = P.acos
+acosFloat_Det# :: Float_Det -> Float_Det
+acosFloat_Det# = P.acos
 
-primuscoreatanFloat_Det# :: Float_Det -> Float_Det
-primuscoreatanFloat_Det# = P.atan
+atanFloat_Det# :: Float_Det -> Float_Det
+atanFloat_Det# = P.atan
 
-primuscoreasinhFloat_Det# :: Float_Det -> Float_Det
-primuscoreasinhFloat_Det# = P.asinh
+asinhFloat_Det# :: Float_Det -> Float_Det
+asinhFloat_Det# = P.asinh
 
-primuscoreacoshFloat_Det# :: Float_Det -> Float_Det
-primuscoreacoshFloat_Det# = P.acosh
+acoshFloat_Det# :: Float_Det -> Float_Det
+acoshFloat_Det# = P.acosh
 
-primuscoreatanhFloat_Det# :: Float_Det -> Float_Det
-primuscoreatanhFloat_Det# = P.atanh
+atanhFloat_Det# :: Float_Det -> Float_Det
+atanhFloat_Det# = P.atanh
 
-primuscoresinhFloat_Det# :: Float_Det -> Float_Det
-primuscoresinhFloat_Det# = P.sinh
+sinhFloat_Det# :: Float_Det -> Float_Det
+sinhFloat_Det# = P.sinh
 
-primuscorecoshFloat_Det# :: Float_Det -> Float_Det
-primuscorecoshFloat_Det# = P.cosh
+coshFloat_Det# :: Float_Det -> Float_Det
+coshFloat_Det# = P.cosh
 
-primuscoretanhFloat_Det# :: Float_Det -> Float_Det
-primuscoretanhFloat_Det# = P.tanh
+tanhFloat_Det# :: Float_Det -> Float_Det
+tanhFloat_Det# = P.tanh
 
 primuscoreshowCharLiteral_ND# :: Curry (LiftedFunc Char_ND (CList_ND Char_ND))
 primuscoreshowCharLiteral_ND# = liftConvert1 (liftForeign1 P.show)
@@ -718,94 +719,94 @@ primuscorereadFloatLiteral_ND# :: Curry (LiftedFunc (CList_ND Char_ND) (CList_ND
 primuscorereadFloatLiteral_ND# = liftConvert1 (liftForeign1 P.reads)
 
 plusInt_ND# :: Curry (LiftedFunc Int_ND (LiftedFunc Int_ND Int_ND))
-plusInt_ND# = liftConvert2 (+)
+plusInt_ND# = primitive2 (+) (+)
 
 minusInt_ND# :: Curry (LiftedFunc Int_ND (LiftedFunc Int_ND Int_ND))
-minusInt_ND# = liftConvert2 (-)
+minusInt_ND# = primitive2 (-) (-)
 
 timesInt_ND# :: Curry (LiftedFunc Int_ND (LiftedFunc Int_ND Int_ND))
-timesInt_ND# = liftConvert2 (*)
+timesInt_ND# = primitive2 (*) (*)
 
-primuscoreplusFloat_ND# :: Curry (LiftedFunc Float_ND (LiftedFunc Float_ND Float_ND))
-primuscoreplusFloat_ND# = liftConvert2 (+)
+plusFloat_ND# :: Curry (LiftedFunc Float_ND (LiftedFunc Float_ND Float_ND))
+plusFloat_ND# = primitive2 (+) (+)
 
-primuscoreminusFloat_ND# :: Curry (LiftedFunc Float_ND (LiftedFunc Float_ND Float_ND))
-primuscoreminusFloat_ND# = liftConvert2 (-)
+minusFloat_ND# :: Curry (LiftedFunc Float_ND (LiftedFunc Float_ND Float_ND))
+minusFloat_ND# = primitive2 (-) (-)
 
-primuscoretimesFloat_ND# :: Curry (LiftedFunc Float_ND (LiftedFunc Float_ND Float_ND))
-primuscoretimesFloat_ND# = liftConvert2 (*)
+timesFloat_ND# :: Curry (LiftedFunc Float_ND (LiftedFunc Float_ND Float_ND))
+timesFloat_ND# = primitive2 (*) (*)
 
 negateFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-negateFloat_ND# = liftConvert1 P.negate
+negateFloat_ND# = primitive1 P.negate P.negate
 
-primuscoreintToFloat_ND# :: Curry (LiftedFunc Int_ND Float_ND)
-primuscoreintToFloat_ND# = liftConvert1 P.fromIntegral
+intToFloat_ND# :: Curry (LiftedFunc Int_ND Float_ND)
+intToFloat_ND# = primitive1 SBV.sFromIntegral P.fromIntegral
 
-primuscoredivFloat_ND# :: Curry (LiftedFunc Float_ND (LiftedFunc Float_ND Float_ND))
-primuscoredivFloat_ND# = liftConvert1 (/)
+divFloat_ND# :: Curry (LiftedFunc Float_ND (LiftedFunc Float_ND Float_ND))
+divFloat_ND# = primitive2 (/) (/)
 
 divInt_ND# :: Curry (LiftedFunc Int_ND (LiftedFunc Int_ND Int_ND))
-divInt_ND# = liftConvert1 P.div
+divInt_ND# = primitive2 SBV.sDiv P.div
 
 modInt_ND# :: Curry (LiftedFunc Int_ND (LiftedFunc Int_ND Int_ND))
-modInt_ND# = liftConvert1 P.mod
+modInt_ND# = primitive2 SBV.sMod P.mod
 
 quotInt_ND# :: Curry (LiftedFunc Int_ND (LiftedFunc Int_ND Int_ND))
-quotInt_ND# = liftConvert1 P.quot
+quotInt_ND# = primitive2 SBV.sQuot P.quot
 
 remInt_ND# :: Curry (LiftedFunc Int_ND (LiftedFunc Int_ND Int_ND))
-remInt_ND# = liftConvert1 P.rem
+remInt_ND# = primitive2 SBV.sRem P.rem
 
-primuscoretruncateFloat_ND# :: Curry (LiftedFunc Float_ND Int_ND)
-primuscoretruncateFloat_ND# = liftConvert1 P.truncate
+truncateFloat_ND# :: Curry (LiftedFunc Float_ND Int_ND)
+truncateFloat_ND# = primitive1 (SBV.fromSDouble (SBV.literal SBV.RoundNearestTiesToEven)) P.truncate
 
-primuscoreroundFloat_ND# :: Curry (LiftedFunc Float_ND Int_ND)
-primuscoreroundFloat_ND# = liftConvert1 P.round
+roundFloat_ND# :: Curry (LiftedFunc Float_ND Int_ND)
+roundFloat_ND# = primitive1 (SBV.fromSDouble (SBV.literal SBV.RoundTowardZero)) P.round
 
-primuscorelogFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscorelogFloat_ND# = liftConvert1 P.log
+logFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+logFloat_ND# = primitive1 P.log P.log
 
-primuscoreexpFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoreexpFloat_ND# = liftConvert1 P.exp
+expFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+expFloat_ND# = primitive1 P.exp P.exp
 
-primuscoresqrtFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoresqrtFloat_ND# = liftConvert1 P.sqrt
+sqrtFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+sqrtFloat_ND# = primitive1 P.sqrt P.sqrt
 
-primuscoresinFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoresinFloat_ND# = liftConvert1 P.sin
+sinFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+sinFloat_ND# = primitive1 P.sin P.sin
 
-primuscorecosFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscorecosFloat_ND# = liftConvert1 P.cos
+cosFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+cosFloat_ND# = primitive1 P.cos P.cos
 
-primuscoretanFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoretanFloat_ND# = liftConvert1 P.tan
+tanFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+tanFloat_ND# = primitive1 P.tan P.tan
 
-primuscoreasinFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoreasinFloat_ND# = liftConvert1 P.asin
+asinFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+asinFloat_ND# = primitive1 P.asin P.asin
 
-primuscoreacosFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoreacosFloat_ND# = liftConvert1 P.acos
+acosFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+acosFloat_ND# = primitive1 P.acos P.acos
 
-primuscoreatanFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoreatanFloat_ND# = liftConvert1 P.atan
+atanFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+atanFloat_ND# = primitive1 P.atan P.atan
 
-primuscoreasinhFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoreasinhFloat_ND# = liftConvert1 P.asinh
+asinhFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+asinhFloat_ND# = primitive1 P.asinh P.asinh
 
-primuscoreacoshFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoreacoshFloat_ND# = liftConvert1 P.acosh
+acoshFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+acoshFloat_ND# = primitive1 P.acosh P.acosh
 
-primuscoreatanhFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoreatanhFloat_ND# = liftConvert1 P.atanh
+atanhFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+atanhFloat_ND# = primitive1 P.atanh P.atanh
 
-primuscoresinhFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoresinhFloat_ND# = liftConvert1 P.sinh
+sinhFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+sinhFloat_ND# = primitive1 P.sinh P.sinh
 
-primuscorecoshFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscorecoshFloat_ND# = liftConvert1 P.cosh
+coshFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+coshFloat_ND# = primitive1 P.cosh P.cosh
 
-primuscoretanhFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
-primuscoretanhFloat_ND# = liftConvert1 P.tanh
+tanhFloat_ND# :: Curry (LiftedFunc Float_ND Float_ND)
+tanhFloat_ND# = primitive1 P.tanh P.tanh
 
 -- -----------------------------------------------------------------------------
 -- Primitive operations: IO stuff

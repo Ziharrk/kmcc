@@ -1,7 +1,9 @@
 {-# LANGUAGE AllowAmbiguousTypes    #-}
 {-# LANGUAGE DerivingStrategies     #-}
 {-# LANGUAGE LambdaCase             #-}
+{-# LANGUAGE RecordWildCards        #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
+{-# LANGUAGE UnboxedTuples          #-}
 {-# LANGUAGE UndecidableInstances   #-}
 {-# OPTIONS_GHC -Wno-orphans        #-}
 module BasicDefinitions
@@ -25,6 +27,7 @@ import Narrowable
 import HasPrimitiveInfo
 import Classes
 import Tree
+import Data.SBV (SBV, (.===))
 
 type family HsEquivalent (a :: k) = (b :: k) | b -> a
 
@@ -89,8 +92,11 @@ normalForm' a = do
 normalForm :: (NormalForm a, FromHs a) => Curry a -> Curry a
 normalForm a = ndEitherToCurry (normalForm' a)
 
+eitherToCurry :: FromHs a => Either (CurryVal a) (HsEquivalent a) -> Curry a
+eitherToCurry = Curry . either return (unCurry . fromHaskell)
+
 ndEitherToCurry :: FromHs a => ND (Either (CurryVal a) (HsEquivalent a)) -> Curry a
-ndEitherToCurry a = Curry $ a >>= either return (unCurry . fromHaskell)
+ndEitherToCurry a = Curry $ a >>= unCurry . eitherToCurry
 
 groundNormalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent a))
 groundNormalForm' a = deref a >>= \case
@@ -396,79 +402,54 @@ dollarBangNDImpl =
       Val _ x   -> x `seq` (f `app` return x)
       Var lvl i -> f `app` Curry (return (Var lvl i)))))
 
-data ListTest a = Nil | ListDet (HsEquivalent a) (HsEquivalent (ListTest a)) | ListND (Curry a) (Curry (ListTest a))
 
-type instance HsEquivalent (ListTest a) = [HsEquivalent a]
+-- TODO update constrained vars
+primitive1 :: forall a b
+            . ( HasPrimitiveInfo a, ForeignType a
+              , Curryable b, ForeignType b )
+           => (SBV a -> SBV b)
+           -> (Foreign a -> Foreign b)
+           -> Curry (a :-> b)
+primitive1 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
+  (# Primitive, Primitive #) -> return . Func $ \ca -> Curry $ do
+    a <- deref ca
+    case a of
+      Val _ x -> return $ Val Shared $ fromForeign $ hsF $ toForeign x
+      Var lvl i -> do
+        j <- freshID
+        s@NDState { .. } <- get
+        let c = sbvF (toSBV (Var lvl i)) .=== toSBV (Var lvl j)
+        let cst' = insertConstraint c constraintStore
+        put (s { constraintStore = cst' })
+        -- Consistency not necessary, see comment in primitive2
+        return (Var lvl j)
+  _ -> error "internalError: primitive1: non-primitive type"
 
-instance Curryable a => NormalForm (ListTest a) where
-  nfWith _ Nil = return (Right [])
-  nfWith _ (ListDet x xs) = return (Right (x:xs))
-  nfWith f (ListND x xs) = do
-    x' <- f x
-    xs' <- f xs
-    case (x', xs') of
-      (Right x'', Right xs'') -> return (Right (x'' : xs''))
-      _ -> return (Left (Val Unshared (ListND (eitherToCurry x') (eitherToCurry xs'))))
-
-eitherToCurry :: FromHs a => Either (CurryVal a) (HsEquivalent a) -> Curry a
-eitherToCurry = either (Curry . return) fromHaskell
-
-instance FromHs (ListTest a) where
-  from = \case
-    []   -> Nil
-    x:xs -> ListDet x xs
-
-instance Curryable a => Narrowable (ListTest a) where
-  narrow = [Nil, ListND free free]
-  narrowConstr Nil = Nil
-  narrowConstr (ListDet _ _) = ListND free free
-  narrowConstr (ListND  _ _) = ListND free free
-
-instance Curryable a => HasPrimitiveInfo (ListTest a)
-
-instance Curryable a => Shareable Curry (ListTest a) where
-  shareArgs Nil = return Nil
-  shareArgs (ListND x xs) = ListND <$> share x <*> share xs
-  shareArgs x = return x
-
-instance Curryable a => ToHs (ListTest a) where
-  to Nil = return []
-  to (ListDet x xs) = return (x:xs)
-  to (ListND x xs) = (:) <$> toHaskell x <*> toHaskell xs
-
-instance Curryable a => Unifiable (ListTest a) where
-  unifyWith _ Nil Nil = return True
-  unifyWith f (ListDet x xs) y =
-    unifyWith f (ListND (fromHaskell x) (fromHaskell xs)) y
-  unifyWith f y (ListDet x xs) =
-    unifyWith f y (ListND (fromHaskell x) (fromHaskell xs))
-  unifyWith f (ListND x xs) (ListND y ys) =
-    f x y >> f xs ys
-  unifyWith _ _ _ = mzero
-
-  lazyUnifyVar Nil i = do
-    BasicDefinitions.addToVarHeapM i (return Nil)
-    return True
-  lazyUnifyVar (ListDet x xs) i = do
-    BasicDefinitions.addToVarHeapM i (return (ListDet x xs))
-    return True
-  lazyUnifyVar (ListND x xs) i = do
-    x_s <- share free
-    xs_s <- share free
-    BasicDefinitions.addToVarHeapM i (return (ListND x xs))
-    _ <- unifyL x x_s
-    unifyL xs xs_s
-
-instance Curryable a => ShowFree (ListTest a) where
-  showsFreePrec _ Nil = showsStringCurry "Nil"
-  showsFreePrec p (ListDet x xs) = showsBracketsCurry p $
-    showsStringCurry "List" `showSpaceCurry`
-    showsFreePrecCurry p (fromHaskell x) `showSpaceCurry`
-    showsFreePrecCurry p (fromHaskell xs)
-  showsFreePrec p (ListND x xs) = showsBracketsCurry p $
-    showsStringCurry "List" `showSpaceCurry`
-    showsFreePrecCurry p x `showSpaceCurry`
-    showsFreePrecCurry p xs
-
-
-instance Curryable a => Curryable (ListTest a)
+primitive2 :: forall a b c
+            . ( HasPrimitiveInfo a, ForeignType a
+              , HasPrimitiveInfo b, ForeignType b
+              , Curryable c, ForeignType c )
+           => (SBV a -> SBV b -> SBV c)
+           -> (Foreign a -> Foreign b -> Foreign c)
+           -> Curry (a :-> b :-> c)
+primitive2 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b, primitiveInfo @c #) of
+  (# Primitive, Primitive, Primitive #) -> return . Func $ \ca -> return . Func $ \cb -> Curry $ do
+    a <- deref ca
+    b <- deref cb
+    case (# a, b #) of
+      (# Val _ x, Val _ y #) -> return $ Val Shared $ fromForeign $ hsF (toForeign x) (toForeign y)
+      _ -> do
+          k <- freshID
+          s@NDState { .. } <- get
+          let c = sbvF (toSBV a) (toSBV b) .=== toSBV (Var 0 k)
+          let cst' = insertConstraint c constraintStore
+          put (s { constraintStore = cst' })
+          -- Checking consistency is unnecessary, because "j" is fresh.
+          -- However, it is important to enter x and y in the set of constrained vars, because
+          -- they might get constrained indirectly via "j". Example:
+          -- j <- x + y
+          -- j <- 1
+          -- matchFL 9 x
+          -- matchFL 0 y
+          return (Var 0 k)
+  _ -> error "internalError: primitive2: non-primitive type"

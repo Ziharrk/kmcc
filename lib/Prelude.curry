@@ -261,6 +261,8 @@ instance Eq Ordering where
 eqChar :: Char -> Char -> Bool
 #ifdef __KICS2__
 eqChar external
+#elif  __KMCC__ > 0
+eqChar external
 #else
 eqChar x y = (prim_eqChar $# y) $# x
 
@@ -272,6 +274,8 @@ prim_eqChar external
 eqInt :: Int -> Int -> Bool
 #ifdef __KICS2__
 eqInt external
+#elif  __KMCC__ > 0
+eqInt external
 #else
 eqInt x y = (prim_eqInt $# y) $# x
 
@@ -282,6 +286,8 @@ prim_eqInt external
 -- Equality on floating point numbers.
 eqFloat :: Float -> Float -> Bool
 #ifdef __KICS2__
+eqFloat external
+#elif  __KMCC__ > 0
 eqFloat external
 #else
 eqFloat x y = (prim_eqFloat $# y) $# x
@@ -369,6 +375,8 @@ instance Ord Ordering where
 ltEqChar :: Char -> Char -> Bool
 #ifdef __KICS2__
 ltEqChar external
+#elif  __KMCC__ > 0
+ltEqChar external
 #else
 ltEqChar x y = (prim_ltEqChar $# y) $# x
 
@@ -380,6 +388,8 @@ prim_ltEqChar external
 ltEqInt :: Int -> Int -> Bool
 #ifdef __KICS2__
 ltEqInt external
+#elif  __KMCC__ > 0
+ltEqInt external
 #else
 ltEqInt x y = (prim_ltEqInt $# y) $# x
 
@@ -390,6 +400,8 @@ prim_ltEqInt external
 -- Compares two floating point numbers.
 ltEqFloat :: Float -> Float -> Bool
 #ifdef __KICS2__
+ltEqFloat external
+#elif  __KMCC__ > 0
 ltEqFloat external
 #else
 ltEqFloat x y = (prim_ltEqFloat $# y) $# x
@@ -881,6 +893,8 @@ instance Num Float where
 plusInt :: Int -> Int -> Int
 #ifdef __KICS2__
 plusInt external
+#elif  __KMCC__ > 0
+plusInt external
 #else
 x `plusInt` y = (prim_plusInt $# y) $# x
 
@@ -891,6 +905,8 @@ prim_plusInt external
 -- Subtracts two integers.
 minusInt :: Int -> Int -> Int
 #ifdef __KICS2__
+minusInt external
+#elif  __KMCC__ > 0
 minusInt external
 #else
 x `minusInt` y = (prim_minusInt $# y) $# x
@@ -903,6 +919,8 @@ prim_minusInt external
 timesInt :: Int -> Int -> Int
 #ifdef __KICS2__
 timesInt external
+#elif  __KMCC__ > 0
+timesInt external
 #else
 x `timesInt` y = (prim_timesInt $# y) $# x
 
@@ -912,28 +930,42 @@ prim_timesInt external
 
 -- Adds two floating point numbers.
 plusFloat :: Float -> Float -> Float
+#ifdef __KMCC__
+plusFloat external
+#else
 x `plusFloat` y = (prim_plusFloat $# y) $# x
 
 prim_plusFloat :: Float -> Float -> Float
 prim_plusFloat external
+#endif
 
 -- Subtracts two floating point numbers.
 minusFloat :: Float -> Float -> Float
+#ifdef __KMCC__
+minusFloat external
+#else
 x `minusFloat` y = (prim_minusFloat $# y) $# x
 
 prim_minusFloat :: Float -> Float -> Float
 prim_minusFloat external
+#endif
 
 -- Multiplies two floating point numbers.
 timesFloat :: Float -> Float -> Float
+#ifdef __KMCC__
+timesFloat external
+#else
 x `timesFloat` y = (prim_timesFloat $# y) $# x
 
 prim_timesFloat :: Float -> Float -> Float
 prim_timesFloat external
+#endif
 
 -- Negates a floating point number.
 negateFloat :: Float -> Float
 #ifdef __KICS2__
+negateFloat external
+#elif  __KMCC__ > 0
 negateFloat external
 #else
 negateFloat x = prim_negateFloat $# x
@@ -944,11 +976,14 @@ prim_negateFloat external
 
 -- Converts from integers to floating point numbers.
 intToFloat :: Int -> Float
+#ifdef __KMCC__
+intToFloat external
+#else
 intToFloat x = prim_intToFloat $# x
 
 prim_intToFloat :: Int -> Float
 prim_intToFloat external
-
+#endif
 
 class Num a => Fractional a where
   (/) :: a -> a -> a
@@ -964,10 +999,14 @@ instance Fractional Float where
 
 -- Division on floating point numbers.
 divFloat :: Float -> Float -> Float
+#ifdef __KMCC__
+divFloat external
+#else
 x `divFloat` y = (prim_divFloat $# y) $# x
 
 prim_divFloat :: Float -> Float -> Float
 prim_divFloat external
+#endif
 
 class (Num a, Ord a) => Real a where
   toFloat :: a -> Float
@@ -1021,6 +1060,8 @@ realToFrac = fromFloat . toFloat
 divInt :: Int -> Int -> Int
 #ifdef __KICS2__
 divInt external
+#elif  __KMCC__ > 0
+divInt external
 #else
 x `divInt` y = (prim_divInt $# y) $# x
 
@@ -1032,6 +1073,8 @@ prim_divInt external
 -- and it obeys the rule `mod x y = x - y * (div x y)`.
 modInt :: Int -> Int -> Int
 #ifdef __KICS2__
+modInt external
+#elif  __KMCC__ > 0
 modInt external
 #else
 x `modInt` y = (prim_modInt $# y) $# x
@@ -1045,6 +1088,8 @@ prim_modInt external
 quotInt :: Int -> Int -> Int
 #ifdef __KICS2__
 quotInt external
+#elif  __KMCC__ > 0
+quotInt external
 #else
 x `quotInt` y = (prim_quotInt $# y) $# x
 
@@ -1056,6 +1101,8 @@ prim_quotInt external
 -- and it obeys the rule `rem x y = x - y * (quot x y)`.
 remInt :: Int -> Int -> Int
 #ifdef __KICS2__
+remInt external
+#elif  __KMCC__ > 0
 remInt external
 #else
 x `remInt` y = (prim_remInt $# y) $# x
@@ -1093,20 +1140,28 @@ instance RealFrac Float where
 -- Conversion function from floating point numbers to integers.
 -- The result is the closest integer between the argument and 0.
 truncateFloat :: Float -> Int
+#ifdef __KMCC__
+truncateFloat external
+#else
 truncateFloat x = prim_truncateFloat $# x
 
 prim_truncateFloat :: Float -> Int
 prim_truncateFloat external
+#endif
 
 -- Conversion function from floating point numbers to integers.
 -- The result is the nearest integer to the argument.
 -- If the argument is equidistant between two integers,
 -- it is rounded to the closest even integer value.
 roundFloat :: Float -> Int
+#ifdef __KMCC__
+roundFloat external
+#else
 roundFloat x = prim_roundFloat $# x
 
 prim_roundFloat :: Float -> Int
 prim_roundFloat external
+#endif
 
 class Fractional a => Floating a where
   pi :: a
@@ -1143,109 +1198,168 @@ instance Floating Float where
 
 -- Natural logarithm.
 logFloat :: Float -> Float
+#ifdef __KMCC__
+logFloat external
+#else
 logFloat x = prim_logFloat $# x
 
 prim_logFloat :: Float -> Float
 prim_logFloat external
+#endif
 
 -- Natural exponent.
 expFloat :: Float -> Float
+#ifdef __KMCC__
+expFloat external
+#else
 expFloat x = prim_expFloat $# x
 
 prim_expFloat :: Float -> Float
 prim_expFloat external
+#endif
 
 -- Square root.
 sqrtFloat :: Float -> Float
+#ifdef __KMCC__
+sqrtFloat external
+#else
 sqrtFloat x = prim_sqrtFloat $# x
 
 prim_sqrtFloat :: Float -> Float
 prim_sqrtFloat external
+#endif
 
 -- Sine.
 sinFloat :: Float -> Float
+#ifdef __KMCC__
+sinFloat external
+#else
 sinFloat x = prim_sinFloat $# x
 
 prim_sinFloat :: Float -> Float
 prim_sinFloat external
+#endif
 
 -- Cosine.
 cosFloat :: Float -> Float
+#ifdef __KMCC__
+cosFloat external
+#else
 cosFloat x = prim_cosFloat $# x
 
 prim_cosFloat :: Float -> Float
 prim_cosFloat external
+#endif
 
 -- Tangent.
 tanFloat :: Float -> Float
+#ifdef __KMCC__
+tanFloat external
+#else
 tanFloat x = prim_tanFloat $# x
 
 prim_tanFloat :: Float -> Float
 prim_tanFloat external
+#endif
 
 -- Arcus sine.
 asinFloat :: Float -> Float
+#ifdef __KMCC__
+asinFloat external
+#else
 asinFloat x = prim_asinFloat $# x
 
 prim_asinFloat :: Float -> Float
 prim_asinFloat external
+#endif
 
 -- Arcus cosine.
 acosFloat :: Float -> Float
+#ifdef __KMCC__
+acosFloat external
+#else
 acosFloat x = prim_acosFloat $# x
 
 prim_acosFloat :: Float -> Float
 prim_acosFloat external
+#endif
 
 -- Arcus tangent.
 atanFloat :: Float -> Float
+#ifdef __KMCC__
+atanFloat external
+#else
 atanFloat x = prim_atanFloat $# x
 
 prim_atanFloat :: Float -> Float
 prim_atanFloat external
+#endif
 
 -- Hyperbolic sine.
 sinhFloat :: Float -> Float
+#ifdef __KMCC__
+sinhFloat external
+#else
 sinhFloat x = prim_sinhFloat $# x
 
 prim_sinhFloat :: Float -> Float
 prim_sinhFloat external
+#endif
 
 -- Hyperbolic cosine.
 coshFloat :: Float -> Float
+#ifdef __KMCC__
+coshFloat external
+#else
 coshFloat x = prim_coshFloat $# x
 
 prim_coshFloat :: Float -> Float
 prim_coshFloat external
+#endif
 
 -- Hyperbolic tangent.
 tanhFloat :: Float -> Float
+#ifdef __KMCC__
+tanhFloat external
+#else
 tanhFloat x = prim_tanhFloat $# x
 
 prim_tanhFloat :: Float -> Float
 prim_tanhFloat external
+#endif
 
 -- Hyperbolic arcus sine.
 asinhFloat :: Float -> Float
+#ifdef __KMCC__
+asinhFloat external
+#else
 asinhFloat x = prim_asinhFloat $# x
 
 prim_asinhFloat :: Float -> Float
 prim_asinhFloat external
+#endif
 
 -- Hyperbolic arcus cosine.
 acoshFloat :: Float -> Float
+#ifdef __KMCC__
+acoshFloat external
+#else
 acoshFloat x = prim_acoshFloat $# x
 
 prim_acoshFloat :: Float -> Float
 prim_acoshFloat external
+#endif
 
 -- Hyperbolic arcus tangent.
 atanhFloat :: Float -> Float
+#ifdef __KMCC__
+atanhFloat external
+#else
 atanhFloat x = prim_atanhFloat $# x
 
 prim_atanhFloat :: Float -> Float
 prim_atanhFloat external
-
+#endif
 
 (^) :: (Num a, Integral b) => a -> b -> a
 x0 ^ y0 | y0 < 0    = error "Negative exponent"

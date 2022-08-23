@@ -24,5 +24,5 @@ clean:
 
 .PHONY: prebuild_prelude
 prebuild_prelude: bin/kmcc_c
-	echo "Pre-Compiling Prelude"
+	$(info "Pre-Compiling Prelude")
 	bin/kmcc_c lib/Prelude.curry

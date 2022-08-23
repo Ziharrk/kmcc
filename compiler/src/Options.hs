@@ -59,7 +59,7 @@ defaultFrontendOpts :: Options
 defaultFrontendOpts = defaultOptions
   { optTargetTypes = [TypedBinaryFlatCurry]
   , optCppOpts = defaultCppOpts {
-      cppDefinitions = Map.fromList [("__KICS2__", 4)]
+      cppDefinitions = Map.fromList [("__KMCC__", 1)]
     }
   , optOutDir = ".curry" </> ("kmcc-" ++ showVersion version)
   }
