@@ -18,7 +18,7 @@ import Control.Monad.State (StateT, MonadState (..), evalStateT, modify)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Coerce (coerce)
 import Data.Char (toLower, toUpper)
-import Data.List (isPrefixOf, sort, find, (\\))
+import Data.List (isPrefixOf, find, (\\))
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Maybe (mapMaybe)
@@ -253,7 +253,7 @@ patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do -
           let mainNDExpr = foldr mkShareBind e' (zip3 mainVs (repeat mkFree) (repeat One))
           let mainNDDecl = FunBind () [Match () (Ident () "main_ND") [] (UnGuardedRhs () mainNDExpr) Nothing]
 
-          let mainE = mkVarReturn opts mainVs (Hs.Var () (Qual () nm (Ident () "mainND##")))
+          let mainE = mkVarReturn mainVs (Hs.Var () (Qual () nm (Ident () "mainND##")))
           let varInfos = List () $ map (\(s,i) -> Tuple () Boxed [Hs.Lit () (String () s s), Hs.Lit () (Int () (toInteger i) (show i))]) (optVarNames opts)
           let bindingOpt = Hs.Var () $ if optShowBindings opts then trueQualName else falseQualName
           return (App () (App () (App () (Hs.Var () exprWrapperNDetQualName) varInfos) bindingOpt) mainE, mainNDDecl:mainNDHashDecl:mainNDHashType:rest)
@@ -264,18 +264,23 @@ patchMainPost _ _ h ds = return (h, ds)
 
 getLiftedPats :: Exp () -> [Pat ()]
 getLiftedPats (Hs.App _ _ (Lambda _ [p] e)) = p : getLiftedPats e
+getLiftedPats (Hs.InfixApp _ _ bind (Lambda _ _ e))
+  | isBind bind = getLiftedPats e
+  where isBind (Hs.QConOp _ v) = v == bindQualName
+        isBind (Hs.QVarOp _ v) = v == bindQualName
+getLiftedPats (Hs.Let _ _ e) = getLiftedPats e
 getLiftedPats _ = []
 
 splitFreeVars :: TExpr -> ([(VarIndex, TypeExpr)], TExpr)
 splitFreeVars (TFree vs e) = first (vs++) (splitFreeVars e)
 splitFreeVars e = ([], e)
 
-mkVarReturn :: KMCCOpts -> [Name ()] -> Exp () -> Exp ()
-mkVarReturn opts fvs = go (map snd (optVarNames opts))
+mkVarReturn :: [Name ()] -> Exp () -> Exp ()
+mkVarReturn fvs = go
   where
-    go xs e =
+    go e =
       let mainE = foldl (\e' -> mkMonadicApp e' . Hs.Var () . UnQual ()) e fvs
-          eWithInfo = mkAddVarIds mainE (map (mkGetVarId . Hs.Var () . UnQual () . indexToName) (sort xs))
+          eWithInfo = mkAddVarIds mainE (map (mkGetVarId . Hs.Var () . UnQual ()) fvs)
       in foldr mkShareBind eWithInfo (zip3 fvs (repeat mkFree) (replicate (length fvs) Many))
 
 newtype ModuleHeadStuff = MS (String, [(QName, [QName])], [QName])
