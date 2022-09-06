@@ -196,6 +196,7 @@ data NDState = NDState {
     currentLevel    :: Level,
     varHeap         :: Heap Untyped, -- (Var) ID -> Curry a
     constraintStore :: ConstraintStore,
+    constrainedVars :: Set ID,
     branchID        :: ID,           -- (Branch) ID
     parentIDs       :: Set ID,
     setComputation  :: Bool
@@ -207,7 +208,7 @@ data NDState = NDState {
 
 {-# NOINLINE initialNDState #-}
 initialNDState :: () -> NDState
-initialNDState () = NDState (unsafePerformIO (newIORef 1)) 0 emptyHeap mempty 0 Set.empty False
+initialNDState () = NDState (unsafePerformIO (newIORef 1)) 0 emptyHeap mempty Set.empty 0 Set.empty False
 
 {-# NOINLINE freshIDFromState #-}
 freshIDFromState :: NDState -> ID
@@ -379,7 +380,8 @@ instantiate lvl i = Curry $
                       s@NDState { .. } <- get
                       let c = toSBV (Var 0 i) .=== toSBV (Val Shared x)
                       let cst' = insertConstraint c constraintStore
-                      put (s { constraintStore = cst' })
+                      let cvs' = Set.insert i constrainedVars
+                      put (s { constraintStore = cst', constrainedVars = cvs' })
                       modify (addToVarHeap i (return x))
                       return (Val Unshared x)
 
@@ -585,7 +587,6 @@ ma1 `unify` ma2 = Curry $ do
     (Var _ i1, Val _ y) -> unifyVar i1 y
     (Val _ x, Var _ i2) -> unifyVar i2 x
   where
-    unifyVar :: ID -> a -> Curry Bool
     unifyVar i v = case primitiveInfo @a of
       NoPrimitive -> do
         let x = narrowConstr v
@@ -593,7 +594,11 @@ ma1 `unify` ma2 = Curry $ do
         modify (addToVarHeap i sX)
         unify sX (return v)
       Primitive   -> do
-        modify (addToVarHeap i (return v))
+        let cs = toSBV (Var 0 i) .=== toSBV (Val Shared v)
+        modify (\s@NDState { .. } -> addToVarHeap i (return v) s
+                   { constraintStore = insertConstraint cs constraintStore
+                   , constrainedVars = Set.insert i constrainedVars
+                   })
         return True
 
 (=:=) :: (HasPrimitiveInfo a, Unifiable a, Shareable Curry a) => Curry (a :-> a :-> Bool)
@@ -606,6 +611,7 @@ ma1 `unify` ma2 = Curry $ do
 -- Such a unification succeeds with this lazy unification,
 -- but fails in the "normal" stricter unification.
 
+-- TODO: primitives
 unifyL :: (HasPrimitiveInfo a, Unifiable a, Shareable Curry a) => Curry a -> Curry a -> Curry Bool
 ma1 `unifyL` ma2 = Curry $ do
   a1 <- deref ma1

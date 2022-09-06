@@ -19,10 +19,11 @@ import Control.Monad
 import Control.Monad.Codensity
 import Control.Monad.State
 import Data.List
+import qualified Data.Set as Set
 import System.IO.Unsafe
 import GHC.IO.Exception
 
-import MemoizedCurry hiding (normalForm, groundNormalForm)
+import MemoizedCurry
 import Narrowable
 import HasPrimitiveInfo
 import Classes
@@ -51,12 +52,15 @@ class ShowFree a where
 
 type ShowSFree = ([(Integer, String)], Curry String) -> ([(Integer, String)], Curry String)
 
-showsFreePrecCurry :: ShowFree a => Int -> Curry a -> ([(Integer, String)], Curry String)
+showsFreePrecCurry :: forall a. ShowFree a => Int -> Curry a -> ([(Integer, String)], Curry String)
                    -> ([(Integer, String)], Curry String)
 showsFreePrecCurry p x (fm, s) = (fm,) $ Curry $ do
   x' <- deref x
   unCurry $ case x' of
-    Var _ i -> showsVar i fm s
+    Var lvl i -> get >>= \NDState { .. } ->
+      if Set.member i constrainedVars
+        then instantiate @a lvl i >>= \y -> snd $ showsFreePrec p y (fm, s)
+        else showsVar i fm s
     Val _ y -> snd $ showsFreePrec p y (fm, s)
 
 showFreeCurry :: ShowFree a => Curry a -> [(Integer, String)] -> Curry String
@@ -419,8 +423,9 @@ primitive1 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
         j <- freshID
         s@NDState { .. } <- get
         let c = sbvF (toSBV (Var lvl i)) .=== toSBV (Var lvl j)
+        let csv' = foldr Set.insert constrainedVars (j : allVars a)
         let cst' = insertConstraint c constraintStore
-        put (s { constraintStore = cst' })
+        put (s { constraintStore = cst', constrainedVars = csv' })
         -- Consistency not necessary, see comment in primitive2
         return (Var lvl j)
   _ -> error "internalError: primitive1: non-primitive type"
@@ -442,8 +447,9 @@ primitive2 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b, primitiveInfo 
           k <- freshID
           s@NDState { .. } <- get
           let c = sbvF (toSBV a) (toSBV b) .=== toSBV (Var 0 k)
+          let csv' = foldr Set.insert constrainedVars (k : allVars a ++ allVars b)
           let cst' = insertConstraint c constraintStore
-          put (s { constraintStore = cst' })
+          put (s { constraintStore = cst', constrainedVars = csv' })
           -- Checking consistency is unnecessary, because "j" is fresh.
           -- However, it is important to enter x and y in the set of constrained vars, because
           -- they might get constrained indirectly via "j". Example:
@@ -453,3 +459,7 @@ primitive2 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b, primitiveInfo 
           -- matchFL 0 y
           return (Var 0 k)
   _ -> error "internalError: primitive2: non-primitive type"
+
+allVars :: CurryVal a -> [Integer]
+allVars (Var _ i) = [i]
+allVars _         = []
