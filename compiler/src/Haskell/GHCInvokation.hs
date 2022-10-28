@@ -22,14 +22,16 @@ invokeGHC hasMain deps opts = do
   case mbEx of
     Nothing -> fail "Executable 'stack' not found. Please install the Haskell tool \"Stack\""
     Just p  -> do
-      let args = stackInvokeGHCArgs ++ stackPkgArgs ++
+      let args = stackInvokeGHCArgs opts ++ stackPkgArgs ++
                    "--" : invokeGHCDefaultArgs ++ getGHCOptsFor hasMain deps targetFile opts
       debugMessage opts $ "Invoking GHC via: " ++ unwords args
       callProcess p args
   when hasMain $ copyExecutable targetFile opts
 
-stackInvokeGHCArgs :: [String]
-stackInvokeGHCArgs = ["--silent", "ghc", "--stack-yaml", "bin/stackForCurry.yaml"]
+stackInvokeGHCArgs :: KMCCOpts -> [String]
+stackInvokeGHCArgs KMCCOpts { optCompilerVerbosity } =
+  ["--silent" | optCompilerVerbosity < 1] ++
+  [ "ghc", "--stack-yaml", "bin/stackForCurry.yaml"]
 
 stackPkgArgs :: [String]
 stackPkgArgs = concatMap (("--package":) . return)
