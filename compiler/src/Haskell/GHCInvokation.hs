@@ -4,7 +4,14 @@ import Control.Monad (when)
 import Data.List (intercalate)
 import Data.Maybe (mapMaybe)
 import System.Directory (findExecutable, copyFile, exeExtension)
-import System.FilePath (takeDirectory, replaceDirectory, replaceExtension, replaceBaseName, takeBaseName)
+import System.Environment (getExecutablePath)
+import System.FilePath
+    ( (</>),
+      replaceBaseName,
+      replaceDirectory,
+      replaceExtension,
+      takeBaseName,
+      takeDirectory, splitPath, joinPath )
 import System.Process (callProcess)
 
 import CompilerOpts (Options(..))
@@ -18,20 +25,22 @@ import Curry.ConvertToHs (haskellName)
 invokeGHC :: Bool -> [(ModuleIdent, Source)] -> KMCCOpts -> IO ()
 invokeGHC hasMain deps opts = do
   mbEx <- findExecutable "stack"
+  execDir <- takeDirectory <$> getExecutablePath
+  let topDir = joinPath (init (splitPath execDir))
   let targetFile = tgtDir (frontendOpts opts) (fst (last deps)) (haskellName (optTarget opts))
   case mbEx of
     Nothing -> fail "Executable 'stack' not found. Please install the Haskell tool \"Stack\""
     Just p  -> do
-      let args = stackInvokeGHCArgs opts ++ stackPkgArgs ++
-                   "--" : invokeGHCDefaultArgs ++ getGHCOptsFor hasMain deps targetFile opts
+      let args = stackInvokeGHCArgs execDir opts ++ stackPkgArgs ++
+                   "--" : invokeGHCDefaultArgs ++ getGHCOptsFor topDir hasMain deps targetFile opts
       debugMessage opts $ "Invoking GHC via: " ++ unwords args
       callProcess p args
   when hasMain $ copyExecutable targetFile opts
 
-stackInvokeGHCArgs :: KMCCOpts -> [String]
-stackInvokeGHCArgs KMCCOpts { optCompilerVerbosity } =
+stackInvokeGHCArgs :: FilePath -> KMCCOpts -> [String]
+stackInvokeGHCArgs execDir KMCCOpts { optCompilerVerbosity } =
   ["--silent" | optCompilerVerbosity < 1] ++
-  [ "ghc", "--stack-yaml", "bin/stackForCurry.yaml"]
+  [ "ghc", "--stack-yaml", execDir </> "stackForCurry.yaml"]
 
 stackPkgArgs :: [String]
 stackPkgArgs = concatMap (("--package":) . return)
@@ -54,14 +63,14 @@ stackPkgArgs = concatMap (("--package":) . return)
 invokeGHCDefaultArgs :: [String]
 invokeGHCDefaultArgs = ["--make"]
 
-getGHCOptsFor :: Bool -> [(ModuleIdent, Source)] -> FilePath -> KMCCOpts -> [String]
-getGHCOptsFor hasMain deps targetFile
+getGHCOptsFor :: FilePath -> Bool -> [(ModuleIdent, Source)] -> FilePath -> KMCCOpts -> [String]
+getGHCOptsFor topDir hasMain deps targetFile
   KMCCOpts { frontendOpts, optCompilerVerbosity, optOptimizationBaseLevel, ghcOpts } =
   ["-fforce-recomp" | optForce frontendOpts] ++
   ["-v" | optCompilerVerbosity > 3] ++
   ["-v0" | optCompilerVerbosity == 0] ++
   (if hasMain then ["-main-is", mainId] else []) ++
-  ["-i rts"] ++
+  ["-i " ++ topDir </> "rts"] ++
   ["-O " ++ show optOptimizationBaseLevel] ++
   getGHCSrcDirOpts deps frontendOpts ++
   ghcOpts ++
