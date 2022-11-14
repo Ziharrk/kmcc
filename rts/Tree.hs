@@ -7,6 +7,7 @@ import           Control.Monad ( MonadPlus )
 import           Control.DeepSeq ( NFData )
 import qualified Data.Sequence as Seq
 import           GHC.Generics ( Generic )
+import           GHC.Conc
 
 -- A normal tree implementation and bfs/dfs implementations
 data Tree a = Empty
@@ -52,3 +53,10 @@ bfs t' = bfs' (Seq.singleton t')
           Empty -> bfs' ts
           Leaf x -> x : bfs' ts
           Node l r -> bfs' (ts Seq.:|> l Seq.:|> r)
+
+ps :: Tree a -> [a]
+ps t' = ps' t'
+  where ps' t = case t of
+                  Empty -> []
+                  Leaf x -> [x]
+                  Node l r -> let (x,y) = (ps' l, ps' r) in par x (pseq y (x ++ y))

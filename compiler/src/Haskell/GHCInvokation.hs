@@ -61,7 +61,7 @@ stackPkgArgs = concatMap (("--package":) . return)
   ]
 
 invokeGHCDefaultArgs :: [String]
-invokeGHCDefaultArgs = ["--make"]
+invokeGHCDefaultArgs = ["--make", "-threaded"]
 
 getGHCOptsFor :: FilePath -> Bool -> [(ModuleIdent, Source)] -> FilePath -> KMCCOpts -> [String]
 getGHCOptsFor topDir hasMain deps targetFile
