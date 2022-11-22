@@ -135,7 +135,7 @@ genInstances (Type qname _ vs cs) =
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkShowsFreePrecImpl qname2 ar]] ++
       [Match () (Ident () "showsFreePrec")
       [PVar () (Ident () "_p"), mkFlatPattern qname2 (TCons qname []) [1..ar]]
-      (UnGuardedRhs () e) Nothing | ar /= 0, Just e <- [preventDict mkShowsFreePrecDetImpl qname2 ar]]
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkShowsFreePrecDetImpl qname2 ar]]
 
 
     preventDict f qname2 ar
@@ -222,6 +222,7 @@ genInstances (Type qname _ vs cs) =
         mkShowsBrackets (Hs.Var () (UnQual () (Ident () "_p")))
         (foldl1 mkShowSpace (mkShowStringCurry (snd qname2) :
           map (mkShowsCurryHighPrec . Hs.Var () . UnQual () . indexToName) [1..ar]))
+    mkShowsFreePrecDetImpl qname2 0 = mkShowStringCurry (snd qname2)
     mkShowsFreePrecDetImpl qname2 ar
       | isOpQName qname2 =
         mkShowsBrackets (Hs.Var () (UnQual () (Ident () "_p")))
