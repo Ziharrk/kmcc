@@ -242,12 +242,12 @@ genInstances (TypeNew qname1 vis1 vs (NewCons qname2 vis2 ty)) =
 
 mkTuple :: Boxed -> [Exp ()] -> Exp ()
 mkTuple _       []  = Hs.Con () (Special () (UnitCon()))
-mkTuple Boxed   [e] = Hs.App () (Hs.Con () (Qual () (ModuleName () "P") (Ident ()"Solo"))) e
+mkTuple Boxed   [e] = Hs.App () (Hs.Con () (Qual () (ModuleName () "P") (Ident () "Solo"))) e
 mkTuple Unboxed [e] = e
 mkTuple boxity  es  = Tuple () boxity es
 
 mkTupleP :: Boxed -> [Pat ()] -> Pat ()
 mkTupleP _       []  = PApp () (Special () (UnitCon())) []
-mkTupleP Boxed   [p] = PApp () (Qual () (ModuleName () "P") (Ident ()"Solo")) [p]
+mkTupleP Boxed   [p] = PApp () (Qual () (ModuleName () "P") (Ident () "Solo")) [p]
 mkTupleP Unboxed [p] = p
 mkTupleP boxity  es  = PTuple () boxity es
