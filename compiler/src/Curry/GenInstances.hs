@@ -135,7 +135,7 @@ genInstances (Type qname _ vs cs) =
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkShowsFreePrecImpl qname2 ar]] ++
       [Match () (Ident () "showsFreePrec")
       [PVar () (Ident () "_p"), mkFlatPattern qname2 (TCons qname []) [1..ar]]
-      (UnGuardedRhs () e) Nothing | ar /= 0, Just e <- [preventDict mkShowsFreePrecDetImpl qname2 ar]]
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkShowsFreePrecDetImpl qname2 ar]]
 
 
     preventDict f qname2 ar
@@ -222,6 +222,7 @@ genInstances (Type qname _ vs cs) =
         mkShowsBrackets (Hs.Var () (UnQual () (Ident () "_p")))
         (foldl1 mkShowSpace (mkShowStringCurry (snd qname2) :
           map (mkShowsCurryHighPrec . Hs.Var () . UnQual () . indexToName) [1..ar]))
+    mkShowsFreePrecDetImpl qname2 0 = mkShowStringCurry (snd qname2)
     mkShowsFreePrecDetImpl qname2 ar
       | isOpQName qname2 =
         mkShowsBrackets (Hs.Var () (UnQual () (Ident () "_p")))
@@ -241,12 +242,12 @@ genInstances (TypeNew qname1 vis1 vs (NewCons qname2 vis2 ty)) =
 
 mkTuple :: Boxed -> [Exp ()] -> Exp ()
 mkTuple _       []  = Hs.Con () (Special () (UnitCon()))
-mkTuple Boxed   [e] = Hs.App () (Hs.Con () (Qual () (ModuleName () "P") (Ident ()"Solo"))) e
+mkTuple Boxed   [e] = Hs.App () (Hs.Con () (Qual () (ModuleName () "P") (Ident () "Solo"))) e
 mkTuple Unboxed [e] = e
 mkTuple boxity  es  = Tuple () boxity es
 
 mkTupleP :: Boxed -> [Pat ()] -> Pat ()
 mkTupleP _       []  = PApp () (Special () (UnitCon())) []
-mkTupleP Boxed   [p] = PApp () (Qual () (ModuleName () "P") (Ident ()"Solo")) [p]
+mkTupleP Boxed   [p] = PApp () (Qual () (ModuleName () "P") (Ident () "Solo")) [p]
 mkTupleP Unboxed [p] = p
 mkTupleP boxity  es  = PTuple () boxity es
