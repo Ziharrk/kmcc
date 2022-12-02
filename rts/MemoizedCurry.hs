@@ -29,7 +29,7 @@ import qualified Data.Map                           as Map
 import           Data.Map                           (Map)
 import qualified Data.Set                           as Set
 import           Data.Set                           (Set)
-import           Data.IORef                         (IORef, modifyIORef, atomicModifyIORef', newIORef, readIORef)
+import           Data.IORef                         (IORef, atomicModifyIORef, atomicModifyIORef', newIORef, readIORef)
 import           Data.SBV                           ( SBool,
                                                       SymVal(literal),
                                                       SBV,
@@ -40,6 +40,7 @@ import           Data.SBV                           ( SBool,
 import           Data.SBV.Control                   (query, checkSat, getValue, CheckSatResult(..))
 import           Control.Applicative                (Alternative(..))
 import           Control.Arrow                      (first)
+import           Control.Concurrent.MVar
 import           Control.Monad                      (MonadPlus(..), liftM, ap)
 import           Control.Monad.Fix                  (MonadFix(..), fix)
 import           Control.Monad.Codensity            (Codensity(..), lowerCodensity)
@@ -192,7 +193,7 @@ varToSBV i = sym $ "x" ++ (if i < 0 then "n" else "") ++ show (abs i)
 -- - setComputation as a flag for set functions as well
 
 data NDState = NDState {
-    idSupply        :: IORef ID,
+    idSupply        :: MVar ID,
     currentLevel    :: Level,
     varHeap         :: Heap Untyped, -- (Var) ID -> Curry a
     constraintStore :: ConstraintStore,
@@ -208,12 +209,14 @@ data NDState = NDState {
 
 {-# NOINLINE initialNDState #-}
 initialNDState :: () -> NDState
-initialNDState () = NDState (unsafePerformIO (newIORef 1)) 0 emptyHeap mempty Set.empty 0 Set.empty False
+initialNDState () = NDState (unsafePerformIO (newMVar 1)) 0 emptyHeap mempty Set.empty 0 Set.empty False
 
 {-# NOINLINE freshIDFromState #-}
 freshIDFromState :: NDState -> ID
 freshIDFromState NDState { .. } = unsafePerformIO $ do
-  atomicModifyIORef' idSupply (\i -> (nextID i, i))
+  i <- takeMVar idSupply
+  putMVar idSupply $! nextID i
+  return i
 
 -- {-# NOINLINE freshID #-}
 -- NOINLINE not required, because freshIDFromState is the unsafe part
@@ -506,7 +509,7 @@ memo (Curry m) = Curry $ do
   -- That would cause each memo to use the same IORef.
   let taskMap = unsafeDupablePerformIO
                     $ unsafeDupableInterleaveIO
-                    $ noinline const (newIORef Map.empty) ndState1
+                    $ noinline const (newMVar Map.empty) ndState1
   return $ Val Shared $ Curry $ do
     ndState2 <- get
     case lookupTaskResult taskMap (branchID ndState2) (parentIDs ndState2)  of
@@ -520,7 +523,7 @@ memo (Curry m) = Curry $ do
                           then branchID ndState3
                           else branchID ndState1
             insertH = insertHeap insertID (toShared y, wasND)
-        unsafePerformIO (modifyIORef taskMap insertH)
+        unsafePerformIO (takeMVar taskMap >>= \x -> putMVar taskMap $! insertH x)
           `seq` return (toShared y)
   where
     toShared (Val Unshared x) = Val Shared x
@@ -535,13 +538,13 @@ memo (Curry m) = Curry $ do
 -- This saves a few lookup operations for a single restrictKeys operation.
 
 {-# NOINLINE lookupTaskResult #-}
-lookupTaskResult :: IORef (Heap a) -> ID -> Set ID -> Maybe a
+lookupTaskResult :: MVar (Heap a) -> ID -> Set ID -> Maybe a
 lookupTaskResult ref i s =
   -- msum $ map (`Map.lookup` trMap) $ Set.toList allIDs
   snd <$> Map.lookupMax trMap
   where
     allIDs = Set.insert i s
-    trMap = Map.restrictKeys (unsafePerformIO (readIORef ref)) allIDs
+    trMap = Map.restrictKeys (unsafePerformIO (takeMVar ref >>= \x -> putMVar ref x >> return x)) allIDs
 
 --------------------------------------------------------------------------------
 -- Unification proceeds as shown in the appendix of the paper.
