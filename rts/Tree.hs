@@ -5,9 +5,13 @@ module Tree where
 import           Control.Applicative ( Alternative(empty, (<|>)) )
 import           Control.Monad ( MonadPlus )
 import           Control.DeepSeq ( NFData )
+import           Data.Maybe
 import qualified Data.Sequence as Seq
 import           GHC.Generics ( Generic )
 import           GHC.Conc
+import           Control.Concurrent.MVar
+import           Control.Concurrent.Chan
+import           System.IO.Unsafe
 
 -- A normal tree implementation and bfs/dfs implementations
 data Tree a = Empty
@@ -55,8 +59,26 @@ bfs t' = bfs' (Seq.singleton t')
           Node l r -> bfs' (ts Seq.:|> l Seq.:|> r)
 
 ps :: Tree a -> [a]
+ps t' = unsafePerformIO $ do
+  ch <- newChan
+  let psIO t = case t of
+        Empty -> return ()
+        Leaf x -> writeChan ch (Just x)
+        Node l r -> do
+          mvarL <- newEmptyMVar
+          mvarR <- newEmptyMVar
+          _ <- forkIO $ psIO l >> putMVar mvarL ()
+          _ <- forkIO $ psIO r >> putMVar mvarR ()
+          takeMVar mvarL
+          takeMVar mvarR
+  forkIO $ psIO (t') >> writeChan ch Nothing
+  catMaybes . takeWhile isJust <$> getChanContents ch
+
+{-
+ps :: Tree a -> [a]
 ps t' = ps' t'
   where ps' t = case t of
                   Empty -> []
                   Leaf x -> [x]
                   Node l r -> let (x,y) = (ps' l, ps' r) in par x (pseq y (x ++ y))
+-}
