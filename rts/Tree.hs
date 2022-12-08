@@ -58,27 +58,27 @@ bfs t' = bfs' (Seq.singleton t')
           Leaf x -> x : bfs' ts
           Node l r -> bfs' (ts Seq.:|> l Seq.:|> r)
 
-ps :: Tree a -> [a]
-ps t' = unsafePerformIO $ do
+fs :: Tree a -> [a]
+fs t' = unsafePerformIO $ do
   ch <- newChan
-  let psIO t = case t of
+  let fsIO t = case t of
         Empty -> return ()
         Leaf x -> writeChan ch (Just x)
         Node l r -> do
           mvarL <- newEmptyMVar
           mvarR <- newEmptyMVar
-          _ <- forkIO $ psIO l >> putMVar mvarL ()
-          _ <- forkIO $ psIO r >> putMVar mvarR ()
+          _ <- forkIO $ fsIO l >> putMVar mvarL ()
+          _ <- forkIO $ fsIO r >> putMVar mvarR ()
           takeMVar mvarL
           takeMVar mvarR
-  forkIO $ psIO (t') >> writeChan ch Nothing
+  forkIO $ fsIO (t') >> writeChan ch Nothing
   catMaybes . takeWhile isJust <$> getChanContents ch
 
 {-
-ps :: Tree a -> [a]
-ps t' = ps' t'
-  where ps' t = case t of
+fs :: Tree a -> [a]
+fs t' = fs' t'
+  where fs' t = case t of
                   Empty -> []
                   Leaf x -> [x]
-                  Node l r -> let (x,y) = (ps' l, ps' r) in par x (pseq y (x ++ y))
+                  Node l r -> let (x,y) = (fs' l, fs' r) in par x (pseq y (x ++ y))
 -}

@@ -6,7 +6,7 @@ import Options.Applicative
 
 import CompilerOpts ( Options(..), KnownExtension, parseOpts, updateOpts, Verbosity (..) )
 
-import Options ( KMCCOpts(..), InfoCommand(..), defaultOpts, defaultFrontendOpts )
+import Options ( KMCCOpts(..), InfoCommand(..), SearchStrat (..),defaultOpts, defaultFrontendOpts )
 
 getCmdOpts :: IO KMCCOpts
 getCmdOpts = customExecParser (prefs showHelpOnEmpty)
@@ -33,7 +33,10 @@ optParser = adjustDefaultOpts
   <*> optional (option parseOptimization (long "optimization" <> short 'O' <> metavar "n" <> help "Set optimization level to n, with 0 <= n <= 2, default = 1"))
   <*> many (option parseVarArg (short 'V' <> internal))
   <*> switch (long "bindings" <> short 'B' <> help "Enable printing of variable bindings")
-
+  <*> switch (long "dfs" <> help "Set search mode to depth-first search")
+  <*> switch (long "bfs" <> help "Set search mode to breadth-first search")
+  <*> switch (long "fs" <> help "Set search mode to fair-search")
+  
   <*> (Left <$> many (
               flag' CompilerName   (long "compiler-name" <> help "Print the compiler name (kmcc) and exit")
           <|> flag' NumericVersion (long "numeric-version" <> help "Print the compiler version and exit")
@@ -84,9 +87,10 @@ adjustDefaultOpts :: Bool -> Bool -> Bool
                   -> Maybe [String]
                   -> Bool -> Maybe Int
                   -> [(String, Int)] -> Bool
+                  -> Bool -> Bool -> Bool
                   -> Either [InfoCommand] FilePath
                   -> KMCCOpts
-adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b torv = defaultOpts
+adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b dfs bfs fs torv = defaultOpts
   { optTarget = fromRight "" torv
   , optCompilerVerbosity = verbosity
   , optShowTimings = t
@@ -96,6 +100,7 @@ adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b torv = defaultOpts
   , optShowBindings = b
   , optOptimizationBaseLevel = fromMaybe (optOptimizationBaseLevel defaultOpts) opt
   , optOptimizationDeterminism = not dOpt && optOptimizationDeterminism defaultOpts
+  , optSearchStrategy = if dfs then DFS else (if bfs then BFS else (if fs then FS else optSearchStrategy defaultOpts))
   , frontendOpts = adjustFrontendOpts
   , ghcOpts = fromMaybe [] ghc
   }
