@@ -32,14 +32,14 @@ getDependencies opts = do
   return deps
 
 compileFileToFcy :: KMCCOpts -> [(ModuleIdent, Source)]
-                 -> IO [(TProg, ModuleIdent, FilePath)]
+                 -> IO [((TProg, Bool), ModuleIdent, FilePath)]
 compileFileToFcy opts srcs = runCurryFrontendAction (frontendOpts opts) $
   catMaybes <$> mapM process' (zip [1 ..] srcs)
   where
     total  = length srcs
     tgtDir = addOutDirModule (optUseOutDir (frontendOpts opts)) (optOutDir (frontendOpts opts))
 
-    process' :: (Int, (ModuleIdent, Source)) -> CYIO (Maybe (TProg, ModuleIdent, FilePath))
+    process' :: (Int, (ModuleIdent, Source)) -> CYIO (Maybe ((TProg, Bool), ModuleIdent, FilePath))
     process' (n, (m, Source fn ps is)) = do
       opts' <- processPragmas (frontendOpts opts) ps
       Just . (, m, fn) <$> process (opts { frontendOpts = adjustOptions (n == total) opts' }) (n, total) m fn deps
@@ -54,7 +54,7 @@ compileFileToFcy opts srcs = runCurryFrontendAction (frontendOpts opts) $
 
 -- |Compile a single source module to typed flat curry.
 process :: KMCCOpts -> (Int, Int)
-        -> ModuleIdent -> FilePath -> [FilePath] -> CYIO TProg
+        -> ModuleIdent -> FilePath -> [FilePath] -> CYIO (TProg, Bool)
 process kmccopts idx@(thisIdx,maxIdx) m fn deps
   | optForce opts = compile
   | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile skip
@@ -75,7 +75,7 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
           if thisIdx == maxIdx
             then liftIO $ dumpMessage kmccopts $ "Read cached flat curry file:\n" ++ show res
             else liftIO $ dumpMessage kmccopts "Read cached flat curry file."
-          return res
+          return (res, False)
     compile = do
       status opts $ compMessage idx (11, 16) "Compiling" m (fn, head destFiles)
       res <- compileModule opts m fn
@@ -83,7 +83,7 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
         then liftIO $ dumpMessage kmccopts $ "Generated flat curry file:\n" ++ show res
         else liftIO $ dumpMessage kmccopts "Generated flat curry file."
 
-      return res
+      return (res, True)
 
     opts = frontendOpts kmccopts
 

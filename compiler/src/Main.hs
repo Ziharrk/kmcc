@@ -39,7 +39,7 @@ main = do
       compileTime <- getCurrentTime
       timeMessage kmccopts "Time for flat curry compilation" (diffUTCTime compileTime depsTime)
       statusMessage kmccopts "Analyzing..."
-      let !mainType = if optCompileOnly kmccopts then Nothing else checkForMain (map fst3 progs)
+      let !mainType = if optCompileOnly kmccopts then Nothing else checkForMain (map (fst . fst3) progs)
       ndInfos <- analyzeNondet progs kmccopts
       analyzeTime <- getCurrentTime
       timeMessage kmccopts "Time for analysis" (diffUTCTime analyzeTime compileTime)
