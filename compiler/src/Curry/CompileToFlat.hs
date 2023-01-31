@@ -2,12 +2,13 @@ module Curry.CompileToFlat (getDependencies, compileFileToFcy, checkForMain) whe
 
 import Control.Monad.IO.Class ( liftIO )
 import Data.Bifunctor ( second )
-import Data.Binary ( decodeFileOrFail)
+import Data.Binary ( decodeFileOrFail, encodeFile)
 import Data.Maybe ( mapMaybe, fromMaybe, catMaybes )
-import System.FilePath ( (</>) )
+import System.FilePath ( (</>), (-<.>) )
+import System.Directory ( doesFileExist )
 
 import Base.Messages ( status )
-import Control.Monad ( msum, void )
+import Control.Monad ( msum, void, unless )
 import Curry.Base.Monad ( CYIO )
 import Curry.Base.Pretty ( Pretty(..) )
 import Curry.Base.Ident ( ModuleIdent )
@@ -57,7 +58,7 @@ process :: KMCCOpts -> (Int, Int)
         -> ModuleIdent -> FilePath -> [FilePath] -> CYIO (TProg, Bool)
 process kmccopts idx@(thisIdx,maxIdx) m fn deps
   | optForce opts = compile
-  | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile skip
+  | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile optCheck
   where
     skip = do
       status opts $ compMessage idx (11, 16) "Skipping" m (fn, head destFiles)
@@ -76,7 +77,13 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
             then liftIO $ dumpMessage kmccopts $ "Read cached flat curry file:\n" ++ show res
             else liftIO $ dumpMessage kmccopts "Read cached flat curry file."
           return (res, False)
+    optCheck = do
+      fileExists <- liftIO $ doesFileExist optInterface
+      liftIO $ unless fileExists (writeFile optInterface "")
+      ok <- liftIO $ compareOptions
+      if ok then skip else compile
     compile = do
+      liftIO saveOptions
       status opts $ compMessage idx (11, 16) "Compiling" m (fn, head destFiles)
       res <- compileModule opts m fn
       if thisIdx == maxIdx
@@ -84,6 +91,27 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
         else liftIO $ dumpMessage kmccopts "Generated flat curry file."
 
       return (res, True)
+
+    optInterface = tgtDir (interfName fn) -<.> ".optint"
+    
+    compileOpts = let
+      obl = optOptimizationBaseLevel kmccopts
+      od  = optOptimizationDeterminism kmccopts
+      in (obl, od)
+      
+    saveOptions = encodeFile optInterface compileOpts
+    compareOptions = do
+      eitherRes <- decodeFileOrFail optInterface
+      case eitherRes of
+        Left (_, err) -> do
+          putStr $ unlines
+            [ "Binary interface file is corrupted."
+            , "For the file \"" ++ optInterface ++ "\"."
+            , "Decoding failed with:"
+            , err
+            , "Retrying compilation from source..." ]
+          return False
+        Right oldOpts -> return $ oldOpts == compileOpts
 
     opts = frontendOpts kmccopts
 
