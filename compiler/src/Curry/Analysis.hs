@@ -18,6 +18,7 @@ import Data.Set ( Set )
 import qualified Data.Set as Set ( empty, insert )
 import GHC.Generics ( Generic )
 import System.FilePath ( replaceExtension )
+import System.Directory ( doesFileExist )
 
 import Curry.Base.Message ( Message(..) )
 import Base.Messages ( abortWithMessages, status )
@@ -67,7 +68,8 @@ process kmccopts idx@(thisIdx,maxIdx) tprog comp m fn
   | not (optOptimizationDeterminism kmccopts) ||
     optForce opts ||
     comp      = compile
-  | otherwise = skip
+  | otherwise =  liftIO (doesFileExist destFile)
+      >>= \exists -> if exists then skip else compile
   where
     opts = frontendOpts kmccopts
     destFile = tgtDir (analysisName fn)

@@ -84,7 +84,8 @@ process :: KMCCOpts -> (Int, Int) -> TProg -> Bool
 process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
   | optForce opts ||
     comp      = compile
-  | otherwise = skip
+  | otherwise = liftIO (doesFileExist destFile)
+      >>= \exists -> if exists then skip else compile
   where
     destFile = tgtDir (haskellName fn)
     skip = do

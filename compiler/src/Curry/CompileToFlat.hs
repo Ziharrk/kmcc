@@ -8,7 +8,7 @@ import System.FilePath ( (</>), (-<.>) )
 import System.Directory ( doesFileExist )
 
 import Base.Messages ( status )
-import Control.Monad ( msum, void, unless )
+import Control.Monad ( msum, void )
 import Curry.Base.Monad ( CYIO )
 import Curry.Base.Pretty ( Pretty(..) )
 import Curry.Base.Ident ( ModuleIdent )
@@ -79,17 +79,17 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
           return (res, False)
     optCheck = do
       fileExists <- liftIO $ doesFileExist optInterface
-      liftIO $ unless fileExists (writeFile optInterface "")
-      ok <- liftIO $ compareOptions
-      if ok then skip else compile
+      if not fileExists then compile else do
+        ok <- liftIO $ compareOptions
+        if ok then skip else compile
     compile = do
-      liftIO saveOptions
       status opts $ compMessage idx (11, 16) "Compiling" m (fn, head destFiles)
       res <- compileModule opts m fn
       if thisIdx == maxIdx
         then liftIO $ dumpMessage kmccopts $ "Generated flat curry file:\n" ++ show res
         else liftIO $ dumpMessage kmccopts "Generated flat curry file."
-
+      liftIO saveOptions
+      
       return (res, True)
 
     optInterface = tgtDir (interfName fn) -<.> ".optint"
@@ -100,6 +100,7 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
       in (obl, od)
       
     saveOptions = encodeFile optInterface compileOpts
+    
     compareOptions = do
       eitherRes <- decodeFileOrFail optInterface
       case eitherRes of
