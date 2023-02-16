@@ -10,7 +10,7 @@ bin/kmcc-frontend:
 	stack build curry-frontend:exe:curry-frontend --copy-bins
 	mv bin/curry-frontend bin/kmcc-frontend
 
-bin/kmcc_repl: repl/src/KMCC/ReplConfig.curry
+bin/kmcc_repl: repl/src/KMCC/ReplConfig.curry repl/package.json
 	cd repl && cypm install && cypm curry :l KMCC.ReplConfig :save :q
 	mv repl/KMCC.ReplConfig bin/kmcc_repl
 
