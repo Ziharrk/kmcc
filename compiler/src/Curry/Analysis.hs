@@ -18,13 +18,14 @@ import Data.Set ( Set )
 import qualified Data.Set as Set ( empty, insert )
 import GHC.Generics ( Generic )
 import System.FilePath ( replaceExtension )
+import System.Directory ( doesFileExist )
 
 import Curry.Base.Message ( Message(..) )
 import Base.Messages ( abortWithMessages, status )
 import Curry.FlatCurry.Typed.Type ( TProg, QName, TRule (..), Visibility (..) )
 import Curry.FlatCurry.Typed.Goodies ( trTProg, trTFunc, trTExpr )
 import Curry.Base.Ident ( ModuleIdent )
-import CurryBuilder ( smake, compMessage )
+import CurryBuilder ( compMessage )
 import CompilerOpts ( Options(..) )
 import Curry.Files.Filenames ( addOutDirModule )
 import Options ( KMCCOpts (frontendOpts, optOptimizationDeterminism), dumpMessage )
@@ -47,27 +48,28 @@ newtype AM s a = AnalysisMonad {
 
 deriving newtype instance (x ~ NDAnalysisState s) => MonadState x (AM s)
 
-analyzeNondet :: [(TProg, ModuleIdent, FilePath)] -> KMCCOpts
+analyzeNondet :: [((TProg, Bool), ModuleIdent, FilePath)] -> KMCCOpts
               -> IO NDAnalysisResult
 analyzeNondet tps kmccopts = handleRes $ runExceptT $ flip evalStateT Map.empty $ runAM $ Map.unions <$>
     mapM process' (zip tps [1..])
   where
     total = length tps
-    process' ((tprog, m, fn), idx) = process kmccopts (idx, total) tprog m fn deps
-      where deps = map (\(_, _, dep) -> dep) (take idx tps)
+    process' (((tprog, comp), m, fn), idx) = process kmccopts (idx, total) tprog comp m fn
     handleRes act = act >>= \case
       Left msgs -> abortWithMessages msgs
       Right res -> return res
 
 -- |Analyze a single flat curry module.
-process :: KMCCOpts -> (Int, Int) -> TProg
-        -> ModuleIdent -> FilePath -> [FilePath] -> AM 'Global NDAnalysisResult
-process kmccopts idx@(thisIdx,maxIdx) tprog m fn deps
+process :: KMCCOpts -> (Int, Int) -> TProg -> Bool
+        -> ModuleIdent -> FilePath -> AM 'Global NDAnalysisResult
+process kmccopts idx@(thisIdx,maxIdx) tprog comp m fn
   -- if we are not doing determinism analysis,
   -- go to compile so that we can fill the analysis infos with default values.
   | not (optOptimizationDeterminism kmccopts) ||
-    optForce opts = compile
-  | otherwise     = smake [destFile] deps compile skip
+    optForce opts ||
+    comp      = compile
+  | otherwise =  liftIO (doesFileExist destFile)
+      >>= \exists -> if exists then skip else compile
   where
     opts = frontendOpts kmccopts
     destFile = tgtDir (analysisName fn)

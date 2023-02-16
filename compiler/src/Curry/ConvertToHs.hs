@@ -39,7 +39,7 @@ import Curry.FlatCurry.Typed.Type (TRule(..), TFuncDecl(..), TProg(..), TExpr (.
 import Curry.Files.Filenames (addOutDirModule)
 import Generators.GenTypedFlatCurry (genTypedExpr)
 import CompilerOpts (Options(..))
-import CurryBuilder (smake, compMessage)
+import CurryBuilder (compMessage)
 
 import Options (KMCCOpts(..), dumpMessage)
 import Curry.Analysis (NDAnalysisResult, NDInfo (..))
@@ -68,7 +68,7 @@ freshVarName = do
   modify succ
   return (Ident () $  "x_" ++ show i)
 
-compileToHs :: Maybe TypeExpr -> [(TProg, ModuleIdent, FilePath)] -> NDAnalysisResult -> KMCCOpts
+compileToHs :: Maybe TypeExpr -> [((TProg, Bool), ModuleIdent, FilePath)] -> NDAnalysisResult -> KMCCOpts
             -> IO ()
 compileToHs mainType mdls ndInfo opts =
   evalCM (mapM_ process' (zip [1 ..] (addMainInfo mdls))) ndInfo
@@ -77,14 +77,15 @@ compileToHs mainType mdls ndInfo opts =
     addMainInfo [(x, y, z)] = [(x, y, z, mainType)]
     addMainInfo ((x, y, z):xs) = (x, y, z, Nothing) : addMainInfo xs
     total = length mdls
-    process' (n, (prog, m, fp, mi)) = process opts (n, total) prog m fp mi deps
-      where deps = map (\(_, _, dep) -> dep) (take n mdls)
+    process' (n, ((prog, comp), m, fp, mi)) = process opts (n, total) prog comp m fp mi
 
-process :: KMCCOpts -> (Int, Int) -> TProg
-        -> ModuleIdent -> FilePath -> Maybe TypeExpr -> [FilePath] -> CM ()
-process kopts idx@(thisIdx,maxIdx) tprog m fn mi deps
-  | optForce opts = compile
-  | otherwise     = smake [destFile] deps compile skip
+process :: KMCCOpts -> (Int, Int) -> TProg -> Bool
+        -> ModuleIdent -> FilePath -> Maybe TypeExpr -> CM ()
+process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
+  | optForce opts ||
+    comp      = compile
+  | otherwise = liftIO (doesFileExist destFile)
+      >>= \exists -> if exists then skip else compile
   where
     destFile = tgtDir (haskellName fn)
     skip = do
