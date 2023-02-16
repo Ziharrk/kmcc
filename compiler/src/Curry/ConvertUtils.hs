@@ -8,6 +8,7 @@ import Curry.Base.Ident (isInfixOp, mkIdent)
 import Curry.FlatCurry (TVarWithKind, Kind (..))
 import qualified Curry.FlatCurry as Curry
 import Curry.FlatCurry.Annotated.Type (AExpr (..), VarIndex, ABranchExpr (..))
+import Options (SearchStrat (..))
 
 import Haskell.ExtsInstances ()
 
@@ -322,6 +323,11 @@ trueQualName = Qual () (ModuleName () "P") (Ident () "True")
 
 falseQualName :: QName ()
 falseQualName = Qual () (ModuleName () "P") (Ident () "False")
+
+searchStratQualName :: SearchStrat -> QName ()
+searchStratQualName DFS = Qual () (ModuleName () "BasicDefinitions") (Ident () "dfs")
+searchStratQualName BFS = Qual () (ModuleName () "BasicDefinitions") (Ident () "bfs")
+searchStratQualName FS  = Qual () (ModuleName () "BasicDefinitions") (Ident () "fs")
 
 appendName :: String -> Name () -> Name ()
 appendName suff (Ident  () s) = Ident  () (s ++ suff)

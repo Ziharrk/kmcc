@@ -44,7 +44,7 @@ kmcc = CCDescription
   (\s -> s)                      -- option to create an executable
   cleanCmd                       -- command to clean module
   (CommandLineFreeMode (\vs -> unwords $ map (\(v,i) -> "-V" ++ v ++ "=" ++ show i) vs))
-  [] -- [stratOpt, intOpt, firstOpt, resultsOpt, errDepthtOpt]
+  [stratOpt] -- [intOpt, firstOpt, resultsOpt, errDepthtOpt]
  where
   cleanCmd m =
     "/bin/rm -f '" ++ inCurrySubdir m ++ ".*' '" ++ modNameToPath m ++ ".curry'"
