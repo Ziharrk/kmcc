@@ -20,10 +20,25 @@ main = mainREPL kmcc
 kmccHome :: String
 kmccHome = packagePath </> ".."
 
+--- The version number
+kmccVersion :: (Int,Int,Int)
+kmccVersion = (0,1,0)
+
+--- The subdirectory where intermediate program files and the compiled
+--- Go target files will be stored, e.g., `.curry/kmcc-1.0.0`.
+kmccSubDir :: String
+kmccSubDir =
+  ".curry" </> "kmcc" ++ "-" ++
+  intercalate "." (map show [maj,min,rev])
+ where
+  (maj,min,rev) = kmccVersion
+
+------------------------------------------------------------------------------
+-- The specification of the KMCC REPL.
 kmcc :: CCDescription
 kmcc = CCDescription
   "kmcc"                         -- the compiler name
-  (0,1,0)                        -- the version number
+  kmccVersion                    -- the version number
   kmccBanner                     -- the banner
   -- description of specific REPL options:
   [ ("-n|--nocypm",
@@ -46,8 +61,17 @@ kmcc = CCDescription
   (CommandLineFreeMode (\vs -> unwords $ map (\(v,i) -> "-V" ++ v ++ "=" ++ show i) vs))
   [stratOpt] -- [intOpt, firstOpt, resultsOpt, errDepthtOpt]
  where
-  cleanCmd m =
-    "/bin/rm -f '" ++ inCurrySubdir m ++ ".*' '" ++ modNameToPath m ++ ".curry'"
+  cleanCmd m = unwords
+    [ "/bin/rm -f ", quote (kmccSubDir </> m) ++ ".*"
+    , quote (kmccSubDir </> "Curry_" ++ m) ++ ".*"
+    , quote $ kmccSubDir </> "Curry_" ++ m
+    , quote $ modNameToPath m ++ ".curry"
+    ]
+
+--- Puts a file argument into quotes to avoid problems with files containing
+--- blanks.
+quote :: String -> String
+quote s = "\"" ++ s ++ "\""
 
 kmccBanner :: String
 kmccBanner = unlines [bannerLine, bannerText, bannerLine]
@@ -99,3 +123,4 @@ errDepthtOpt = CCOption
   showOpt s = case reads s :: [(Int,String)] of
     [(_,"")] -> Just ("--errdepth=" ++ s)
     _        -> Nothing
+
