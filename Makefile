@@ -1,3 +1,8 @@
+# The root directory of the installation
+export ROOT = $(CURDIR)
+# The binary directory
+export BINDIR = $(ROOT)/bin
+
 .PHONY: all
 all: bin/kmcc_c bin/kmcc-frontend bin/kmcc_repl prebuild_prelude
 
@@ -11,8 +16,7 @@ bin/kmcc-frontend:
 	mv bin/curry-frontend bin/kmcc-frontend
 
 bin/kmcc_repl: repl/src/KMCC/ReplConfig.curry repl/package.json
-	cd repl && cypm install && cypm curry :l KMCC.ReplConfig :save :q
-	mv repl/KMCC.ReplConfig bin/kmcc_repl
+	cd repl && cypm -d BININSTALLPATH=$(BINDIR) install
 
 .PHONY: clean
 clean:
