@@ -8,7 +8,9 @@
     "licenseFile": "LICENSE",
     "dependencies": {
         "base"           : ">=3.0.0, <4.0.0",
-        "curry-repl"     : ">=1.1.1, <2.0.0"
+        "curry-repl"     : ">=1.1.1, <2.0.0",
+        "currypath"      : ">=3.0.0, <4.0.0",
+        "filepath"       : ">=3.0.0, <4.0.0"
     },
     "executable": {
         "name": "kmcc_repl",
