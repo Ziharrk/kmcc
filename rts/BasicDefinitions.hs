@@ -40,6 +40,7 @@ toHaskell = (>>= to)
 class FromHs a where
   from :: HsEquivalent a -> a
 
+{-# NOINLINE fromHaskell #-}
 fromHaskell :: FromHs a => HsEquivalent a -> Curry a
 fromHaskell x = unsafePerformIO $ catch (evaluate (from x) >>= \x' -> return (return x'))
                                 $ \Failed -> return mzero
@@ -305,6 +306,7 @@ ensureOneResult (Curry (ND act)) = Curry $ ND $ do
     Choice {}
       -> throw (IOError Nothing OtherError "ensureOneResult" "NDERR_ IO action was non-determinsitically" Nothing Nothing)
 
+{-# NOINLINE bindIONDImpl #-}
 bindIONDImpl :: Curry (LiftedFunc (IO a) (LiftedFunc (LiftedFunc a (IO b)) (IO b)))
 bindIONDImpl = return $ Func $ \ioND -> return $ Func $ \fND -> do
   io <- ensureOneResult ioND

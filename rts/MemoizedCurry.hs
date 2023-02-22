@@ -20,6 +20,9 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans            #-}
+-- Common subexpression elinimation is disallowed due to unsafePerformIO stuff.
+-- Experimentally verified that it is needed here.
+{-# OPTIONS_GHC -fno-cse                #-}
 module MemoizedCurry
   ( module MemoizedCurry
   , MonadShare(..)
@@ -56,6 +59,7 @@ import           GHC.Generics                       ( Generic(..),
 import           GHC.Magic                          (noinline)
 import           GHC.IO                             ( unsafeDupableInterleaveIO,
                                                       unsafeDupablePerformIO,
+                                                      unsafeInterleaveIO,
                                                       unsafePerformIO )
 import           Unsafe.Coerce                      (unsafeCoerce)
 import           Classes                            ( MonadShare(..),
@@ -168,6 +172,7 @@ type ConstraintStore = [Constraint]
 insertConstraint :: Constraint -> ConstraintStore -> ConstraintStore
 insertConstraint = (:)
 
+{-# NOINLINE isConsistent #-}
 isConsistent :: ConstraintStore -> Bool
 isConsistent cst = unsafePerformIO $ runSMT $ do
   mapM_ constrain cst
@@ -194,7 +199,7 @@ varToSBV i = sym $ "x" ++ (if i < 0 then "n" else "") ++ show (abs i)
 -- - setComputation as a flag for set functions as well
 
 data NDState = NDState {
-    idSupply        :: MVar ID,
+    idSupply        :: IORef ID,
     currentLevel    :: Level,
     varHeap         :: Heap Untyped, -- (Var) ID -> Curry a
     constraintStore :: ConstraintStore,
@@ -208,16 +213,17 @@ data NDState = NDState {
 -- Here are a few function to generate the initial state and
 -- to generate new IDs in a monadic context
 
+-- The weird fromEnum x + 1 is to make sure that the initial state is 1,
+-- but the expression cannot float out of the function.
+-- This ensures safety in the presence of unsafePerformIO.
 {-# NOINLINE initialNDState #-}
 initialNDState :: () -> NDState
-initialNDState () = NDState (unsafePerformIO (newMVar 1)) 0 emptyHeap mempty Set.empty 0 Set.empty False
+initialNDState x = NDState (unsafePerformIO (newIORef (toInteger (fromEnum x + 1)))) 0 emptyHeap mempty Set.empty 0 Set.empty False
 
 {-# NOINLINE freshIDFromState #-}
 freshIDFromState :: NDState -> ID
-freshIDFromState NDState { .. } = unsafePerformIO $ do
-  i <- takeMVar idSupply
-  putMVar idSupply $! nextID i
-  return i
+freshIDFromState NDState { .. } = unsafePerformIO $
+  atomicModifyIORef' idSupply (\j -> (nextID j, j))
 
 -- {-# NOINLINE freshID #-}
 -- NOINLINE not required, because freshIDFromState is the unsafe part
@@ -398,6 +404,7 @@ instantiate lvl i = Curry $
 -- ask recursively for another solution where the variable is not equal to any previous solution.
 -- For that, we accumulate inequalties on the given variable.
 
+{-# NOINLINE narrowPrimitive #-}
 narrowPrimitive :: SymVal a => ID -> ConstraintStore -> [a]
 narrowPrimitive i cst = unsafePerformIO $ runSMT $ do
   mapM_ constrain cst
@@ -445,8 +452,8 @@ instance Functor Curry where
   fmap = liftM
 
 {-# RULES
-"ret/bind" forall x f. pureCurry x >>= f = f x
-"bind/ret" forall x. x >>= pureCurry = x
+"ret/bind" forall x f. pureCurry x `bind` f = f x
+"bind/ret" forall x. x `bind` pureCurry = x
   #-}
 
 instance Applicative Curry where
@@ -501,7 +508,7 @@ instance MonadShare Curry where
       shareCurryVal (Val Shared   v) = Curry (return (Val Shared v))
       shareCurryVal (Var lvl      i) = freeWith lvl i
 
-{-# INLINE memo #-}
+{-# NOINLINE memo #-}
 -- | Memorize a value or variable for explicit sharing.
 memo :: Curry a -> Curry (Curry a)
 memo (Curry m) = Curry $ do
@@ -509,9 +516,9 @@ memo (Curry m) = Curry $ do
   -- s needs to be used inside the unsafePerformIO to prevent it from
   -- floating out of the withTaskMap entirely.
   -- That would cause each memo to use the same IORef.
-  let taskMap = unsafeDupablePerformIO
-                    $ unsafeDupableInterleaveIO
-                    $ noinline const (newMVar Map.empty) ndState1
+  let taskMap = unsafePerformIO
+                    $ unsafeInterleaveIO
+                    $ noinline const (newIORef Map.empty) ndState1
   return $ Val Shared $ Curry $ do
     ndState2 <- get
     case lookupTaskResult taskMap (branchID ndState2) (parentIDs ndState2)  of
@@ -525,8 +532,7 @@ memo (Curry m) = Curry $ do
                           then branchID ndState3
                           else branchID ndState1
             insertH = insertHeap insertID (toShared y, wasND)
-        unsafePerformIO (takeMVar taskMap >>= \x -> putMVar taskMap $! insertH x)
-          `seq` return (toShared y)
+        unsafePerformIO (atomicModifyIORef' taskMap (\x -> (insertH x, return $ toShared y)))
   where
     toShared (Val Unshared x) = Val Shared x
     toShared x                = x
@@ -540,13 +546,13 @@ memo (Curry m) = Curry $ do
 -- This saves a few lookup operations for a single restrictKeys operation.
 
 {-# NOINLINE lookupTaskResult #-}
-lookupTaskResult :: MVar (Heap a) -> ID -> Set ID -> Maybe a
+lookupTaskResult :: IORef (Heap a) -> ID -> Set ID -> Maybe a
 lookupTaskResult ref i s =
   -- msum $ map (`Map.lookup` trMap) $ Set.toList allIDs
   snd <$> Map.lookupMax trMap
   where
     allIDs = Set.insert i s
-    trMap = Map.restrictKeys (unsafePerformIO (takeMVar ref >>= \x -> putMVar ref x >> return x)) allIDs
+    trMap = Map.restrictKeys (unsafePerformIO (readIORef ref)) allIDs
 
 --------------------------------------------------------------------------------
 -- Unification proceeds as shown in the appendix of the paper.
