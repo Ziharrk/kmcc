@@ -529,7 +529,7 @@ eqcoloneq_ND# = BasicDefinitions.returnFunc (\a1 -> BasicDefinitions.returnFunc
 
 cond_Det# :: Bool_Det -> a -> a
 cond_Det# True_Det a = a
-cond_Det# _        _ = failed_Det
+cond_Det# _        _ = failed_Det#
 
 cond_ND# :: Curry (LiftedFunc Bool_ND (LiftedFunc a a))
 cond_ND# = returnFunc (\a -> a >>= \case
