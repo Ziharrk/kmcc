@@ -39,13 +39,6 @@ class Monad s => MonadShare s where
   type instance ShareConstraints s a = ()
   share :: ShareConstraints s a => s a -> s (s a)
 
--- | A class for Monads with support for explicit sharing of top-level effects.
-class Monad s => SharingTop s where
-  type family ShareTopConstraints s a :: Constraint
-  type instance ShareTopConstraints s a = ()
-  shareTopLevel :: ShareTopConstraints s a => (Int, String) -> s a -> s a
-  shareTopLevel = const id
-
 -- | A class for Monads with support for free (logic) variables.
 class Monad f => MonadFree f where
   type family FreeConstraints f a :: Constraint

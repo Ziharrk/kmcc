@@ -33,7 +33,7 @@ invokeGHC hasMain deps opts = do
     Just p  -> do
       let args = stackInvokeGHCArgs execDir opts ++ stackPkgArgs ++
                    "--" : invokeGHCDefaultArgs ++ getGHCOptsFor topDir hasMain deps targetFile opts
-      debugMessage opts $ "Invoking GHC via: " ++ unwords args
+      debugMessage opts $ "Invoking GHC via: stack " ++ unwords args
       callProcess p args
   when hasMain $ copyExecutable targetFile opts
 
