@@ -1,8 +1,10 @@
-{-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE EmptyCase         #-}
-{-# LANGUAGE TypeOperators     #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DefaultSignatures         #-}
+{-# LANGUAGE EmptyCase                 #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE UndecidableInstances      #-}
 module Narrowable where
 
 import GHC.Generics
@@ -14,9 +16,9 @@ import GHC.Generics
       type (:+:)(..),
       type (:*:)(..) )
 
-import Classes ( Shareable )
-import HasPrimitiveInfo ( HasPrimitiveInfo )
-import {-# SOURCE #-} MemoizedCurry ( Curry, free )
+import Data.SBV ( SymVal )
+
+import Classes ( Shareable, MonadFree(..) )
 
 -- Narrowable class and methods.
 -- We use Generics to give a default implementation for this class.
@@ -63,7 +65,7 @@ instance NarrowableGen f => NarrowableGen (M1 j h f) where
   narrowGen = map M1 narrowGen
   narrowConstrGen (M1 x) = M1 (narrowConstrGen x)
 
-instance (Shareable Curry a, HasPrimitiveInfo a) => NarrowableGen (K1 i (Curry a)) where
+instance (MonadFree f, FreeConstraints f a) => NarrowableGen (K1 i (f a)) where
   narrowGen = [K1 free]
 
   narrowConstrGen (K1 _) = K1 free
@@ -72,3 +74,23 @@ instance (Shareable Curry a, HasPrimitiveInfo a) => NarrowableGen (K1 i (Curry a
 instance Narrowable Bool where
   narrow = defaultNarrow
   narrowConstr = defaultNarrowConstr
+
+
+-- Differentiates between primitive types (e.g., Int)
+-- and non-primitive types (e.g, lists).
+-- Also carries a type class constraint as an existential.
+-- Depending on the type, we either need to be able to narrow it
+-- or to use constraint solving with it.
+data PrimitiveInfo a = Narrowable a => NoPrimitive
+                     | SymVal a => Primitive
+
+-- Class to see if a type is a primitive type (e.g., Int)
+class HasPrimitiveInfo a where
+  primitiveInfo :: PrimitiveInfo a
+  default primitiveInfo :: (Narrowable a) => PrimitiveInfo a
+  primitiveInfo = NoPrimitive
+
+instance HasPrimitiveInfo Integer where
+  primitiveInfo = Primitive
+
+instance HasPrimitiveInfo Bool

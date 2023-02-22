@@ -55,7 +55,6 @@ common deps
     TemplateHaskell
   other-modules:
     Narrowable
-    HasPrimitiveInfo
 
 library
   import: deps

@@ -10,7 +10,6 @@ module BasicDefinitions
  ( module BasicDefinitions
  , module MemoizedCurry
  , module Narrowable
- , module HasPrimitiveInfo
  , module Classes
  , fs ,bfs , dfs
  ) where
@@ -26,7 +25,6 @@ import GHC.IO.Exception
 
 import MemoizedCurry
 import Narrowable
-import HasPrimitiveInfo
 import Classes
 import Tree
 import Data.SBV (SBV, (.===))

@@ -58,11 +58,12 @@ import           GHC.IO                             ( unsafeDupableInterleaveIO,
                                                       unsafeDupablePerformIO,
                                                       unsafePerformIO )
 import           Unsafe.Coerce                      (unsafeCoerce)
-import           Classes                            (MonadShare(..), Shareable(..))
+import           Classes                            ( MonadShare(..),
+                                                      Shareable(..),
+                                                      MonadFree(..) )
 import qualified Tree
 
 import Narrowable
-import HasPrimitiveInfo
 
 -- Changes to the paper:
 -- - The performance optimization that was teasered
@@ -478,11 +479,12 @@ instance MonadPlus Curry
 --------------------------------------------------------------------------------
 -- Free variables are created by getting a freshID and the current level to annotate the variable with.
 
-free :: (HasPrimitiveInfo a, Shareable Curry a) => Curry a
-free = do
-  ndState <- get
-  let key = freshIDFromState ndState
-  freeWith (currentLevel ndState) key
+instance MonadFree Curry where
+  type FreeConstraints Curry a = (HasPrimitiveInfo a, Shareable Curry a)
+  free = do
+    ndState <- get
+    let key = freshIDFromState ndState
+    freeWith (currentLevel ndState) key
 
 freeWith :: (HasPrimitiveInfo a, Shareable Curry a) => Level -> ID -> Curry a
 freeWith lvl = Curry . return . Var lvl
