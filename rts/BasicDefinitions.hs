@@ -317,11 +317,11 @@ returnIONDImpl :: Curry (LiftedFunc a (IO a))
 returnIONDImpl = return $ Func $ \x -> fmap return x
 
 mainWrapperDet :: IO a -> IO ()
-mainWrapperDet ma = () <$ ma
+mainWrapperDet = void
 
 mainWrapperNDet :: (ForeignType b, Foreign b ~ (), ToHs a, HsEquivalent a ~ b) => Curry (IO a) -> IO ()
 mainWrapperNDet x = case evalCurry (ensureOneResult x) of
-  Single x' -> x' >>= return . toForeign . unSingle . evalCurry . ensureOneResult . to
+  Single x' -> toForeign . unSingle . evalCurry . ensureOneResult . to <$> x'
   _         -> error "mainWrapper: not a single result"
 
 unSingle :: MemoizedCurry.Tree n f l -> l

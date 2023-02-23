@@ -18,7 +18,7 @@ import GHC.Generics
 
 import Data.SBV ( SymVal )
 
-import Classes ( Shareable, MonadFree(..) )
+import Classes ( MonadFree(..) )
 
 -- Narrowable class and methods.
 -- We use Generics to give a default implementation for this class.

@@ -32,7 +32,7 @@ import qualified Data.Map                           as Map
 import           Data.Map                           (Map)
 import qualified Data.Set                           as Set
 import           Data.Set                           (Set)
-import           Data.IORef                         (IORef, atomicModifyIORef, atomicModifyIORef', newIORef, readIORef)
+import           Data.IORef                         (IORef, atomicModifyIORef', newIORef, readIORef)
 import           Data.SBV                           ( SBool,
                                                       SymVal(literal),
                                                       SBV,
@@ -43,7 +43,6 @@ import           Data.SBV                           ( SBool,
 import           Data.SBV.Control                   (query, checkSat, getValue, CheckSatResult(..))
 import           Control.Applicative                (Alternative(..))
 import           Control.Arrow                      (first)
-import           Control.Concurrent.MVar
 import           Control.Monad                      (MonadPlus(..), liftM, ap)
 import           Control.Monad.Fix                  (MonadFix(..), fix)
 import           Control.Monad.Codensity            (Codensity(..), lowerCodensity)
@@ -57,9 +56,7 @@ import           GHC.Generics                       ( Generic(..),
                                                       type (:+:)(..),
                                                       type (:*:)(..) )
 import           GHC.Magic                          (noinline)
-import           GHC.IO                             ( unsafeDupableInterleaveIO,
-                                                      unsafeDupablePerformIO,
-                                                      unsafeInterleaveIO,
+import           GHC.IO                             ( unsafeInterleaveIO,
                                                       unsafePerformIO )
 import           Unsafe.Coerce                      (unsafeCoerce)
 import           Classes                            ( MonadShare(..),

@@ -71,7 +71,7 @@ fs t' = unsafePerformIO $ do
           _ <- forkIO $ fsIO r >> putMVar mvarR ()
           takeMVar mvarL
           takeMVar mvarR
-  forkIO $ fsIO (t') >> writeChan ch Nothing
+  _ <- forkIO $ fsIO t' >> writeChan ch Nothing
   catMaybes . takeWhile isJust <$> getChanContents ch
 
 {-
