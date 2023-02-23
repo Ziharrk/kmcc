@@ -1,4 +1,4 @@
-resolver: lts-20.1
+resolver: lts-20.11
 packages:
   - compiler
   - curry-frontend
@@ -10,6 +10,7 @@ extra-deps:
   - git: https://github.com/GaloisInc/parameterized-utils.git
     commit: fec28ebeed59930767d5ed7f62be652881c76385
   - set-extra-1.4.1
+  - tree-monad-0.3.2
 allow-newer: true
 local-bin-path: bin
 allow-different-user: true
