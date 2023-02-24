@@ -732,7 +732,7 @@ haskellExt = ".hs"
 
 -- |Filename extension for external definition files
 externalExt :: String
-externalExt = ".ext.hs"
+externalExt = ".kmcc.hs"
 
 escapeFuncName :: String -> String
 escapeFuncName s = case escapeName s of
