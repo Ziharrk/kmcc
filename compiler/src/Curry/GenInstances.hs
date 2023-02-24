@@ -105,13 +105,13 @@ genInstances (Type qname _ vs cs) =
       , mkFlatPattern qname2 (TCons qname []) [1..ar]
       , PVar () (Ident () "_b")
       ]
-      (UnGuardedRhs () e) Nothing | ar /= 0, Just e <- [preventDict mkUnifyWithDetImplRight qname2 ar]] ++
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkUnifyWithDetImplRight qname2 ar]] ++
       [Match () (Ident () "unifyWith")
       [ PVar () (Ident () "_f")
       , PVar () (Ident () "_a")
       , mkFlatPattern qname2 (TCons qname []) [1..ar]
       ]
-      (UnGuardedRhs () e) Nothing | ar /= 0, Just e <- [preventDict mkUnifyWithDetImplLeft qname2 ar]]
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkUnifyWithDetImplLeft qname2 ar]]
     unifyWithFailMatch = Match () (Ident () "unifyWith")
       [PWildCard (), PWildCard (), PWildCard ()]
       (UnGuardedRhs () mkFailed) Nothing
@@ -120,7 +120,7 @@ genInstances (Type qname _ vs cs) =
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkLazyUnifyImpl qname2 ar]] ++
       [Match () (Ident () "lazyUnifyVar")
       [mkFlatPattern qname2 (TCons qname []) [1..ar], PVar () (Ident () "_i")]
-      (UnGuardedRhs () e) Nothing | ar /= 0, Just e <- [preventDict mkLazyUnifyDetImpl qname2 ar]]
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkLazyUnifyDetImpl qname2 ar]]
     mkNfWithMatch (Cons qname2 0  _ _) = [Match () (Ident () "nfWith")
       [PVar () (Ident () "_f"), PApp () (convertTypeNameToMonadicHs qname2) []]
       (UnGuardedRhs () $ mkReturn $ mkRight $ Hs.Var () (convertTypeNameToHs qname2)) Nothing]
