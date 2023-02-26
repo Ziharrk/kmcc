@@ -38,8 +38,9 @@ invokeGHC hasMain deps opts = do
   when hasMain $ copyExecutable targetFile opts
 
 stackInvokeGHCArgs :: FilePath -> KMCCOpts -> [String]
-stackInvokeGHCArgs execDir KMCCOpts { optCompilerVerbosity } =
+stackInvokeGHCArgs execDir KMCCOpts { optCompilerVerbosity, optProfiling } =
   ["--silent" | optCompilerVerbosity < 1] ++
+  ["--profile" | optProfiling] ++
   [ "ghc", "--stack-yaml", execDir </> "stackForCurry.yaml"]
 
 stackPkgArgs :: [String]
@@ -65,13 +66,15 @@ invokeGHCDefaultArgs = ["--make", "-threaded"]
 
 getGHCOptsFor :: FilePath -> Bool -> [(ModuleIdent, Source)] -> FilePath -> KMCCOpts -> [String]
 getGHCOptsFor topDir hasMain deps targetFile
-  KMCCOpts { frontendOpts, optCompilerVerbosity, optOptimizationBaseLevel, ghcOpts } =
+  KMCCOpts { frontendOpts, optCompilerVerbosity, optOptimizationBaseLevel, optProfiling, ghcOpts } =
   ["-fforce-recomp" | optForce frontendOpts] ++
+  ["-threaded"] ++
   ["-v" | optCompilerVerbosity > 3] ++
   ["-v0" | optCompilerVerbosity == 0] ++
   (if hasMain then ["-main-is", mainId] else []) ++
   ["-i " ++ topDir </> "rts"] ++
   ["-O " ++ show optOptimizationBaseLevel] ++
+  concat [["-with-rtsopts=-p", "-prof", "-fprof-auto"] | optProfiling ] ++
   getGHCSrcDirOpts deps frontendOpts ++
   ghcOpts ++
   [takeBaseName targetFile]

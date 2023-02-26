@@ -32,11 +32,15 @@ optParser = adjustDefaultOpts
   <*> switch (long "disable-det-optimization" <> help "Disable optimization of deterministic programs (not included in -O0)")
   <*> optional (option parseOptimization (long "optimization" <> short 'O' <> metavar "n" <> help "Set optimization level to n, with 0 <= n <= 2, default = 1"))
   <*> many (option parseVarArg (short 'V' <> internal))
+
   <*> switch (long "bindings" <> short 'B' <> help "Enable printing of variable bindings")
-  <*> switch (long "dfs" <> help "Set search mode to depth-first search")
-  <*> switch (long "bfs" <> help "Set search mode to breadth-first search")
-  <*> switch (long "fs" <> help "Set search mode to fair-search")
-  
+  <*> optional (
+          flag' DFS (long "dfs" <> help "Set search mode to depth-first search")
+      <|> flag' BFS (long "bfs" <> help "Set search mode to breadth-first search")
+      <|> flag' FS (long "fs" <> help "Set search mode to fair-search"))
+  <*> switch (long "profiling" <> short 'P' <> help "Enable profiling of generated code")
+
+
   <*> (Left <$> many (
               flag' CompilerName   (long "compiler-name" <> help "Print the compiler name (kmcc) and exit")
           <|> flag' NumericVersion (long "numeric-version" <> help "Print the compiler version and exit")
@@ -83,14 +87,17 @@ parseOptimization = eitherReader $ \s -> case reads s of
   _                    -> Left $ "Invalid optimization level (0 <= n <= 2): " ++ s
 
 adjustDefaultOpts :: Bool -> Bool -> Bool
-                  -> Maybe Int -> Bool -> [FilePath] -> Maybe FilePath -> Maybe (Options -> Options) -> [KnownExtension]
+                  -> Maybe Int -> Bool
+                  -> [FilePath] -> Maybe FilePath
+                  -> Maybe (Options -> Options) -> [KnownExtension]
                   -> Maybe [String]
                   -> Bool -> Maybe Int
                   -> [(String, Int)] -> Bool
-                  -> Bool -> Bool -> Bool
+                  -> Maybe SearchStrat
+                  -> Bool
                   -> Either [InfoCommand] FilePath
                   -> KMCCOpts
-adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b dfs bfs fs torv = defaultOpts
+adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b strat pr torv = defaultOpts
   { optTarget = fromRight "" torv
   , optCompilerVerbosity = verbosity
   , optShowTimings = t
@@ -100,7 +107,8 @@ adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b dfs bfs fs torv = defau
   , optShowBindings = b
   , optOptimizationBaseLevel = fromMaybe (optOptimizationBaseLevel defaultOpts) opt
   , optOptimizationDeterminism = not dOpt && optOptimizationDeterminism defaultOpts
-  , optSearchStrategy = if dfs then DFS else (if bfs then BFS else (if fs then FS else optSearchStrategy defaultOpts))
+  , optSearchStrategy = fromMaybe (optSearchStrategy defaultOpts) strat
+  , optProfiling = pr
   , frontendOpts = adjustFrontendOpts
   , ghcOpts = fromMaybe [] ghc
   }

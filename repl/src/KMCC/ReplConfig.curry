@@ -59,7 +59,7 @@ kmcc = CCDescription
   (\s -> s)                      -- option to create an executable
   cleanCmd                       -- command to clean module
   (CommandLineFreeMode (\vs -> unwords $ map (\(v,i) -> "-V" ++ v ++ "=" ++ show i) vs))
-  [stratOpt] -- [intOpt, firstOpt, resultsOpt, errDepthtOpt]
+  [stratOpt, profilingOpt] -- [intOpt, firstOpt, resultsOpt, errDepthtOpt]
  where
   cleanCmd m = unwords
     [ "/bin/rm -f ", quote (kmccSubDir </> m) ++ ".*"
@@ -86,6 +86,14 @@ stratOpt = CCOption
   [ ConstOpt "fs"  "--fs"
   , ConstOpt "dfs" "--dfs"
   , ConstOpt "bfs" "--bfs"
+  ]
+
+profilingOpt :: CCOption
+profilingOpt = CCOption
+  "+/-profiling   "
+  "turn on/off profiling"
+  [ ConstOpt "-profiling" ""
+  , ConstOpt "+profiling" "--profiling"
   ]
 
 intOpt :: CCOption
@@ -123,4 +131,3 @@ errDepthtOpt = CCOption
   showOpt s = case reads s :: [(Int,String)] of
     [(_,"")] -> Just ("--errdepth=" ++ s)
     _        -> Nothing
-
