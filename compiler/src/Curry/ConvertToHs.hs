@@ -464,11 +464,9 @@ instance ToHs RuleInfo where
 instance ToMonadicHs RuleInfo where
   convertToMonadicHs (RI (qname, TRule args expr)) = do
     analysis <- ask
-    freshNames <- replicateM (length args) freshVarName
-    let annExpr = annotateND analysis expr
     e' <- convertToMonadicHs (annotateND analysis expr)
-    let argInfo = zipWith (\(v, _) n -> (v, n, countVarUse annExpr v)) args freshNames
-    let e'' = foldr (\(v, n, occ) -> mkReturnFunc .  Lambda () [PVar () n] . mkShareBind (indexToName v, Hs.Var () (UnQual () n), occ)) e' argInfo
+    let argInfo = map fst args
+    let e'' = foldr (\v -> mkReturnFunc .  Lambda () [PVar () (indexToName v)]) e' argInfo
     return $ Match () (convertFuncNameToMonadicHs (Unqual qname)) []
       (UnGuardedRhs () e'') Nothing
   convertToMonadicHs (RI (qname, TExternal _ str)) = return $
@@ -513,6 +511,27 @@ failedBranch = Alt () (PWildCard ())
 instance ToMonadicHs (AExpr (TypeExpr, NDInfo)) where
   convertToMonadicHs = convertExprToMonadicHs Set.empty
 
+applyToArgs :: (Exp () -> Exp () -> Exp ()) -> (Exp () -> Exp ()) -> Exp () -> [Exp ()] -> CM (Exp ())
+applyToArgs apply ret funE args = do
+  vs <- replicateM (length args) freshVarName
+  let combineForSharing [] = ([], [])
+      combineForSharing ((_, e):xs) | isApply || isTransparent e = (e:es, infos)
+        where (es, infos) = combineForSharing xs
+      combineForSharing ((v, e):xs) = (Hs.Var () (UnQual () v):es, (v, e, Many):infos)
+        where (es, infos) = combineForSharing xs
+  let (exprs, shares) = combineForSharing $ zip vs args
+  let applic = ret $ foldl apply funE exprs
+  return $ foldr mkShareBind applic shares
+  where
+    isApply = case funE of
+      Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "apply_ND")) -> True
+      _ -> False
+    isTransparent (Hs.Var _ _) = True
+    isTransparent (Hs.Lit _ _) = True
+    isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "BasicDefinitions") (Ident () "fromHaskell"))) _) = True
+    isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "M") (Ident () "return"))) _) = True
+    isTransparent _ = False
+
 convertExprToMonadicHs :: Set.Set Int -> AExpr (TypeExpr, NDInfo) -> CM (Exp ())
 convertExprToMonadicHs vset (AVar _ idx) = if idx `elem` vset
   then return $ Hs.Var () (UnQual () (appendName "_nd" (indexToName idx)))
@@ -524,15 +543,15 @@ convertExprToMonadicHs _ ex@(AComb (ty, Det) ConsCall  _ _)
   | isFunFree ty = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs vset (AComb _ ConsCall (qname, _) args) = do
   args' <- mapM (convertExprToMonadicHs vset) args
-  return $ mkReturn $ foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname)) args'
+  applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) args'
 convertExprToMonadicHs vset (AComb _ (ConsPartCall missing) (qname, _) args) = do
   args' <- mapM (convertExprToMonadicHs vset) args
   missingVs <- replicateM missing freshVarName
   let mkLam e = foldr (\v -> mkReturnFunc .  Lambda () [PVar () v]) e missingVs
-  return $ mkLam $ mkReturn $ foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname)) (args' ++ map (Hs.Var () . UnQual ()) missingVs)
+  mkLam <$> applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) (args' ++ map (Hs.Var () . UnQual ()) missingVs)
 convertExprToMonadicHs vset (AComb _ _ (qname, _) args) = do -- (Partial) FuncCall
   args' <- mapM (convertExprToMonadicHs vset) args
-  return $ foldl mkMonadicApp (Hs.Var () (convertFuncNameToMonadicHs qname)) args'
+  applyToArgs mkMonadicApp id (Hs.Var () (convertFuncNameToMonadicHs qname)) args'
 convertExprToMonadicHs _ ex@(ALet (ty, Det) _ _)
   | isFunFree ty = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs vset ex@(ALet _ bs e) = do
@@ -600,13 +619,13 @@ convertBranchToMonadicHs vSet (ABranch pat e)
                    APattern _ (qname, (ty', _)) args ->
                     [Alt () (mkFlatPattern qname ty' (map fst args)) (UnGuardedRhs () transE) Nothing]
                    ALPattern _ _ -> []
-      let alt1 = Alt () pat1 (UnGuardedRhs () (foldr mkShareBind transE vs)) Nothing
+      let alt1 = Alt () pat1 (UnGuardedRhs () (foldr mkLetBind transE vs)) Nothing
       return (alt1:alt2)
   | otherwise = do
       alt1 <- do
         e' <- convertExprToMonadicHs vSet e
         (pat', vs) <- convertPatToMonadic pat e
-        return $ Alt () pat' (UnGuardedRhs () (foldr mkShareBind e' vs)) Nothing
+        return $ Alt () pat' (UnGuardedRhs () (foldr mkLetBind e' vs)) Nothing
       case pat of
         APattern _ (qname@(_, baseName), (ty', _)) vs
           | not ("_Dict#" `isPrefixOf` baseName) -> do

@@ -116,7 +116,7 @@ dollarBangBangNDImpl = returnFunc (\f -> returnFunc (\a -> f `app` normalForm a)
 dollarHashHashNDImpl :: (NormalForm a, FromHs a) => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
 dollarHashHashNDImpl = returnFunc (\f -> returnFunc (\a -> f `app` groundNormalForm a))
 
-class (ToHs a, FromHs a, ShowFree a, Shareable Curry a, Unifiable a, NormalForm a, HasPrimitiveInfo a) => Curryable a
+class (ToHs a, FromHs a, ShowFree a, Unifiable a, NormalForm a, HasPrimitiveInfo a) => Curryable a
 
 type instance HsEquivalent Integer = Integer
 
@@ -191,9 +191,6 @@ instance ToHs (IO a) where
 instance FromHs a => FromHs (IO a) where
   from x = from <$> x
 
-instance Shareable Curry a => Shareable Curry (IO a) where
-  shareArgs = return
-
 instance HasPrimitiveInfo (IO a) where
   primitiveInfo = NoPrimitive
 
@@ -201,7 +198,7 @@ instance Narrowable (IO a) where
   narrow = error "narrowing an IO action is not possible"
   narrowConstr _ = error "narrowing an IO action is not possible"
 
-instance Shareable Curry a => Unifiable (IO a) where
+instance Unifiable (IO a) where
   unifyWith _ _ _ = error "unifying an IO action is not possible"
   lazyUnifyVar _ _ = error "lazily unifying an IO action is not possible"
 
@@ -229,9 +226,6 @@ instance ToHs (LiftedFunc a b) where
 
 instance FromHs (LiftedFunc a b) where
   from _ = error "FFI Error: 'From' Conversion on functions"
-
-instance Shareable Curry (LiftedFunc a b) where
-  shareArgs = return
 
 instance HasPrimitiveInfo (LiftedFunc a b) where
   primitiveInfo = NoPrimitive
@@ -351,7 +345,7 @@ exprWrapperNDet search fvs b ca = printRes (search $ evalCurryTree extract)
       let str' = if null vs || not b then str else "{ " ++ intercalate "\n, " vs' ++ " } " ++ str
       return str'
 
-data VarInfo = forall a. (ShowFree a, HasPrimitiveInfo a, Shareable Curry a) => VarInfo Integer
+data VarInfo = forall a. (ShowFree a, HasPrimitiveInfo a) => VarInfo Integer
 
 getVarId :: forall a. ShowFree a => Curry a -> ND VarInfo
 getVarId ca = do
@@ -391,10 +385,12 @@ instance ForeignType a => ForeignType (IO a) where
   toForeign = fmap toForeign
   fromForeign = fmap fromForeign
 
+{-# INLINE liftForeign1 #-}
 liftForeign1 :: (ForeignType a, ForeignType b)
              => (Foreign a -> Foreign b) -> a -> b
 liftForeign1 f x = fromForeign (f (toForeign x))
 
+{-# INLINE liftForeign2 #-}
 liftForeign2 :: (ForeignType a, ForeignType b, ForeignType c)
              => (Foreign a -> Foreign b -> Foreign c) -> a -> b -> c
 liftForeign2 f x y = fromForeign (f (toForeign x) (toForeign y))

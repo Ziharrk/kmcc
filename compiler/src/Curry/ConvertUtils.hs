@@ -107,6 +107,10 @@ mkShareBind (_, _, None) e2 = e2
 mkShareBind (v, e1, One ) e2 = Let () (BDecls () [PatBind () (PVar () v) (UnGuardedRhs () e1) Nothing]) e2
 mkShareBind (v, e1, Many) e2 = mkBind (mkShare e1) (Lambda () [PVar () v] e2)
 
+mkLetBind :: (Name (), Exp (), VarUse) -> Exp () -> Exp ()
+mkLetBind (_, _, None) e2 = e2
+mkLetBind (v, e1, _) e2 = Let () (BDecls () [PatBind () (PVar () v) (UnGuardedRhs () e1) Nothing]) e2
+
 mkShare :: Exp () -> Exp ()
 mkShare = App () (Var () shareQualName)
 

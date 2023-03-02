@@ -18,57 +18,58 @@ import GHC.Generics
 
 import Data.SBV ( SymVal )
 
-import Classes ( MonadFree(..) )
+import {-# SOURCE #-} MemoizedCurry ( Curry )
+import Classes ( MonadShare(..), MonadFree(..) )
 
 -- Narrowable class and methods.
 -- We use Generics to give a default implementation for this class.
 -- That way, we can automatically derive instances.
 
 class Narrowable a where
-  narrow :: [a]
-  narrowConstr :: a -> a
+  narrow :: [Curry a]
+  narrowConstr :: a -> Curry a
 
-defaultNarrow :: (Narrowable a, Generic a, NarrowableGen (Rep a)) => [a]
-defaultNarrow = map to narrowGen
+defaultNarrow :: (Narrowable a, Generic a, NarrowableGen (Rep a)) => [Curry a]
+defaultNarrow = map (fmap to) narrowGen
 
-defaultNarrowConstr :: (Narrowable a, Generic a, NarrowableGen (Rep a)) => a -> a
-defaultNarrowConstr a = to (narrowConstrGen (from a))
+defaultNarrowConstr :: (Narrowable a, Generic a, NarrowableGen (Rep a)) => a -> Curry a
+defaultNarrowConstr a = to <$> narrowConstrGen (from a)
 
 -- Beyond here, the machinery for the default implementation is defined.
 -- There are some tutorials on the internet about GHC's generic types and how to use them to
 -- derive instances of different classes.
 
 class NarrowableGen f where
-  narrowGen :: [f x]
-  narrowConstrGen :: f x -> f x
+  narrowGen :: [Curry (f x)]
+  narrowConstrGen ::f x -> Curry (f x)
 
 instance NarrowableGen V1 where
   narrowGen = []
   narrowConstrGen x = case x of
 
 instance NarrowableGen U1 where
-  narrowGen = [U1]
-  narrowConstrGen U1 = U1
+  narrowGen = [return U1]
+  narrowConstrGen U1 = return U1
 
 instance (NarrowableGen f, NarrowableGen g) => NarrowableGen (f :+: g) where
-  narrowGen = map L1 narrowGen ++ map R1 narrowGen
+  narrowGen = map (fmap L1) narrowGen ++ map (fmap R1) narrowGen
 
-  narrowConstrGen (L1 x) = L1 (narrowConstrGen x)
-  narrowConstrGen (R1 x) = R1 (narrowConstrGen x)
+  narrowConstrGen (L1 x) = L1 <$> narrowConstrGen x
+  narrowConstrGen (R1 x) = R1 <$> narrowConstrGen x
 
 instance (NarrowableGen f, NarrowableGen g) => NarrowableGen (f :*: g) where
-  narrowGen = concatMap (\x -> map (x :*:) narrowGen) narrowGen
+  narrowGen = concatMap (\x -> map (\y -> (:*:) <$> x <*> y) narrowGen) narrowGen
 
-  narrowConstrGen (x :*: y) = narrowConstrGen x :*: narrowConstrGen y
+  narrowConstrGen (x :*: y) = (:*:) <$> narrowConstrGen x <*> narrowConstrGen y
 
 instance NarrowableGen f => NarrowableGen (M1 j h f) where
-  narrowGen = map M1 narrowGen
-  narrowConstrGen (M1 x) = M1 (narrowConstrGen x)
+  narrowGen = map (fmap M1) narrowGen
+  narrowConstrGen (M1 x) = M1 <$> narrowConstrGen x
 
-instance (MonadFree f, FreeConstraints f a) => NarrowableGen (K1 i (f a)) where
-  narrowGen = [K1 free]
+instance (FreeConstraints Curry a) => NarrowableGen (K1 i (Curry a)) where
+  narrowGen = [K1 <$> share free]
 
-  narrowConstrGen (K1 _) = K1 free
+  narrowConstrGen (K1 _) = K1 <$> share free
 
 -- implementation is generated automatically.
 instance Narrowable Bool where
