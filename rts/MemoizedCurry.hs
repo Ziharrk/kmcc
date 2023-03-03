@@ -63,7 +63,6 @@ import           Classes                            ( MonadShare(..),
 import qualified Tree
 
 import Narrowable
-import Debug.Trace
 
 -- Changes to the paper:
 -- - The performance optimization that was teasered
