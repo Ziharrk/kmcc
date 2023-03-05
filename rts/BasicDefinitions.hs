@@ -334,13 +334,32 @@ exprWrapperDet search a = case search $ evalCurryTree (showFreeCurry (fromHaskel
   [s] -> putStrLn s
   _   -> error "internalError: More than on result from deterministic expression"
 
-exprWrapperNDet :: ShowFree a => (Tree.Tree String -> [String]) -> [(String, Integer)] -> Bool -> Curry (CurryVal a, [VarInfo]) -> IO ()
-exprWrapperNDet search fvs b ca = printRes (search $ evalCurryTree extract)
+exprWrapperNDet :: ShowFree a => (Tree.Tree String -> [String]) -> Bool -> [(String, Integer)] -> Bool -> Curry (CurryVal a, [VarInfo]) -> IO ()
+exprWrapperNDet search optInt fvs b ca = printRes (search $ evalCurryTree extract) optInt
   where
     sortedFvs = map fst $ sortOn snd fvs
 
-    printRes [] = fail "**No value found"
-    printRes xs = mapM_ putStrLn xs
+    printRes [] _     = fail "**No value found"
+    printRes xs False = mapM_ putStrLn xs
+    printRes xs True  = printInteractive xs
+    
+    printInteractive [] = putStrLn "No more values"
+    printInteractive (x:xs) = do
+      putStrLn x
+      parseCommand xs
+      
+    parseCommand xs = do
+      putStrLn "More Values? [yes/no/all]"
+      input <- getLine
+      case input of
+        ""    -> printInteractive xs
+        "y"   -> printInteractive xs
+        "yes" -> printInteractive xs
+        "n"   -> return ()
+        "no"  -> return ()
+        "a"   -> mapM_ putStrLn xs
+        "all" -> mapM_ putStrLn xs
+        _     -> parseCommand xs
 
     extract = do
       (va, ids) <- ca
