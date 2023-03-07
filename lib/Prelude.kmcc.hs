@@ -534,6 +534,8 @@ cond_Det# _        _ = failed_Det#
 cond_ND# :: Curry (LiftedFunc Bool_ND (LiftedFunc a a))
 cond_ND# = returnFunc (\a -> a >>= \case
   True_ND -> returnFunc P.id
+  BoolFlat# True -> returnFunc P.id
+  BoolFlat# False -> failed_ND
   False_ND -> failed_ND)
 
 dollarbang_Det# :: (a -> b) -> a -> b
