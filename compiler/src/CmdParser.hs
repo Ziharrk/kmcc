@@ -39,6 +39,7 @@ optParser = adjustDefaultOpts
       <|> flag' BFS (long "bfs" <> help "Set search mode to breadth-first search")
       <|> flag' FS (long "fs" <> help "Set search mode to fair-search"))
   <*> switch (long "profiling" <> short 'P' <> help "Enable profiling of generated code")
+  <*> switch (long "interactive" <> help "Interactive result printing")
 
 
   <*> (Left <$> many (
@@ -95,9 +96,10 @@ adjustDefaultOpts :: Bool -> Bool -> Bool
                   -> [(String, Int)] -> Bool
                   -> Maybe SearchStrat
                   -> Bool
+                  -> Bool
                   -> Either [InfoCommand] FilePath
                   -> KMCCOpts
-adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b strat pr torv = defaultOpts
+adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b strat pr int torv = defaultOpts
   { optTarget = fromRight "" torv
   , optCompilerVerbosity = verbosity
   , optShowTimings = t
@@ -109,6 +111,7 @@ adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b strat pr torv = default
   , optOptimizationDeterminism = not dOpt && optOptimizationDeterminism defaultOpts
   , optSearchStrategy = fromMaybe (optSearchStrategy defaultOpts) strat
   , optProfiling = pr
+  , optInteractive = int
   , frontendOpts = adjustFrontendOpts
   , ghcOpts = fromMaybe [] ghc
   }
