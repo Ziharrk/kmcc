@@ -183,7 +183,7 @@ genInstances (Type qname _ vs cs) =
               foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToHs qname2)
                 (map (Hs.Var () . UnQual () . appendName "_d" . indexToName) [1..ar])) Nothing
         , Alt () (PWildCard ())
-            (UnGuardedRhs () $ mkReturn $ mkLeft $ mkValUnshared $
+            (UnGuardedRhs () $ mkReturn $ mkLeft $ mkVal $
               foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToMonadicHs qname2)
                 (map (mkEitherToCurry . Hs.Var () . UnQual () . appendName "_f" . indexToName) [1..ar])) Nothing]]
     mkNfWithDetImpl qname2 ar = mkReturn $ mkRight $

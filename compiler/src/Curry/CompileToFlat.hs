@@ -80,7 +80,7 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
     optCheck = do
       fileExists <- liftIO $ doesFileExist optInterface
       if not fileExists then compile else do
-        ok <- liftIO $ compareOptions
+        ok <- liftIO compareOptions
         if ok then skip else compile
     compile = do
       status opts $ compMessage idx (11, 16) "Compiling" m (fn, head destFiles)
@@ -89,18 +89,18 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
         then liftIO $ dumpMessage kmccopts $ "Generated flat curry file:\n" ++ show res
         else liftIO $ dumpMessage kmccopts "Generated flat curry file."
       liftIO saveOptions
-      
+
       return (res, True)
 
     optInterface = tgtDir (interfName fn) -<.> ".optint"
-    
+
     compileOpts = let
       obl = optOptimizationBaseLevel kmccopts
       od  = optOptimizationDeterminism kmccopts
       in (obl, od)
-      
+
     saveOptions = encodeFile optInterface compileOpts
-    
+
     compareOptions = do
       eitherRes <- decodeFileOrFail optInterface
       case eitherRes of

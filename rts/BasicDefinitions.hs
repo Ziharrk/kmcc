@@ -61,7 +61,7 @@ showsFreePrecCurry p x (fm, s) = (fm,) $ Curry $ do
       if Set.member i constrainedVars
         then instantiate @a lvl i >>= \y -> snd $ showsFreePrec p y (fm, s)
         else showsVar i fm s
-    Val _ y -> snd $ showsFreePrec p y (fm, s)
+    Val   y -> snd $ showsFreePrec p y (fm, s)
 
 showFreeCurry :: ShowFree a => Curry a -> [(Integer, String)] -> Curry String
 showFreeCurry x fm = snd $ showsFreePrecCurry 0 x (fm, return "")
@@ -90,7 +90,7 @@ normalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent 
 normalForm' a = do
   a' <- deref a
   case a' of
-    Val _   x -> nfWith normalForm' x
+    Val     x -> nfWith normalForm' x
     Var lvl i -> return (Left (Var lvl i))
 
 normalForm :: (NormalForm a, FromHs a) => Curry a -> Curry a
@@ -104,7 +104,7 @@ ndEitherToCurry a = Curry $ a >>= unCurry . eitherToCurry
 
 groundNormalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent a))
 groundNormalForm' a = deref a >>= \case
-  Val _   x -> nfWith groundNormalForm' x
+  Val     x -> nfWith groundNormalForm' x
   Var lvl i -> groundNormalForm' (instantiate lvl i)
 
 groundNormalForm :: (NormalForm a, FromHs a) => Curry a -> Curry a
@@ -203,7 +203,7 @@ instance Unifiable (IO a) where
   lazyUnifyVar _ _ = error "lazily unifying an IO action is not possible"
 
 instance NormalForm (IO a) where
-  nfWith _ !x = return (Left (Val Shared x))
+  nfWith _ !x = return (Left (Val x))
 
 instance ShowFree (IO a) where
   showsFreePrec _ _ = showsStringCurry "<<IO>>"
@@ -239,7 +239,7 @@ instance Unifiable (LiftedFunc a b) where
   lazyUnifyVar _ = error "lazily unifying a function is not possible"
 
 instance NormalForm (LiftedFunc a b) where
-  nfWith _ !x = return (Left (Val Shared x))
+  nfWith _ !x = return (Left (Val x))
 
 instance ShowFree (LiftedFunc a b) where
   showsFreePrec _ _ = showsStringCurry "<<Function>>"
@@ -358,7 +358,7 @@ addVarIds :: Curry a -> [ND VarInfo] -> Curry (CurryVal a, [VarInfo])
 addVarIds ca xs = Curry $ do
   ids <- sequence xs
   a <- unCurry ca
-  return (Val Shared (a, ids))
+  return (Val (a, ids))
 
 class ForeignType a where
   type Foreign a = b | b -> a
@@ -400,7 +400,7 @@ dollarBangNDImpl =
   returnFunc (\f ->
   returnFunc (\(Curry a) -> Curry (
     a >>= unCurry. \case
-      Val _ x   -> x `seq` (f `app` return x)
+      Val x   -> x `seq` (f `app` return x)
       Var lvl i -> f `app` Curry (return (Var lvl i)))))
 
 
@@ -415,7 +415,7 @@ primitive1 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
   (# Primitive, Primitive #) -> return . Func $ \ca -> Curry $ do
     a <- deref ca
     case a of
-      Val _ x -> return $ Val Shared $ fromForeign $ hsF $ toForeign x
+      Val x -> return $ Val $ fromForeign $ hsF $ toForeign x
       Var lvl i -> do
         j <- freshID
         s@NDState { .. } <- get
@@ -439,7 +439,7 @@ primitive2 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b, primitiveInfo 
     a <- deref ca
     b <- deref cb
     case (# a, b #) of
-      (# Val _ x, Val _ y #) -> return $ Val Shared $ fromForeign $ hsF (toForeign x) (toForeign y)
+      (# Val x, Val y #) -> return $ Val $ fromForeign $ hsF (toForeign x) (toForeign y)
       _ -> do
           k <- freshID
           s@NDState { .. } <- get

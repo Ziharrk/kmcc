@@ -132,8 +132,8 @@ mkRight = App () (Var () rightQualName)
 mkLeft :: Exp () -> Exp ()
 mkLeft = App () (Var () leftQualName)
 
-mkValUnshared :: Exp () -> Exp ()
-mkValUnshared = App () (App () (Var () valQualName) (Var () unsharedQualName))
+mkVal :: Exp () -> Exp ()
+mkVal = App () (Var () valQualName)
 
 mkEitherToCurry :: Exp () -> Exp ()
 mkEitherToCurry = App () (Var () eitherToCurryQualName)
@@ -291,9 +291,6 @@ returnFuncQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "retur
 
 valQualName :: QName ()
 valQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Val")
-
-unsharedQualName :: QName ()
-unsharedQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Unshared")
 
 eitherToCurryQualName :: QName ()
 eitherToCurryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "eitherToCurry")
