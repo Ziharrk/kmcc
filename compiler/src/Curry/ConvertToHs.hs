@@ -511,26 +511,35 @@ failedBranch = Alt () (PWildCard ())
 instance ToMonadicHs (AExpr (TypeExpr, NDInfo)) where
   convertToMonadicHs = convertExprToMonadicHs Set.empty
 
-applyToArgs :: (Exp () -> Exp () -> Exp ()) -> (Exp () -> Exp ()) -> Exp () -> [Exp ()] -> CM (Exp ())
+applyToArgs :: (Exp () -> Exp () -> Exp ()) -> (Exp () -> Exp ()) -> Exp () -> [(Maybe (AExpr (TypeExpr, NDInfo)), Exp ())] -> CM (Exp ())
 applyToArgs apply ret funE args = do
   vs <- replicateM (length args) freshVarName
   let combineForSharing [] = ([], [])
-      combineForSharing ((_, e):xs) | isApply || isTransparent e = (e:es, infos)
+      combineForSharing ((_, (origE, e)):xs) | isKnownShareless ||
+                                               isTransparent e ||
+                                               maybe True isDeterministic origE
+                                             = (e:es, infos)
         where (es, infos) = combineForSharing xs
-      combineForSharing ((v, e):xs) = (Hs.Var () (UnQual () v):es, (v, e, Many):infos)
+      combineForSharing ((v, (_, e)):xs) = (Hs.Var () (UnQual () v):es, (v, e, Many):infos)
         where (es, infos) = combineForSharing xs
   let (exprs, shares) = combineForSharing $ zip vs args
   let applic = ret $ foldl apply funE exprs
   return $ foldr mkShareBind applic shares
   where
-    isApply = case funE of
+    isKnownShareless = case funE of
       Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "apply_ND")) -> True
+      Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "qmark_ND")) -> True
       _ -> False
     isTransparent (Hs.Var _ _) = True
     isTransparent (Hs.Lit _ _) = True
     isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "BasicDefinitions") (Ident () "fromHaskell"))) _) = True
     isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "M") (Ident () "return"))) _) = True
     isTransparent _ = False
+    isDeterministic (AVar _ _) = True
+    isDeterministic (ALit _ _) = True
+    isDeterministic (AComb _ _ (_, (_, d)) _) = d == Det
+    isDeterministic (ATyped _ e _) = isDeterministic e
+    isDeterministic _ = False
 
 convertExprToMonadicHs :: Set.Set Int -> AExpr (TypeExpr, NDInfo) -> CM (Exp ())
 convertExprToMonadicHs vset (AVar _ idx) = if idx `elem` vset
@@ -542,15 +551,15 @@ convertExprToMonadicHs _ ex@(AComb (ty, Det) FuncCall _ _)
 convertExprToMonadicHs _ ex@(AComb (ty, Det) ConsCall  _ _)
   | isFunFree ty = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs vset (AComb _ ConsCall (qname, _) args) = do
-  args' <- mapM (convertExprToMonadicHs vset) args
+  args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
   applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) args'
 convertExprToMonadicHs vset (AComb _ (ConsPartCall missing) (qname, _) args) = do
-  args' <- mapM (convertExprToMonadicHs vset) args
+  args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
   missingVs <- replicateM missing freshVarName
   let mkLam e = foldr (\v -> mkReturnFunc .  Lambda () [PVar () v]) e missingVs
-  mkLam <$> applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) (args' ++ map (Hs.Var () . UnQual ()) missingVs)
+  mkLam <$> applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) (args' ++ map ((Nothing,) . Hs.Var () . UnQual ()) missingVs)
 convertExprToMonadicHs vset (AComb _ _ (qname, _) args) = do -- (Partial) FuncCall
-  args' <- mapM (convertExprToMonadicHs vset) args
+  args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
   applyToArgs mkMonadicApp id (Hs.Var () (convertFuncNameToMonadicHs qname)) args'
 convertExprToMonadicHs _ ex@(ALet (ty, Det) _ _)
   | isFunFree ty = mkFromHaskell <$> convertToHs ex
