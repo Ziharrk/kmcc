@@ -56,11 +56,9 @@ import           GHC.Generics                       ( Generic(..),
                                                       type (:+:)(..),
                                                       type (:*:)(..) )
 import           GHC.Magic                          (noinline)
-import           GHC.IO                             ( unsafeInterleaveIO,
-                                                      unsafePerformIO )
+import           GHC.IO                             (unsafePerformIO)
 import           Unsafe.Coerce                      (unsafeCoerce)
 import           Classes                            ( MonadShare(..),
-                                                      Shareable(..),
                                                       MonadFree(..) )
 import qualified Tree
 
@@ -179,7 +177,7 @@ isConsistent cst = unsafePerformIO $ runSMT $ do
 
 toSBV :: SymVal a => CurryVal a -> SBV a
 toSBV (Var _ i) = varToSBV i
-toSBV (Val _ a) = literal a
+toSBV (Val a)   = literal a
 
 varToSBV :: SymVal a => ID -> SBV a
 varToSBV i = sym $ "x" ++ (if i < 0 then "n" else "") ++ show (abs i)
@@ -322,15 +320,9 @@ instance MonadPlus ND
 -- In comparison to the paper, Variables  include some kind of Level type,
 -- which will be shown later.
 -- We also need a Shareable constraint for the type of variables.
--- Additionally, to include the performance optimization in the paper,
--- values are tagged with whether or not they have been shared already.
 
-data CurryVal a = Val ShareTag a
-                | (HasPrimitiveInfo a, Shareable Curry a) => Var Level ID
-
-data ShareTag = Unshared
-              | Shared
-  deriving Show
+data CurryVal a = Val a
+                | (HasPrimitiveInfo a) => Var Level ID
 
 deriving instance Show a => Show (CurryVal a)
 
@@ -356,7 +348,7 @@ runCurry :: Curry a -> Tree Level (NDState, Level) (NDState, a)
 runCurry ma =
   unVal <$> runND (unCurry ma) (initialNDState ())
   where
-    unVal (s, Val _ x) = (s, x)
+    unVal (s, Val x)   = (s, x)
     unVal (_, Var _ _) = error "evalCurry: Variable"
 
 runCurryTree :: Curry a -> Tree.Tree (NDState, a)
@@ -375,22 +367,22 @@ runCurryTree ma = convertTree $ runCurry ma
 -- In addition to generating a value for a primitive variable, we also add a constraint
 -- that restricts the given variable to exactly that value.
 
-instantiate :: forall a. (HasPrimitiveInfo a, Shareable Curry a) => Level -> ID -> Curry a
+instantiate :: forall a. HasPrimitiveInfo a => Level -> ID -> Curry a
 instantiate lvl i = Curry $
   case primitiveInfo @a of
     NoPrimitive -> msumLevel lvl $ flip map narrow $ \x -> unCurry $ do
-                      sX <- share (return x)
-                      modify (addToVarHeap i sX)
-                      sX
+                      sX <- x
+                      modify (addToVarHeap i (return sX))
+                      return sX
     Primitive   -> get >>= \NDState { constraintStore = cst } ->
                    msumLevel lvl $ flip map (narrowPrimitive i cst) $ \x -> do
                       s@NDState { .. } <- get
-                      let c = toSBV (Var 0 i) .=== toSBV (Val Shared x)
+                      let c = toSBV (Var 0 i) .=== toSBV (Val x)
                       let cst' = insertConstraint c constraintStore
                       let cvs' = Set.insert i constrainedVars
                       put (s { constraintStore = cst', constrainedVars = cvs' })
                       modify (addToVarHeap i (return x))
-                      return (Val Unshared x)
+                      return (Val x)
 
 --------------------------------------------------------------------------------
 -- Instantiation of primitive variables is done by querying the SMT solver for
@@ -408,7 +400,7 @@ narrowPrimitive i cst = unsafePerformIO $ runSMT $ do
   query $ checkSat >>= \case
     Sat -> do
       v <- getValue (varToSBV i)
-      let c = varToSBV i ./== toSBV (Val Shared v)
+      let c = varToSBV i ./== toSBV (Val v)
       return (v : narrowPrimitive i (insertConstraint c cst))
     _   -> return []
 
@@ -427,18 +419,18 @@ deref (Curry m) = do
       case lookupHeap i (varHeap ndState) of
         Nothing  -> return v
         Just res -> deref (typed res)
-    x@(Val _ _) -> return x
+    x@(Val _) -> return x
 
 {-# INLINE[1] pureCurry #-}
 pureCurry :: a -> Curry a
-pureCurry = Curry . return . Val Unshared
+pureCurry = Curry . return . Val
 
 {-# INLINE[1] bind #-}
 bind :: Curry t -> (t -> Curry a) -> Curry a
 ma `bind` f = Curry $ do
   a <- deref ma
   unCurry $ case a of
-    Val _   x -> f x
+    Val x     -> f x
     Var lvl i -> instantiate lvl i >>= f
 
 instance Monad Curry where
@@ -450,6 +442,7 @@ instance Functor Curry where
 
 {-# RULES
 "ret/bind" forall x f. pureCurry x `bind` f = f x
+"share/ret" forall x f. memo (pureCurry x) `bind` f = f (pureCurry x)
 "bind/ret" forall x. x `bind` pureCurry = x
   #-}
 
@@ -459,13 +452,13 @@ instance Applicative Curry where
   (<*>) = ap
 
 instance MonadState NDState Curry where
-  get = Curry (gets (Val Unshared))
-  put s = Curry (put s >> return (Val Unshared ()))
+  get = Curry (gets Val)
+  put s = Curry (put s >> return (Val ()))
 
 instance MonadFix Curry where
   mfix f = Curry $ mfix (unCurry . f . unVal)
     where
-      unVal (Val _ x) = x
+      unVal (Val x) = x
       unVal _ = error "Not a Val in mfix"
 --------------------------------------------------------------------------------
 -- Non-determinisitic choice and failure are simply defined using the
@@ -484,39 +477,34 @@ instance MonadPlus Curry
 -- Free variables are created by getting a freshID and the current level to annotate the variable with.
 
 instance MonadFree Curry where
-  type FreeConstraints Curry a = (HasPrimitiveInfo a, Shareable Curry a)
+  type FreeConstraints Curry a = HasPrimitiveInfo a
   free = do
     ndState <- get
     let key = freshIDFromState ndState
     freeWith (currentLevel ndState) key
 
-freeWith :: (HasPrimitiveInfo a, Shareable Curry a) => Level -> ID -> Curry a
+freeWith :: HasPrimitiveInfo a => Level -> ID -> Curry a
 freeWith lvl = Curry . return . Var lvl
 
 --------------------------------------------------------------------------------
 -- Sharing/memoization works as written in the paper,
--- with the optimization that a shareArgs on values that have benn shared already are omitted.
+-- with the optimization that a shareArgs on values that have been shared already are omitted.
 
 instance MonadShare Curry where
-  type ShareConstraints Curry a = Shareable Curry a
-  share (Curry m) = memo (Curry (m >>= unCurry . shareCurryVal))
-    where
-      shareCurryVal (Val Unshared v) = shareArgs v
-      shareCurryVal (Val Shared   v) = Curry (return (Val Shared v))
-      shareCurryVal (Var lvl      i) = freeWith lvl i
+  share :: Curry a -> Curry (Curry a)
+  share = memo
 
 {-# NOINLINE memo #-}
 -- | Memorize a value or variable for explicit sharing.
-memo :: Curry a -> Curry (Curry a)
+memo :: Curry a  -> Curry (Curry a)
 memo (Curry m) = Curry $ do
   ndState1 <- get
-  -- s needs to be used inside the unsafePerformIO to prevent it from
-  -- floating out of the withTaskMap entirely.
+  -- ndState1 needs to be used inside the unsafePerformIO to prevent taskMap from
+  -- floating out of the memo entirely.
   -- That would cause each memo to use the same IORef.
   let taskMap = unsafePerformIO
-                    $ unsafeInterleaveIO
                     $ noinline const (newIORef Map.empty) ndState1
-  return $ Val Shared $ Curry $ do
+  return $ Val $ Curry $ do
     ndState2 <- get
     case lookupTaskResult taskMap (branchID ndState2) (parentIDs ndState2)  of
       Just (y, False) -> return y
@@ -528,11 +516,8 @@ memo (Curry m) = Curry $ do
             insertID = if wasND
                           then branchID ndState3
                           else branchID ndState1
-            insertH = insertHeap insertID (toShared y, wasND)
-        unsafePerformIO (atomicModifyIORef' taskMap (\x -> (insertH x, return $ toShared y)))
-  where
-    toShared (Val Unshared x) = Val Shared x
-    toShared x                = x
+            insertH = insertHeap insertID (y, wasND)
+        unsafePerformIO (atomicModifyIORef' taskMap (\x -> (insertH x, return y)))
 
 --------------------------------------------------------------------------------
 -- We could define lookupTaskResult exactly as in the paper,
@@ -558,21 +543,21 @@ lookupTaskResult ref i s =
 -- we also have a function for that in the type class.
 
 class Unifiable a where
-  unifyWith :: (forall x. (HasPrimitiveInfo x, Unifiable x, Shareable Curry x)
+  unifyWith :: (forall x. (HasPrimitiveInfo x, Unifiable x)
                         => Curry x -> Curry x -> Curry Bool)
             -> a -> a -> Curry Bool
 
   lazyUnifyVar :: a -> ID -> Curry Bool
 
-defaultLazyUnifyVar :: forall a. (HasPrimitiveInfo a, Shareable Curry a, Generic a, UnifiableGen (Rep a))
+defaultLazyUnifyVar :: forall a. (HasPrimitiveInfo a, Generic a, UnifiableGen (Rep a))
                       => a -> ID -> Curry Bool
 defaultLazyUnifyVar x i = do
   (x', xs) <- lazyUnifyVarGen (from x)
   modify (addToVarHeap i (return (to x' :: a)))
   and <$> sequence xs
 
-defaultUnifyWith :: forall a. (HasPrimitiveInfo a, Shareable Curry a, Generic a, UnifiableGen (Rep a))
-                 => (forall x. (HasPrimitiveInfo x, Unifiable x, Shareable Curry x)
+defaultUnifyWith :: forall a. (HasPrimitiveInfo a, Generic a, UnifiableGen (Rep a))
+                 => (forall x. (HasPrimitiveInfo x, Unifiable x)
                             => Curry x -> Curry x -> Curry Bool)
                  -> a -> a -> Curry Bool
 defaultUnifyWith f x y = unifyWithGen f (from x) (from y)
@@ -580,7 +565,7 @@ defaultUnifyWith f x y = unifyWithGen f (from x) (from y)
 --------------------------------------------------------------------------------
 -- Unify itself is implemented as shown in the paper.
 
-unify :: forall a. (HasPrimitiveInfo a, Unifiable a, Shareable Curry a)
+unify :: forall a. (HasPrimitiveInfo a, Unifiable a)
       => Curry a -> Curry a -> Curry Bool
 ma1 `unify` ma2 = Curry $ do
   a1 <- deref ma1
@@ -591,25 +576,26 @@ ma1 `unify` ma2 = Curry $ do
       | otherwise       -> do
         modify (addToVarHeap i1 (Curry (return y)))
         return True
-    (Val _ x, Val _ y)  -> unifyWith unify x y
-    (Var _ i1, Val _ y) -> unifyVar i1 y
-    (Val _ x, Var _ i2) -> unifyVar i2 x
+    (Val x, Val y)    -> unifyWith unify x y
+    (Var _ i1, Val y) -> unifyVar i1 y
+    (Val x, Var _ i2) -> unifyVar i2 x
   where
+    unifyVar :: ID -> a -> Curry Bool
     unifyVar i v = case primitiveInfo @a of
       NoPrimitive -> do
         let x = narrowConstr v
-        sX <- share (return x)
-        modify (addToVarHeap i sX)
-        unify sX (return v)
+        sX <- x
+        modify (addToVarHeap i (return sX))
+        unify (return sX) (return v)
       Primitive   -> do
-        let cs = toSBV (Var 0 i) .=== toSBV (Val Shared v)
+        let cs = toSBV (Var 0 i) .=== toSBV (Val v)
         modify (\s@NDState { .. } -> addToVarHeap i (return v) s
                    { constraintStore = insertConstraint cs constraintStore
                    , constrainedVars = Set.insert i constrainedVars
                    })
         return True
 
-(=:=) :: (HasPrimitiveInfo a, Unifiable a, Shareable Curry a) => Curry (a :-> a :-> Bool)
+(=:=) :: (HasPrimitiveInfo a, Unifiable a) => Curry (a :-> a :-> Bool)
 (=:=) = return . Func $ \a -> return . Func $ \b -> unify a b
 
 --------------------------------------------------------------------------------
@@ -620,7 +606,7 @@ ma1 `unify` ma2 = Curry $ do
 -- but fails in the "normal" stricter unification.
 
 -- TODO: primitives
-unifyL :: (HasPrimitiveInfo a, Unifiable a, Shareable Curry a) => Curry a -> Curry a -> Curry Bool
+unifyL :: (HasPrimitiveInfo a, Unifiable a) => Curry a -> Curry a -> Curry Bool
 ma1 `unifyL` ma2 = Curry $ do
   a1 <- deref ma1
   case a1 of
@@ -628,17 +614,17 @@ ma1 `unifyL` ma2 = Curry $ do
       ma2' <- share ma2
       modify (addToVarHeap i1 ma2')
       return True
-    Val _ x  -> do
+    Val x -> do
       a2 <- deref ma2
       unCurry $ case a2 of
         Var _ i2 -> lazyUnifyVar x i2
-        Val _ y  -> unifyWith unifyL x y
+        Val y    -> unifyWith unifyL x y
 
 addToVarHeap :: ID -> Curry a -> NDState -> NDState
 addToVarHeap i v ndState =
   ndState { varHeap = insertHeap i (Untyped v) (varHeap ndState) }
 
-(=:<=) :: (HasPrimitiveInfo a, Unifiable a, Shareable Curry a) => Curry (a :-> a :-> Bool)
+(=:<=) :: (HasPrimitiveInfo a, Unifiable a) => Curry (a :-> a :-> Bool)
 (=:<=) = return . Func $ \a -> return . Func $ \b -> unifyL a b
 
 --------------------------------------------------------------------------------
@@ -703,7 +689,7 @@ setLevelC lvl (Curry a) = Curry $ do
                 , setComputation = setComputation ndState1 })
   return res
   where
-    setLevelCurryVal (Val t    x) = Val t (setLevel lvl x)
+    setLevelCurryVal (Val x) = Val (setLevel lvl x)
     setLevelCurryVal (Var lvl' i) = Var lvl' i
 
 -- Capturing proceeds by traversing the tree structure
@@ -715,11 +701,11 @@ captureWithLvl :: Level -> Curry a -> Curry (ListC a)
 captureWithLvl lvl (Curry ma) = Curry $ ND $
   StateT $ \ndState ->
     let list = captureTree (runND ma ndState)
-    in lift list >>= \(s, v) -> return (Val Unshared $ transListTree v, s)
+    in lift list >>= \(s, v) -> return (Val $ transListTree v, s)
   where
     captureTree :: Tree Level (NDState, Level) (NDState, CurryVal a)
                 -> Tree Level (NDState, Level) (NDState, ListTree a)
-    captureTree (Single (s, Val _ a)) =
+    captureTree (Single (s, Val a)) =
       Single (s, ConsTree (Single a) (Single NilTree))
     captureTree (Single (_, Var _ _)) =
       error "captureWithLvl: variable"
@@ -765,7 +751,7 @@ transListTree (ConsTree x xs) =
 
 -- Lift a tree computation to a Curry computation
 treeToCurry :: Tree Level (NDState, Level) a -> Curry a
-treeToCurry = Curry . ND . lift . lift . fmap (Val Unshared)
+treeToCurry = Curry . ND . lift . lift . fmap Val
 
 -- Basically a monadic List type, lifted with our tree monad.
 data ListTree a = NilTree
@@ -786,7 +772,7 @@ mkList = foldr (\e xs -> ConsC e (return xs)) NilC
 -- Instances for the Generic implementation of Unifiable
 
 class UnifiableGen f where
-  unifyWithGen :: (forall x. (HasPrimitiveInfo x, Unifiable x, Shareable Curry x)
+  unifyWithGen :: (forall x. (HasPrimitiveInfo x, Unifiable x)
                            => Curry x -> Curry x -> Curry Bool)
                -> f a -> f a -> Curry Bool
 
@@ -824,7 +810,7 @@ instance UnifiableGen f => UnifiableGen (M1 i j f) where
 
   lazyUnifyVarGen (M1 x) = first M1 <$> lazyUnifyVarGen x
 
-instance (HasPrimitiveInfo f, Unifiable f, Shareable Curry f) => UnifiableGen (K1 i (Curry f)) where
+instance (HasPrimitiveInfo f, Unifiable f) => UnifiableGen (K1 i (Curry f)) where
   unifyWithGen f (K1 x) (K1 y) = x `f` y
 
   lazyUnifyVarGen (K1 x) = do
@@ -875,68 +861,29 @@ instance Levelable Integer where
 data ListC a = NilC | ConsC (Curry a) (Curry (ListC a))
   deriving (Generic, Levelable)
 
-instance (Shareable Curry a, HasPrimitiveInfo a) => HasPrimitiveInfo (ListC a)
+instance HasPrimitiveInfo a => HasPrimitiveInfo (ListC a)
 
-instance (HasPrimitiveInfo a, Shareable Curry a) => Narrowable (ListC a) where
+instance HasPrimitiveInfo a => Narrowable (ListC a) where
   narrow = defaultNarrow
   narrowConstr = defaultNarrowConstr
 
-instance (Unifiable a, HasPrimitiveInfo a, Shareable Curry a) => Unifiable (ListC a) where
+instance (Unifiable a, HasPrimitiveInfo a) => Unifiable (ListC a) where
   unifyWith = defaultUnifyWith
   lazyUnifyVar = defaultLazyUnifyVar
-
-instance Shareable Curry a => Shareable Curry (ListC a) where
-  shareArgs NilC         = return NilC
-  shareArgs (ConsC x xs) = ConsC <$> share x <*> share xs
 
 data Tuple2C a b = Tuple2C (Curry a) (Curry b)
   deriving (Generic, Levelable)
 
-instance (Shareable Curry a, HasPrimitiveInfo a, Shareable Curry b, HasPrimitiveInfo b)
+instance (HasPrimitiveInfo a, HasPrimitiveInfo b)
   => HasPrimitiveInfo (Tuple2C a b)
 
-instance (HasPrimitiveInfo a, Shareable Curry a, HasPrimitiveInfo b, Shareable Curry b)
+instance (HasPrimitiveInfo a, HasPrimitiveInfo b)
   => Narrowable (Tuple2C a b) where
   narrow = defaultNarrow
   narrowConstr = defaultNarrowConstr
 
-deriving instance (Shareable Curry a, Shareable Curry b)
-  => Shareable Curry (Tuple2C a b)
-
 instance ( Unifiable a, Unifiable b
-         , HasPrimitiveInfo a, HasPrimitiveInfo b
-         , Shareable Curry a, Shareable Curry b )
+         , HasPrimitiveInfo a, HasPrimitiveInfo b )
   => Unifiable (Tuple2C a b) where
   unifyWith = defaultUnifyWith
   lazyUnifyVar = defaultLazyUnifyVar
-
---------------------------------------------------------------------------------
--- some debugging functions, not relevant
-
-testShareTag :: Bool
-testShareTag = head $ Tree.bfs $ evalCurryTree $ share xs
-  >>= Curry . fmap (Val Shared) . ensureTagged
-  where
-    xs = return $ mkList [return 1 ? return 2, return 3, return 4]
-
-    ensureTagged :: Curry (ListC Integer) -> ND Bool
-    ensureTagged xs' = unCurry xs' >>= \case
-      Val Unshared _          -> return False
-      Val Shared NilC         -> return True
-      Val Shared (ConsC y ys) -> (&&) <$> ensureTaggedI y <*> ensureTagged ys
-      Var _ _                 -> return True
-
-    ensureTaggedI :: Curry Integer -> ND Bool
-    ensureTaggedI n = unCurry n >>= \case
-      Val Unshared _ -> return False
-      _              -> return True
-
-showStructure :: Tree Level (NDState, Level) (NDState, CurryVal a) -> [Char]
-showStructure (Single (_, Var  lvl idt)) =
-  "<SVar_" ++ show lvl ++ "_" ++ show idt ++ ">"
-showStructure (Single (_, Val _ _)) =
-  "<Val>"
-showStructure (Fail (_, lvl)) =
-  "<Fail_" ++ show lvl ++ ">"
-showStructure (Choice lvl l r) =
-  "(" ++ showStructure l ++ ") :" ++ show lvl ++ ": (" ++ showStructure r ++ ")"

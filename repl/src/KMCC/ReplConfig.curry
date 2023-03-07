@@ -59,7 +59,7 @@ kmcc = CCDescription
   (\s -> s)                      -- option to create an executable
   cleanCmd                       -- command to clean module
   (CommandLineFreeMode (\vs -> unwords $ map (\(v,i) -> "-V" ++ v ++ "=" ++ show i) vs))
-  [stratOpt, profilingOpt] -- [intOpt, firstOpt, resultsOpt, errDepthtOpt]
+  [stratOpt, profilingOpt, intOpt] -- [firstOpt, resultsOpt, errDepthtOpt]
  where
   cleanCmd m = unwords
     [ "/bin/rm -f ", quote (kmccSubDir </> m) ++ ".*"

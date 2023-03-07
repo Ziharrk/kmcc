@@ -17,7 +17,7 @@ genInstances (Type qname _ vs cs) =
   [hsShowFreeDecl | not (isListOrTuple qname)]
   ++
   map hsEquivDecl [0..length vs] ++
-  [ shareableDecl, hsToDecl, hsFromDecl, hsNarrowableDecl
+  [ hsToDecl, hsFromDecl, hsNarrowableDecl
   , hsUnifiableDecl, hsPrimitiveDecl, hsNormalFormDecl, hsCurryDecl ]
   where
     hsEquivDecl arity = TypeInsDecl () (TyApp () (TyCon () hsEquivQualName)
@@ -25,11 +25,6 @@ genInstances (Type qname _ vs cs) =
         (map (TyVar () . indexToName . fst) (take arity vs))))
       (foldl (TyApp ()) (TyCon () (convertTypeNameToHs qname))
         (map (TyApp () (TyCon () hsEquivQualName) . TyVar () . indexToName . fst) (take arity vs)))
-    shareableDecl = InstDecl () Nothing
-      (IRule () Nothing (mkCurryCtxt vs)
-        (IHApp () (IHApp () (IHCon () shareableQualName) (TyCon () curryQualName)) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
-          (map (TyVar () . indexToName . fst) vs))))
-      (Just [InsDecl () (FunBind () (concatMap mkShareMatch cs))])
     hsToDecl = InstDecl () Nothing
       (IRule () Nothing (mkCurryCtxt vs)
         (IHApp () (IHCon () hsToQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
@@ -71,12 +66,6 @@ genInstances (Type qname _ vs cs) =
           (map (TyVar () . indexToName . fst) vs))))
       Nothing
 
-    mkShareMatch (Cons qname2 ar _ _) = Match () (Ident () "shareArgs")
-      [PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
-      (UnGuardedRhs () (mkShareImpl qname2 ar)) Nothing
-        : [Match () (Ident () "shareArgs")
-            [mkFlatPattern qname2 (TCons qname []) [1..ar]]
-            (UnGuardedRhs () (mkShareDetImpl qname2 ar)) Nothing]
     mkToMatch (Cons qname2 ar _ _) = [Match () (Ident () "to")
       [PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkToImpl qname2 ar]] ++
@@ -142,17 +131,6 @@ genInstances (Type qname _ vs cs) =
       | not ("_Dict#" `isPrefixOf` snd qname2) = Just (f qname2 ar)
       | otherwise = Nothing
 
-    mkShareImpl qname2 ar
-      | not ("_Dict#" `isPrefixOf` snd qname2) =
-        mkApplicativeChain (Hs.Var () (convertTypeNameToMonadicHs qname2))
-                           (map (mkShare . Hs.Var () . UnQual () . indexToName) [1..ar])
-      | otherwise =
-        mkReturn (foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
-                   (map (Hs.Var () . UnQual () . indexToName) [1..ar]))
-    mkShareDetImpl qname2 ar =
-      mkReturn (App () (Hs.Var () (convertQualNameToFlatQualName qname))
-               (foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
-                 (map (Hs.Var () . UnQual () . indexToName) [1..ar])))
     mkToImpl qname2 ar =
       mkApplicativeChain (Hs.Var () (convertTypeNameToHs qname2))
                           (map (mkToHaskell . Hs.Var () . UnQual () . indexToName) [1..ar])
@@ -163,10 +141,10 @@ genInstances (Type qname _ vs cs) =
       foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
         (map (Hs.Var () . UnQual () . indexToName) [1..ar])
     mkNarrowImpl qname2 ar =
-      foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
-        (map (const mkFree) [1..ar])
-    mkSameConstrImpl qname2 ar = foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
-      (replicate ar mkFree)
+      mkApplicativeChain (Hs.Var () (convertTypeNameToMonadicHs qname2))
+        (map (const (mkShare mkFree)) [1..ar])
+    mkSameConstrImpl qname2 ar = mkApplicativeChain (Hs.Var () (convertTypeNameToMonadicHs qname2))
+      (replicate ar (mkShare mkFree))
     mkUnifyWithImpl _ ar = Do () $ maybeAddReturnTrue $
       map (\i -> Qualifier () $ App () (App () (Hs.Var () (UnQual () (Ident () "_f")))
                     (Hs.Var () (UnQual () (appendName "_a" (indexToName i)))))
@@ -205,7 +183,7 @@ genInstances (Type qname _ vs cs) =
               foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToHs qname2)
                 (map (Hs.Var () . UnQual () . appendName "_d" . indexToName) [1..ar])) Nothing
         , Alt () (PWildCard ())
-            (UnGuardedRhs () $ mkReturn $ mkLeft $ mkValUnshared $
+            (UnGuardedRhs () $ mkReturn $ mkLeft $ mkVal $
               foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToMonadicHs qname2)
                 (map (mkEitherToCurry . Hs.Var () . UnQual () . appendName "_f" . indexToName) [1..ar])) Nothing]]
     mkNfWithDetImpl qname2 ar = mkReturn $ mkRight $

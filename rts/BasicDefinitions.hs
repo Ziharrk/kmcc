@@ -61,7 +61,7 @@ showsFreePrecCurry p x (fm, s) = (fm,) $ Curry $ do
       if Set.member i constrainedVars
         then instantiate @a lvl i >>= \y -> snd $ showsFreePrec p y (fm, s)
         else showsVar i fm s
-    Val _ y -> snd $ showsFreePrec p y (fm, s)
+    Val   y -> snd $ showsFreePrec p y (fm, s)
 
 showFreeCurry :: ShowFree a => Curry a -> [(Integer, String)] -> Curry String
 showFreeCurry x fm = snd $ showsFreePrecCurry 0 x (fm, return "")
@@ -90,7 +90,7 @@ normalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent 
 normalForm' a = do
   a' <- deref a
   case a' of
-    Val _   x -> nfWith normalForm' x
+    Val     x -> nfWith normalForm' x
     Var lvl i -> return (Left (Var lvl i))
 
 normalForm :: (NormalForm a, FromHs a) => Curry a -> Curry a
@@ -104,7 +104,7 @@ ndEitherToCurry a = Curry $ a >>= unCurry . eitherToCurry
 
 groundNormalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent a))
 groundNormalForm' a = deref a >>= \case
-  Val _   x -> nfWith groundNormalForm' x
+  Val     x -> nfWith groundNormalForm' x
   Var lvl i -> groundNormalForm' (instantiate lvl i)
 
 groundNormalForm :: (NormalForm a, FromHs a) => Curry a -> Curry a
@@ -116,7 +116,7 @@ dollarBangBangNDImpl = returnFunc (\f -> returnFunc (\a -> f `app` normalForm a)
 dollarHashHashNDImpl :: (NormalForm a, FromHs a) => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
 dollarHashHashNDImpl = returnFunc (\f -> returnFunc (\a -> f `app` groundNormalForm a))
 
-class (ToHs a, FromHs a, ShowFree a, Shareable Curry a, Unifiable a, NormalForm a, HasPrimitiveInfo a) => Curryable a
+class (ToHs a, FromHs a, ShowFree a, Unifiable a, NormalForm a, HasPrimitiveInfo a) => Curryable a
 
 type instance HsEquivalent Integer = Integer
 
@@ -191,9 +191,6 @@ instance ToHs (IO a) where
 instance FromHs a => FromHs (IO a) where
   from x = from <$> x
 
-instance Shareable Curry a => Shareable Curry (IO a) where
-  shareArgs = return
-
 instance HasPrimitiveInfo (IO a) where
   primitiveInfo = NoPrimitive
 
@@ -201,12 +198,12 @@ instance Narrowable (IO a) where
   narrow = error "narrowing an IO action is not possible"
   narrowConstr _ = error "narrowing an IO action is not possible"
 
-instance Shareable Curry a => Unifiable (IO a) where
+instance Unifiable (IO a) where
   unifyWith _ _ _ = error "unifying an IO action is not possible"
   lazyUnifyVar _ _ = error "lazily unifying an IO action is not possible"
 
 instance NormalForm (IO a) where
-  nfWith _ !x = return (Left (Val Shared x))
+  nfWith _ !x = return (Left (Val x))
 
 instance ShowFree (IO a) where
   showsFreePrec _ _ = showsStringCurry "<<IO>>"
@@ -230,9 +227,6 @@ instance ToHs (LiftedFunc a b) where
 instance FromHs (LiftedFunc a b) where
   from _ = error "FFI Error: 'From' Conversion on functions"
 
-instance Shareable Curry (LiftedFunc a b) where
-  shareArgs = return
-
 instance HasPrimitiveInfo (LiftedFunc a b) where
   primitiveInfo = NoPrimitive
 
@@ -245,7 +239,7 @@ instance Unifiable (LiftedFunc a b) where
   lazyUnifyVar _ = error "lazily unifying a function is not possible"
 
 instance NormalForm (LiftedFunc a b) where
-  nfWith _ !x = return (Left (Val Shared x))
+  nfWith _ !x = return (Left (Val x))
 
 instance ShowFree (LiftedFunc a b) where
   showsFreePrec _ _ = showsStringCurry "<<Function>>"
@@ -334,13 +328,32 @@ exprWrapperDet search a = case search $ evalCurryTree (showFreeCurry (fromHaskel
   [s] -> putStrLn s
   _   -> error "internalError: More than on result from deterministic expression"
 
-exprWrapperNDet :: ShowFree a => (Tree.Tree String -> [String]) -> [(String, Integer)] -> Bool -> Curry (CurryVal a, [VarInfo]) -> IO ()
-exprWrapperNDet search fvs b ca = printRes (search $ evalCurryTree extract)
+exprWrapperNDet :: ShowFree a => (Tree.Tree String -> [String]) -> Bool -> [(String, Integer)] -> Bool -> Curry (CurryVal a, [VarInfo]) -> IO ()
+exprWrapperNDet search optInt fvs b ca = printRes (search $ evalCurryTree extract) optInt
   where
     sortedFvs = map fst $ sortOn snd fvs
 
-    printRes [] = fail "**No value found"
-    printRes xs = mapM_ putStrLn xs
+    printRes [] _     = fail "**No value found"
+    printRes xs False = mapM_ putStrLn xs
+    printRes xs True  = printInteractive xs
+    
+    printInteractive [] = putStrLn "No more values"
+    printInteractive (x:xs) = do
+      putStrLn x
+      parseCommand xs
+      
+    parseCommand xs = do
+      putStrLn "More Values? [yes/no/all]"
+      input <- getLine
+      case input of
+        ""    -> printInteractive xs
+        "y"   -> printInteractive xs
+        "yes" -> printInteractive xs
+        "n"   -> return ()
+        "no"  -> return ()
+        "a"   -> mapM_ putStrLn xs
+        "all" -> mapM_ putStrLn xs
+        _     -> parseCommand xs
 
     extract = do
       (va, ids) <- ca
@@ -351,7 +364,7 @@ exprWrapperNDet search fvs b ca = printRes (search $ evalCurryTree extract)
       let str' = if null vs || not b then str else "{ " ++ intercalate "\n, " vs' ++ " } " ++ str
       return str'
 
-data VarInfo = forall a. (ShowFree a, HasPrimitiveInfo a, Shareable Curry a) => VarInfo Integer
+data VarInfo = forall a. (ShowFree a, HasPrimitiveInfo a) => VarInfo Integer
 
 getVarId :: forall a. ShowFree a => Curry a -> ND VarInfo
 getVarId ca = do
@@ -364,7 +377,7 @@ addVarIds :: Curry a -> [ND VarInfo] -> Curry (CurryVal a, [VarInfo])
 addVarIds ca xs = Curry $ do
   ids <- sequence xs
   a <- unCurry ca
-  return (Val Shared (a, ids))
+  return (Val (a, ids))
 
 class ForeignType a where
   type Foreign a = b | b -> a
@@ -391,10 +404,12 @@ instance ForeignType a => ForeignType (IO a) where
   toForeign = fmap toForeign
   fromForeign = fmap fromForeign
 
+{-# INLINE liftForeign1 #-}
 liftForeign1 :: (ForeignType a, ForeignType b)
              => (Foreign a -> Foreign b) -> a -> b
 liftForeign1 f x = fromForeign (f (toForeign x))
 
+{-# INLINE liftForeign2 #-}
 liftForeign2 :: (ForeignType a, ForeignType b, ForeignType c)
              => (Foreign a -> Foreign b -> Foreign c) -> a -> b -> c
 liftForeign2 f x y = fromForeign (f (toForeign x) (toForeign y))
@@ -404,7 +419,7 @@ dollarBangNDImpl =
   returnFunc (\f ->
   returnFunc (\(Curry a) -> Curry (
     a >>= unCurry. \case
-      Val _ x   -> x `seq` (f `app` return x)
+      Val x   -> x `seq` (f `app` return x)
       Var lvl i -> f `app` Curry (return (Var lvl i)))))
 
 
@@ -419,7 +434,7 @@ primitive1 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
   (# Primitive, Primitive #) -> return . Func $ \ca -> Curry $ do
     a <- deref ca
     case a of
-      Val _ x -> return $ Val Shared $ fromForeign $ hsF $ toForeign x
+      Val x -> return $ Val $ fromForeign $ hsF $ toForeign x
       Var lvl i -> do
         j <- freshID
         s@NDState { .. } <- get
@@ -443,7 +458,7 @@ primitive2 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b, primitiveInfo 
     a <- deref ca
     b <- deref cb
     case (# a, b #) of
-      (# Val _ x, Val _ y #) -> return $ Val Shared $ fromForeign $ hsF (toForeign x) (toForeign y)
+      (# Val x, Val y #) -> return $ Val $ fromForeign $ hsF (toForeign x) (toForeign y)
       _ -> do
           k <- freshID
           s@NDState { .. } <- get
