@@ -27,7 +27,7 @@ import MemoizedCurry
 import Narrowable
 import Classes
 import Tree
-import Data.SBV (SBV, (.===))
+import Data.SBV (SBV, (.===), sNot)
 
 type family HsEquivalent (a :: k) = (b :: k) | b -> a
 
@@ -429,6 +429,7 @@ condSeq a b = do
   if a' then b else mzero
 
 -- TODO update constrained vars
+{-# INLINABLE primitive1 #-}
 primitive1 :: forall a b
             . ( HasPrimitiveInfo a, ForeignType a
               , Curryable b, ForeignType b )
@@ -451,6 +452,7 @@ primitive1 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
         return (Var lvl j)
   _ -> error "internalError: primitive1: non-primitive type"
 
+{-# INLINABLE primitive2 #-}
 primitive2 :: forall a b c
             . ( HasPrimitiveInfo a, ForeignType a
               , HasPrimitiveInfo b, ForeignType b
@@ -479,6 +481,37 @@ primitive2 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b, primitiveInfo 
           -- matchFL 9 x
           -- matchFL 0 y
           return (Var 0 k)
+  _ -> error "internalError: primitive2: non-primitive type"
+
+{-# INLINABLE primitive2Bool #-}
+primitive2Bool :: forall a b c c'
+            . ( HasPrimitiveInfo a, ForeignType a
+              , HasPrimitiveInfo b, ForeignType b
+              , HasPrimitiveInfo c', ForeignType c
+              , HsEquivalent c' ~ c, Foreign c ~ Bool
+              , FromHs c')
+           => (SBV a -> SBV b -> SBV Bool)
+           -> (Foreign a -> Foreign b -> Bool)
+           -> Curry (a :-> b :-> c')
+primitive2Bool sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
+  (# Primitive, Primitive #) -> return . Func $ \ca -> return . Func $ \cb -> Curry $ do
+    a <- deref ca
+    b <- deref cb
+    case (# a, b #) of
+      (# Val x, Val y #) -> return $ Val $ from $ fromForeign $ hsF (toForeign x) (toForeign y)
+      _ -> do
+          s@NDState { .. } <- get
+          let c = sbvF (toSBV a) (toSBV b)
+          let csv' = foldr Set.insert constrainedVars (allVars a ++ allVars b)
+          let cst1 = insertConstraint c constraintStore
+          let cst2 = insertConstraint (sNot c) constraintStore
+          mplusLevel currentLevel
+            (guard (isConsistent cst1) >>
+             put (s { constraintStore = cst1, constrainedVars = csv' }) >>
+             return (Val (from $ fromForeign True)))
+            (guard (isConsistent cst2) >>
+             put (s { constraintStore = cst2, constrainedVars = csv' }) >>
+             return (Val (from $ fromForeign False)))
   _ -> error "internalError: primitive2: non-primitive type"
 
 allVars :: CurryVal a -> [Integer]

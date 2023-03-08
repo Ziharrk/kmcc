@@ -44,13 +44,13 @@ eqInt_Det# :: Int_Det -> Int_Det -> Bool_Det
 eqInt_Det# = liftForeign2 (==)
 
 eqInt_ND# :: Curry (LiftedFunc Int_ND (LiftedFunc Int_ND Bool_ND))
-eqInt_ND# = BasicDefinitions.liftConvert2 eqInt_Det#
+eqInt_ND# = primitive2Bool (SBV..==) (==)
 
 ltEqInt_Det# :: Int_Det -> Int_Det -> Bool_Det
 ltEqInt_Det# = liftForeign2 (<=)
 
 ltEqInt_ND# :: Curry (LiftedFunc Int_ND (LiftedFunc Int_ND Bool_ND))
-ltEqInt_ND# = BasicDefinitions.liftConvert2 ltEqInt_Det#
+ltEqInt_ND# = primitive2Bool (SBV..<=) (<=)
 
 -- -----------------------------------------------------------------------------
 -- Float representation
@@ -64,13 +64,13 @@ eqFloat_Det# :: Float_Det -> Float_Det -> Bool_Det
 eqFloat_Det# = liftForeign2 (==)
 
 eqFloat_ND# :: Curry (LiftedFunc Float_ND (LiftedFunc Float_ND Bool_ND))
-eqFloat_ND# = BasicDefinitions.liftConvert2 eqFloat_Det#
+eqFloat_ND# = primitive2Bool (SBV..==) (==)
 
 ltEqFloat_Det# :: Float_Det -> Float_Det -> Bool_Det
 ltEqFloat_Det# = liftForeign2 (<=)
 
 ltEqFloat_ND# :: Curry (LiftedFunc Float_ND (LiftedFunc Float_ND Bool_ND))
-ltEqFloat_ND# = BasicDefinitions.liftConvert2 ltEqFloat_Det#
+ltEqFloat_ND# = primitive2Bool (SBV..<=) (<=)
 
 -- ---------------------------------------------------------------------------
 -- Char representation
@@ -84,13 +84,13 @@ eqChar_Det# :: Char_Det -> Char_Det -> Bool_Det
 eqChar_Det# = liftForeign2 (==)
 
 eqChar_ND# :: Curry (LiftedFunc Char_ND (LiftedFunc Char_ND Bool_ND))
-eqChar_ND# = BasicDefinitions.liftConvert2 eqChar_Det#
+eqChar_ND# = primitive2Bool (SBV..==) (==)
 
 ltEqChar_Det# :: Char_Det -> Char_Det -> Bool_Det
 ltEqChar_Det# = liftForeign2 (<=)
 
 ltEqChar_ND# :: Curry (LiftedFunc Char_ND (LiftedFunc Char_ND Bool_ND))
-ltEqChar_ND# = BasicDefinitions.liftConvert2 ltEqChar_Det#
+ltEqChar_ND# = primitive2Bool (SBV..<=) (<=)
 
 -- ---------------------------------------------------------------------------
 -- IO representation
@@ -534,8 +534,8 @@ cond_Det# _        _ = failed_Det#
 cond_ND# :: Curry (LiftedFunc Bool_ND (LiftedFunc a a))
 cond_ND# = returnFunc (\a -> a >>= \case
   True_ND -> returnFunc P.id
-  BoolFlat# True -> returnFunc P.id
-  BoolFlat# False -> failed_ND
+  BoolFlat# True_Det -> returnFunc P.id
+  BoolFlat# False_Det -> failed_ND
   False_ND -> failed_ND)
 
 dollarbang_Det# :: (a -> b) -> a -> b
