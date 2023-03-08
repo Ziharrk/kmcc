@@ -532,7 +532,7 @@ applyToArgs apply ret funE args = do
       Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "apply_ND")) -> True
       Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "qmark_ND")) -> True
       _ -> False
-    isTransparent (Hs.Var _ _) = True
+    isTransparent (Hs.Var _ (UnQual _ _)) = True
     isTransparent (Hs.Lit _ _) = True
     isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "BasicDefinitions") (Ident () "fromHaskell"))) _) = True
     isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "M") (Ident () "return"))) _) = True
