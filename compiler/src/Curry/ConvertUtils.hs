@@ -169,6 +169,9 @@ mkLazyUnify e = App () (App () (Var () lazyUnifyQualName) e)
 mkAddToVarHeap :: Exp () -> Exp () -> Exp ()
 mkAddToVarHeap e = App () (App () (Var () addToVarHeapQualName) e)
 
+mkCondSeq :: Exp () -> Exp () -> Exp ()
+mkCondSeq e = App () (App () (Var () condSeqQualName) e)
+
 mkShowStringCurry :: String -> Exp ()
 mkShowStringCurry s = App () (Var () showStringCurryQualName) (Lit () (String () s s))
 
@@ -306,6 +309,9 @@ lazyUnifyQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "unifyL
 
 addToVarHeapQualName :: QName ()
 addToVarHeapQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "addToVarHeapM")
+
+condSeqQualName :: QName ()
+condSeqQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "condSeq")
 
 mainWrapperDetQualName :: QName ()
 mainWrapperDetQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "mainWrapperDet")

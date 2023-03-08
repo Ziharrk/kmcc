@@ -575,7 +575,18 @@ convertExprToMonadicHs vset (AFree _ vs e) = do
 convertExprToMonadicHs vset (AOr _ e1 e2) = mkMplus <$> convertExprToMonadicHs vset e1 <*> convertExprToMonadicHs vset e2
 convertExprToMonadicHs _ ex@(ACase (ty, Det) _ _ _)
   | isFunFree ty = mkFromHaskell <$> convertToHs ex
-convertExprToMonadicHs vset (ACase (_, _) _  e bs)
+convertExprToMonadicHs vset (ACase _ Flex e bs)
+  | all (\(ABranch p _) -> isLit p) bs = do
+    e' <- convertExprToMonadicHs vset e
+    v <- freshVarName
+    orExpr <- if null bs
+      then return mkFailed
+      else foldr1 mkMplus <$> mapM (mkFlexBranch vset (Hs.Var () (UnQual () v))) bs
+    applyToArgs (\orExp' e'' -> mkLetBind (v, e'', Many) orExp') id orExpr [(Just e, e')]
+  where
+    isLit (ALPattern _ _) = True
+    isLit _ = False
+convertExprToMonadicHs vset (ACase _ _ e bs)
   | (ty, Det) <- exprAnn e,
     isFunFree ty = do
       e' <- convertToHs e
@@ -588,6 +599,15 @@ convertExprToMonadicHs vset (ACase (_, _) _  e bs)
 convertExprToMonadicHs _ ex@(ATyped (ty, Det) _ _)
   | isFunFree ty = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs vset (ATyped _ e ty) = ExpTypeSig () <$> convertExprToMonadicHs vset e <*> convertQualType ty
+
+mkFlexBranch :: Set.Set Int -> Exp ()
+             -> ABranchExpr (TypeExpr, NDInfo)
+             -> CM (Exp ())
+mkFlexBranch vset e (ABranch (ALPattern a l) be) = do
+  litE <- convertExprToMonadicHs vset (ALit a l)
+  be' <- convertExprToMonadicHs vset be
+  return (mkCondSeq (mkUnify e litE) be')
+mkFlexBranch _ _ _ = error "mkFlexBranch: Not a LiteralPattern"
 
 failedMonadicBranch :: Alt ()
 failedMonadicBranch = Alt () (PWildCard ())

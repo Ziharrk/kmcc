@@ -336,12 +336,12 @@ exprWrapperNDet search optInt fvs b ca = printRes (search $ evalCurryTree extrac
     printRes [] _     = fail "**No value found"
     printRes xs False = mapM_ putStrLn xs
     printRes xs True  = printInteractive xs
-    
+
     printInteractive [] = putStrLn "No more values"
     printInteractive (x:xs) = do
       putStrLn x
       parseCommand xs
-      
+
     parseCommand xs = do
       putStrLn "More Values? [yes/no/all]"
       input <- getLine
@@ -422,6 +422,11 @@ dollarBangNDImpl =
       Val x   -> x `seq` (f `app` return x)
       Var lvl i -> f `app` Curry (return (Var lvl i)))))
 
+{-# INLINE condSeq #-}
+condSeq :: Curry Bool -> Curry b -> Curry b
+condSeq a b = do
+  a' <- a
+  if a' then b else mzero
 
 -- TODO update constrained vars
 primitive1 :: forall a b
