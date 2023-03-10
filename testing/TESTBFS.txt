@@ -1,0 +1,4 @@
+Executing: NDNums
+True
+Executing: Strategy
+True
