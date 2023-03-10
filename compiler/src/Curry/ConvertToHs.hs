@@ -251,7 +251,7 @@ patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do -
           let mainNDHashType = TypeSig () [Ident () "mainND##"] mainType
 
           let e' = foldl (\e -> mkMonadicApp e . Hs.Var () . UnQual ()) (Hs.Var () (Qual () nm (Ident () "mainND##"))) mainVs
-          let mainNDExpr = foldr mkShareBind e' (zip3 mainVs (repeat mkFree) (repeat One))
+          let mainNDExpr = foldr (mkLetBind . (,mkFree)) e' mainVs
           let mainNDDecl = FunBind () [Match () (Ident () "main_ND") [] (UnGuardedRhs () mainNDExpr) Nothing]
 
           let mainE = mkVarReturn mainVs (Hs.Var () (Qual () nm (Ident () "mainND##")))
@@ -284,7 +284,7 @@ mkVarReturn fvs = go
     go e =
       let mainE = foldl (\e' -> mkMonadicApp e' . Hs.Var () . UnQual ()) e fvs
           eWithInfo = mkAddVarIds mainE (map (mkGetVarId . Hs.Var () . UnQual ()) fvs)
-      in foldr mkShareBind eWithInfo (zip3 fvs (repeat mkFree) (replicate (length fvs) Many))
+      in foldr (mkShareBind . (,mkFree)) eWithInfo fvs
 
 newtype ModuleHeadStuff = MS (String, [(QName, [QName])], [QName])
 type instance HsEquivalent ModuleHeadStuff = ModuleHead ()
@@ -522,7 +522,7 @@ applyToArgs apply ret funE args = do
                                                maybe True isDeterministic origE
                                              = (e:es, infos)
         where (es, infos) = combineForSharing xs
-      combineForSharing ((v, (_, e)):xs) = (Hs.Var () (UnQual () v):es, (v, e, Many):infos)
+      combineForSharing ((v, (_, e)):xs) = (Hs.Var () (UnQual () v):es, (v, e):infos)
         where (es, infos) = combineForSharing xs
   let (exprs, shares) = combineForSharing $ zip vs args
   let applic = ret $ foldl apply funE exprs
@@ -571,7 +571,7 @@ convertExprToMonadicHs vset ex@(ALet _ bs e) = do
   return $ mkShareLet e' bs'
 convertExprToMonadicHs vset (AFree _ vs e) = do
   e' <- convertExprToMonadicHs vset e
-  return $ foldr mkShareBind e' (zip3 (map (indexToName . fst) vs) (repeat mkFree) (map (countVarUse e . fst) vs))
+  return $ foldr (mkShareBind . (,mkFree) . indexToName . fst) e' vs
 convertExprToMonadicHs vset (AOr _ e1 e2) = mkMplus <$> convertExprToMonadicHs vset e1 <*> convertExprToMonadicHs vset e2
 convertExprToMonadicHs _ ex@(ACase (ty, Det) _ _ _)
   | isFunFree ty = mkFromHaskell <$> convertToHs ex
@@ -582,7 +582,7 @@ convertExprToMonadicHs vset (ACase _ Flex e bs)
     orExpr <- if null bs
       then return mkFailed
       else foldr1 mkMplus <$> mapM (mkFlexBranch vset (Hs.Var () (UnQual () v))) bs
-    applyToArgs (\orExp' e'' -> mkLetBind (v, e'', Many) orExp') id orExpr [(Just e, e')]
+    applyToArgs (\orExp' e'' -> mkLetBind (v, e'') orExp') id orExpr [(Just e, e')]
   where
     isLit (ALPattern _ _) = True
     isLit _ = False
@@ -618,7 +618,7 @@ type instance HsEquivalent (ABranchExpr (TypeExpr, NDInfo)) = Alt ()
 instance ToHs (ABranchExpr (TypeExpr, NDInfo)) where
   convertToHs (ABranch pat e) = do
     e' <- convertToHs e
-    pat' <- convertToHs pat
+    (pat', _) <- convertToHs pat
     return $ Alt () pat' (UnGuardedRhs () e') Nothing
 
 convertDetBranchToMonadic :: Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM (Alt ())
@@ -627,10 +627,10 @@ convertDetBranchToMonadic vSet (ABranch pat e)
     Det <- annot,
     isFunFree ty = do
       e' <- convertToHs e
-      pat' <- convertToHs pat
+      (pat', _) <- convertToHs pat
       return (Alt () pat' (UnGuardedRhs () (mkFromHaskell e')) Nothing)
   | otherwise = do
-      pat' <- convertToHs pat
+      (pat', _) <- convertToHs pat
       let vsNames = case pat of
                       APattern _ _ args -> map fst args
                       _                 -> []
@@ -645,7 +645,7 @@ convertBranchToMonadicHs vSet (ABranch pat e)
     isFunFree ty = do
       e' <- convertToHs e
       let transE = mkFromHaskell e'
-      (pat1, vs) <- convertPatToMonadic pat e
+      (pat1, vs) <- convertToMonadicHs pat
       let alt2 = case pat of
                    APattern _ (qname, (ty', _)) args ->
                     [Alt () (mkFlatPattern qname ty' (map fst args)) (UnGuardedRhs () transE) Nothing]
@@ -655,7 +655,7 @@ convertBranchToMonadicHs vSet (ABranch pat e)
   | otherwise = do
       alt1 <- do
         e' <- convertExprToMonadicHs vSet e
-        (pat', vs) <- convertPatToMonadic pat e
+        (pat', vs) <- convertToMonadicHs pat
         return $ Alt () pat' (UnGuardedRhs () (foldr mkLetBind e' vs)) Nothing
       case pat of
         APattern _ (qname@(_, baseName), (ty', _)) vs
@@ -681,18 +681,18 @@ mkFlatPattern qname ty args =
      ForallType _ ty' -> typeExprQualName ty'
      _                -> error "mkFlatPattern: typeExprQualName"
 
-type instance HsEquivalent (APattern (TypeExpr, NDInfo)) = Pat ()
+type instance HsEquivalent (APattern (TypeExpr, NDInfo)) = (Pat (), [(Hs.Name (), Exp ())])
 instance ToHs (APattern (TypeExpr, NDInfo)) where
-  convertToHs (APattern _ (qname, _) args) = return $ PApp () (convertTypeNameToHs qname) (map (PVar () . indexToName . fst) args)
-  convertToHs (ALPattern _ lit) = return $ PLit () (litSign lit) (convertLit lit)
+  convertToHs (APattern _ (qname, _) args) = return (PApp () (convertTypeNameToHs qname) (map (PVar () . indexToName . fst) args), [])
+  convertToHs (ALPattern _ lit) = return (PLit () (litSign lit) (convertLit lit), [])
   -- TODO: remove sign?
 
-convertPatToMonadic :: APattern (TypeExpr, NDInfo) -> AExpr (TypeExpr, NDInfo) -> CM (Pat (), [(Hs.Name (), Exp (), VarUse)])
-convertPatToMonadic p@(ALPattern _ _) _ = (,[]) <$> convertToHs p
-convertPatToMonadic (APattern _ (qname, _) args) e = do
-  vs <- replicateM (length args) freshVarName
-  return ( PApp () (convertTypeNameToMonadicHs qname) (map (PVar ()) vs)
-         , zip3 (map (indexToName . fst) args) (map (Hs.Var () . UnQual ()) vs) (map (countVarUse e . fst) args))
+instance ToMonadicHs (APattern (TypeExpr, NDInfo)) where
+  convertToMonadicHs p@(ALPattern _ _) = convertToHs p
+  convertToMonadicHs (APattern _ (qname, _) args) = do
+    vs <- replicateM (length args) freshVarName
+    return ( PApp () (convertTypeNameToMonadicHs qname) (map (PVar ()) vs)
+          , zip (map (indexToName . fst) args) (map (Hs.Var () . UnQual ()) vs))
 
 litSign :: Literal -> Sign ()
 litSign (Intc i)

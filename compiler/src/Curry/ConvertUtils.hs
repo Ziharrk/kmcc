@@ -102,14 +102,24 @@ mkFromHaskellBind i = Let () (BDecls ()
   [PatBind () (PVar () (appendName "_nd" (indexToName i)))
     (UnGuardedRhs () (mkFromHaskell (Var () (UnQual () (indexToName i))))) Nothing])
 
-mkShareBind :: (Name (), Exp (), VarUse) -> Exp () -> Exp ()
-mkShareBind (_, _, None) e2 = e2
-mkShareBind (v, e1, One ) e2 = Let () (BDecls () [PatBind () (PVar () v) (UnGuardedRhs () e1) Nothing]) e2
-mkShareBind (v, e1, Many) e2 = mkBind (mkShare e1) (Lambda () [PVar () v] e2)
+mkShareBind :: (Name (), Exp ()) -> Exp () -> Exp ()
+mkShareBind (v, e1) e2 = mkBind (mkShare e1) (Lambda () [PVar () v] e2)
 
-mkLetBind :: (Name (), Exp (), VarUse) -> Exp () -> Exp ()
-mkLetBind (_, _, None) e2 = e2
-mkLetBind (v, e1, _) e2 = Let () (BDecls () [PatBind () (PVar () v) (UnGuardedRhs () e1) Nothing]) e2
+mkLetBind :: (Name (), Exp ()) -> Exp () -> Exp ()
+mkLetBind (v, e1) = Let () (BDecls () [PatBind () (PVar () v) (UnGuardedRhs () e1) Nothing])
+
+mkShareLet :: Exp () -> [(Name (), Exp (), VarUse)] -> Exp ()
+mkShareLet e [] = e
+mkShareLet e bs
+  | all (\(_, _, m) -> notMany m) bs = foldr (\(a, b, _) -> mkShareBind (a, b)) e bs
+  | otherwise = mkBind (mkMFix fixLam) bindLam
+  where
+    notMany Many = False
+    notMany _    = True
+    lamHead = Lambda () [mkLazyTuplePat $ map (\(v, _, _) -> PVar () v) bs]
+    fixLam = lamHead $ mkApplicativeChain (mkTupleCon (length bs))
+                     $ map (\(_, e',_) -> mkShare e') bs
+    bindLam = lamHead e
 
 mkShare :: Exp () -> Exp ()
 mkShare = App () (Var () shareQualName)
@@ -137,19 +147,6 @@ mkVal = App () (Var () valQualName)
 
 mkEitherToCurry :: Exp () -> Exp ()
 mkEitherToCurry = App () (Var () eitherToCurryQualName)
-
-mkShareLet :: Exp () -> [(Name (), Exp (), VarUse)] -> Exp ()
-mkShareLet e [] = e
-mkShareLet e bs
-  | all (\(_, _, m) -> notMany m) bs = foldr mkShareBind e bs
-  | otherwise = mkBind (mkMFix fixLam) bindLam
-  where
-    notMany Many = False
-    notMany _    = True
-    lamHead = Lambda () [mkLazyTuplePat $ map (\(v, _, _) -> PVar () v) bs]
-    fixLam = lamHead $ mkApplicativeChain (mkTupleCon (length bs))
-                     $ map (\(_, e',_) -> mkShare e') bs
-    bindLam = lamHead e
 
 mkTupleCon :: Int -> Exp ()
 mkTupleCon 0 = Var () (Special () (UnitCon ()))
