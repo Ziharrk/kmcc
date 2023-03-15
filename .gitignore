@@ -13,3 +13,6 @@ bin/kmcc_c
 *.o-boot
 
 repl/src/KMCC/PkgConfig.curry
+
+testing/Mainkmcc*
+testing/XXX*

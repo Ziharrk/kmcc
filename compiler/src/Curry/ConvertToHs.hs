@@ -618,7 +618,7 @@ type instance HsEquivalent (ABranchExpr (TypeExpr, NDInfo)) = Alt ()
 instance ToHs (ABranchExpr (TypeExpr, NDInfo)) where
   convertToHs (ABranch pat e) = do
     e' <- convertToHs e
-    (pat', _) <- convertToHs pat
+    pat' <- convertToHs pat
     return $ Alt () pat' (UnGuardedRhs () e') Nothing
 
 convertDetBranchToMonadic :: Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM (Alt ())
@@ -627,10 +627,10 @@ convertDetBranchToMonadic vSet (ABranch pat e)
     Det <- annot,
     isFunFree ty = do
       e' <- convertToHs e
-      (pat', _) <- convertToHs pat
+      pat' <- convertToHs pat
       return (Alt () pat' (UnGuardedRhs () (mkFromHaskell e')) Nothing)
   | otherwise = do
-      (pat', _) <- convertToHs pat
+      pat' <- convertToHs pat
       let vsNames = case pat of
                       APattern _ _ args -> map fst args
                       _                 -> []
@@ -645,18 +645,18 @@ convertBranchToMonadicHs vSet (ABranch pat e)
     isFunFree ty = do
       e' <- convertToHs e
       let transE = mkFromHaskell e'
-      (pat1, vs) <- convertToMonadicHs pat
+      pat1 <- convertToMonadicHs pat
       let alt2 = case pat of
                    APattern _ (qname, (ty', _)) args ->
                     [Alt () (mkFlatPattern qname ty' (map fst args)) (UnGuardedRhs () transE) Nothing]
                    ALPattern _ _ -> []
-      let alt1 = Alt () pat1 (UnGuardedRhs () (foldr mkLetBind transE vs)) Nothing
+      let alt1 = Alt () pat1 (UnGuardedRhs () transE) Nothing
       return (alt1:alt2)
   | otherwise = do
       alt1 <- do
         e' <- convertExprToMonadicHs vSet e
-        (pat', vs) <- convertToMonadicHs pat
-        return $ Alt () pat' (UnGuardedRhs () (foldr mkLetBind e' vs)) Nothing
+        pat' <- convertToMonadicHs pat
+        return $ Alt () pat' (UnGuardedRhs () e') Nothing
       case pat of
         APattern _ (qname@(_, baseName), (ty', _)) vs
           | not ("_Dict#" `isPrefixOf` baseName) -> do
@@ -681,18 +681,16 @@ mkFlatPattern qname ty args =
      ForallType _ ty' -> typeExprQualName ty'
      _                -> error "mkFlatPattern: typeExprQualName"
 
-type instance HsEquivalent (APattern (TypeExpr, NDInfo)) = (Pat (), [(Hs.Name (), Exp ())])
+type instance HsEquivalent (APattern (TypeExpr, NDInfo)) = (Pat ())
 instance ToHs (APattern (TypeExpr, NDInfo)) where
-  convertToHs (APattern _ (qname, _) args) = return (PApp () (convertTypeNameToHs qname) (map (PVar () . indexToName . fst) args), [])
-  convertToHs (ALPattern _ lit) = return (PLit () (litSign lit) (convertLit lit), [])
+  convertToHs (APattern _ (qname, _) args) = return (PApp () (convertTypeNameToHs qname) (map (PVar () . indexToName . fst) args))
+  convertToHs (ALPattern _ lit) = return (PLit () (litSign lit) (convertLit lit))
   -- TODO: remove sign?
 
 instance ToMonadicHs (APattern (TypeExpr, NDInfo)) where
   convertToMonadicHs p@(ALPattern _ _) = convertToHs p
   convertToMonadicHs (APattern _ (qname, _) args) = do
-    vs <- replicateM (length args) freshVarName
-    return ( PApp () (convertTypeNameToMonadicHs qname) (map (PVar ()) vs)
-          , zip (map (indexToName . fst) args) (map (Hs.Var () . UnQual ()) vs))
+    return ( PApp () (convertTypeNameToMonadicHs qname) (map (PVar () . indexToName . fst) args))
 
 litSign :: Literal -> Sign ()
 litSign (Intc i)
