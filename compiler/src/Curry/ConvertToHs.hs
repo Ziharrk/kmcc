@@ -292,7 +292,7 @@ instance ToHs ModuleHeadStuff where
   convertToHs (MS (s, qnamesT, qnamesF)) = do
     let tyEx = concatMap typeItem qnamesT
     fnEx <- concat <$> mapM funcItem qnamesF
-    return $ ModuleHead () (ModuleName () ("Curry_" ++ s)) Nothing $
+    return $ ModuleHead () (ModuleName () (convertModName s)) Nothing $
       Just (ExportSpecList () (tyEx ++ fnEx))
     where
       typeItem (qname, [])      = map (EAbs () (NoNamespace ()))
@@ -313,14 +313,14 @@ instance ToHs ModuleHeadStuff where
 newtype ImportString = IS String
 type instance HsEquivalent ImportString = ImportDecl ()
 instance ToHs ImportString where
-  convertToHs (IS s) = return $ ImportDecl () (ModuleName () ("Curry_" ++ s)) False False False Nothing Nothing Nothing
+  convertToHs (IS s) = return $ ImportDecl () (ModuleName () (convertModName s)) False False False Nothing Nothing Nothing
 
 newtype HsTypeDecl = HTD (Decl ())
 type instance HsEquivalent TypeDecl = HsTypeDecl
 instance ToHs TypeDecl where
   convertToHs (Type qname@(mdl, nm) _ vs cs)
     | [] <- cs = return $ HTD $ TypeDecl () (mkTypeHead qname []) $ -- eta reduce -> ignore vars
-      TyCon () (Qual () (ModuleName () ("Curry_" ++ mdl)) (Ident () (escapeTypeName nm ++ "_Det#")))
+      TyCon () (Qual () (ModuleName () (convertModName mdl)) (Ident () (escapeTypeName nm ++ "_Det#")))
     | otherwise = do
       cs' <- mapM convertToHs cs
       return $ HTD $
@@ -337,7 +337,7 @@ instance ToHs TypeDecl where
 instance ToMonadicHs TypeDecl where
   convertToMonadicHs (Type qname@(mdl, nm) _ vs cs)
     | [] <- cs = return $ HTD $ TypeDecl () (mkMonadicTypeHead qname []) $ -- eta reduce -> ignore vars
-      TyCon () (Qual () (ModuleName () ("Curry_" ++ mdl)) (Ident () (escapeTypeName nm ++ "_ND#")))
+      TyCon () (Qual () (ModuleName () (convertModName mdl)) (Ident () (escapeTypeName nm ++ "_ND#")))
     | otherwise = do
       cs' <- (mkFlatConstr qname vs :) <$> mapM convertToMonadicHs cs
       return $ HTD $
@@ -722,12 +722,12 @@ instance ToMonadicHsName UnqualName where
   convertFuncNameToMonadicHs (Unqual (_, s)) = Ident () $ escapeFuncName s ++ "_ND"
 
 instance ToHsName QName where
-  convertTypeNameToHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertTypeNameToHs (Unqual n))
-  convertFuncNameToHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertFuncNameToHs (Unqual n))
+  convertTypeNameToHs n@(m, _) = Hs.Qual () (ModuleName () (convertModName m)) (convertTypeNameToHs (Unqual n))
+  convertFuncNameToHs n@(m, _) = Hs.Qual () (ModuleName () (convertModName m)) (convertFuncNameToHs (Unqual n))
 
 instance ToMonadicHsName QName where
-  convertTypeNameToMonadicHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertTypeNameToMonadicHs (Unqual n))
-  convertFuncNameToMonadicHs n@(m, _) = Hs.Qual () (ModuleName () ("Curry_" ++ m)) (convertFuncNameToMonadicHs (Unqual n))
+  convertTypeNameToMonadicHs n@(m, _) = Hs.Qual () (ModuleName () (convertModName m)) (convertTypeNameToMonadicHs (Unqual n))
+  convertFuncNameToMonadicHs n@(m, _) = Hs.Qual () (ModuleName () (convertModName m)) (convertFuncNameToMonadicHs (Unqual n))
 
 convertQualNameToFlatName :: QName -> Name ()
 convertQualNameToFlatName (_, s) =
@@ -735,7 +735,13 @@ convertQualNameToFlatName (_, s) =
 
 convertQualNameToFlatQualName :: QName -> Hs.QName ()
 convertQualNameToFlatQualName qname@(m, _) =
-  Qual () (ModuleName () ("Curry_" ++ m)) $ convertQualNameToFlatName qname
+  Qual () (ModuleName () (convertModName m)) $ convertQualNameToFlatName qname
+  
+convertModName :: String -> String
+convertModName m = convertModName' $ break (== '.') m
+  where
+    convertModName' (x, [])     = "Curry_" ++ x
+    convertModName' (x, y:ys) = x ++ (y : convertModName' (break (== '.') ys))
 
 defaultPragmas :: [ModulePragma ()]
 defaultPragmas =
