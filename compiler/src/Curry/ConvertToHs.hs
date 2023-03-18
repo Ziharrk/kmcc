@@ -37,6 +37,7 @@ import Curry.FlatCurry hiding (Let)
 import Curry.FlatCurry.Annotated.Type (APattern(..), ABranchExpr(..), AExpr(..))
 import Curry.FlatCurry.Typed.Type (TRule(..), TFuncDecl(..), TProg(..), TExpr (..))
 import Curry.Files.Filenames (addOutDirModule)
+import Curry.Files.PathUtils (getModuleModTime)
 import Generators.GenTypedFlatCurry (genTypedExpr)
 import CompilerOpts (Options(..))
 import CurryBuilder (compMessage)
@@ -84,10 +85,17 @@ process :: KMCCOpts -> (Int, Int) -> TProg -> Bool
 process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
   | optForce opts ||
     comp      = compile
-  | otherwise = liftIO (doesFileExist destFile)
-      >>= \exists -> if exists then skip else compile
+  | otherwise = checkModTimes
   where
     destFile = tgtDir (haskellName fn)
+    checkModTimes = do
+      hsFile <- liftIO $ getModuleModTime destFile
+      extFile <- liftIO $ getModuleModTime (externalName fn)
+      case hsFile of
+        Nothing -> compile
+        Just hsTime -> case extFile of
+          Nothing -> skip
+          Just extTime -> if hsTime < extTime then compile else skip
     skip = do
       status opts $ compMessage idx (11, 16) "Skipping" m (fn, destFile)
       when (optCompilerVerbosity kopts > 2) $ do -- TODO: implement check file when dumping stuff only
