@@ -329,9 +329,10 @@ falseQualName :: QName ()
 falseQualName = Qual () (ModuleName () "P") (Ident () "False")
 
 searchStratQualName :: SearchStrat -> QName ()
-searchStratQualName DFS = Qual () (ModuleName () "BasicDefinitions") (Ident () "dfs")
-searchStratQualName BFS = Qual () (ModuleName () "BasicDefinitions") (Ident () "bfs")
-searchStratQualName FS  = Qual () (ModuleName () "BasicDefinitions") (Ident () "fs")
+searchStratQualName DFS   = Qual () (ModuleName () "BasicDefinitions") (Ident () "dfs")
+searchStratQualName BFS   = Qual () (ModuleName () "BasicDefinitions") (Ident () "bfs")
+searchStratQualName FS    = Qual () (ModuleName () "BasicDefinitions") (Ident () "fs")
+searchStratQualName FSPAR = Qual () (ModuleName () "BasicDefinitions") (Ident () "fsPar")
 
 appendName :: String -> Name () -> Name ()
 appendName suff (Ident  () s) = Ident  () (s ++ suff)

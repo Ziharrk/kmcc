@@ -35,9 +35,10 @@ optParser = adjustDefaultOpts
 
   <*> switch (long "bindings" <> short 'B' <> help "Enable printing of variable bindings")
   <*> optional (
-          flag' DFS (long "dfs" <> help "Set search mode to depth-first search")
-      <|> flag' BFS (long "bfs" <> help "Set search mode to breadth-first search")
-      <|> flag' FS (long "fs" <> help "Set search mode to fair-search"))
+          flag' DFS   (long "dfs" <> help "Set search mode to depth-first search")
+      <|> flag' BFS   (long "bfs" <> help "Set search mode to breadth-first search")
+      <|> flag' FS    (long "fs" <> help "Set search mode to fair-search using forkIO")
+      <|> flag' FSPAR (long "fspar" <> help "Set search mode to fair-search using monad-par"))
   <*> switch (long "profiling" <> short 'P' <> help "Enable profiling of generated code")
   <*> switch (long "interactive" <> help "Interactive result printing")
 

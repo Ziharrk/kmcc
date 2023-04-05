@@ -7,6 +7,10 @@ import           Control.Concurrent.Chan ( getChanContents, newChan, writeChan )
 import           Control.Concurrent.MVar ( newEmptyMVar, putMVar, takeMVar )
 import           Control.DeepSeq ( NFData )
 import           Control.Monad ( MonadPlus )
+import           Control.Monad.Par.Class ( get, spawn )
+import qualified Control.Monad.Par.Class as Par
+import           Control.Monad.Par.IO ( runParIO )
+import           Control.Monad.IO.Class ( liftIO )
 import           Data.Maybe ( catMaybes, isJust )
 import qualified Data.Sequence as Seq
 import           GHC.Generics ( Generic )
@@ -58,12 +62,13 @@ bfs t' = bfs' (Seq.singleton t')
           Leaf x -> x : bfs' ts
           Node l r -> bfs' (ts Seq.:|> l Seq.:|> r)
 
+{-# NOINLINE fs #-}
 fs :: Tree a -> [a]
 fs t' = unsafePerformIO $ do
   ch <- newChan
   let fsIO t = case t of
-        Empty -> return ()
-        Leaf x -> writeChan ch (Just x)
+        Empty    -> return ()
+        Leaf x   -> writeChan ch (Just x)
         Node l r -> do
           mvarL <- newEmptyMVar
           mvarR <- newEmptyMVar
@@ -73,6 +78,21 @@ fs t' = unsafePerformIO $ do
           takeMVar mvarR
   _ <- forkIO $ fsIO t' >> writeChan ch Nothing
   catMaybes . takeWhile isJust <$> getChanContents ch
+
+{-# NOINLINE fsPar #-}
+fsPar :: Tree a -> [a]
+fsPar t' = unsafePerformIO $ runParIO $ do
+  ch <- liftIO newChan
+  let fsIO t = case t of
+        Empty    -> return ()
+        Leaf x   -> liftIO $ writeChan ch (Just x)
+        Node l r -> do
+          lv <- spawn $ fsIO l
+          rv <- spawn $ fsIO r
+          get lv
+          get rv
+  Par.fork $ fsIO t' >> liftIO (writeChan ch Nothing)
+  catMaybes . takeWhile isJust <$> liftIO (getChanContents ch)
 
 {-
 fs :: Tree a -> [a]

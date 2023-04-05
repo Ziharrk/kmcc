@@ -25,6 +25,8 @@ common deps
     kan-extensions   ^>= 5.2.2,
     sbv              ^>= 8.17,
     adjunctions      ^>= 4.4,
+    monad-par        ^>= 0.3,
+    abstract-par     ^>= 0.3,
     deepseq
   ghc-options:      -Wall
   default-language: GHC2021

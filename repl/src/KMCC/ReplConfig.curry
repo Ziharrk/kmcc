@@ -82,10 +82,11 @@ kmccBanner = unlines [bannerLine, bannerText, bannerLine]
 stratOpt :: CCOption
 stratOpt = CCOption
   "fs/dfs/bfs     "
-  "search strategy (fair / depth-first / breadth-first)"
-  [ ConstOpt "fs"  "--fs"
-  , ConstOpt "dfs" "--dfs"
-  , ConstOpt "bfs" "--bfs"
+  "search strategy (fair / fair-monad-par / depth-first / breadth-first)"
+  [ ConstOpt "fs"    "--fs"
+  , ConstOpt "fspar" "--fspar"
+  , ConstOpt "dfs"   "--dfs"
+  , ConstOpt "bfs"   "--bfs"
   ]
 
 profilingOpt :: CCOption

@@ -11,11 +11,11 @@ module BasicDefinitions
  , module MemoizedCurry
  , module Narrowable
  , module Classes
- , fs ,bfs , dfs
+ , fs, fsPar, bfs, dfs
  ) where
 
 import Control.Exception (throw, catch, evaluate, Exception)
-import Control.Monad (MonadPlus(..), (>=>), void)
+import Control.Monad (MonadPlus(..), (>=>))
 import Control.Monad.Codensity (lowerCodensity)
 import Control.Monad.State (modify, MonadState(put, get), StateT(runStateT))
 import Data.List (intercalate, sortOn)
@@ -26,7 +26,7 @@ import System.IO.Unsafe (unsafeInterleaveIO, unsafePerformIO)
 import MemoizedCurry
 import Narrowable
 import Classes
-import Tree (Tree, dfs, bfs, fs)
+import Tree (Tree, dfs, bfs, fs, fsPar)
 import Data.SBV (SBV, (.===), sNot)
 
 type family HsEquivalent (a :: k) = (b :: k) | b -> a
