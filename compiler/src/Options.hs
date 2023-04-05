@@ -33,7 +33,7 @@ data KMCCOpts = KMCCOpts {
   }
 
 data InfoCommand = CompilerName | NumericVersion | BaseVersion
-data SearchStrat = DFS | BFS | FS | FSPAR
+data SearchStrat = DFS | BFS | FS
 
 -- Verbosity between 0 and 4. Default: 1
 -- 0: no output except for errors
