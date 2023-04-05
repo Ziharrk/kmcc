@@ -14,19 +14,19 @@ module BasicDefinitions
  , fs ,bfs , dfs
  ) where
 
-import Control.Exception
-import Control.Monad
-import Control.Monad.Codensity
-import Control.Monad.State
-import Data.List
+import Control.Exception (throw, catch, evaluate, Exception)
+import Control.Monad (MonadPlus(..), (>=>), void)
+import Control.Monad.Codensity (lowerCodensity)
+import Control.Monad.State (modify, MonadState(put, get), StateT(runStateT))
+import Data.List (intercalate, sortOn)
 import qualified Data.Set as Set
-import System.IO.Unsafe
-import GHC.IO.Exception
+import GHC.IO.Exception (IOException(..), IOErrorType(..))
+import System.IO.Unsafe (unsafeInterleaveIO, unsafePerformIO)
 
 import MemoizedCurry
 import Narrowable
 import Classes
-import Tree
+import Tree (Tree, dfs, bfs, fs)
 import Data.SBV (SBV, (.===), sNot)
 
 type family HsEquivalent (a :: k) = (b :: k) | b -> a
@@ -453,7 +453,6 @@ condSeq a b = do
   a' <- a
   if a' then b else mzero
 
--- TODO update constrained vars
 {-# INLINABLE primitive1 #-}
 primitive1 :: forall a b
             . ( HasPrimitiveInfo a, ForeignType a
@@ -531,12 +530,14 @@ primitive2Bool sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
           let cst1 = insertConstraint c constraintStore
           let cst2 = insertConstraint (sNot c) constraintStore
           mplusLevel currentLevel
-            (guard (isConsistent cst1) >>
-             put (s { constraintStore = cst1, constrainedVars = csv' }) >>
-             return (Val (from $ fromForeign True)))
-            (guard (isConsistent cst2) >>
-             put (s { constraintStore = cst2, constrainedVars = csv' }) >>
-             return (Val (from $ fromForeign False)))
+            (do s' <- get
+                put (s' { constraintStore = cst1, constrainedVars = csv' })
+                checkConsistency
+                return (Val (from $ fromForeign True)))
+            (do s' <- get
+                put (s' { constraintStore = cst2, constrainedVars = csv' })
+                checkConsistency
+                return (Val (from $ fromForeign False)))
   _ -> error "internalError: primitive2: non-primitive type"
 
 allVars :: CurryVal a -> [Integer]

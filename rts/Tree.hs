@@ -3,15 +3,15 @@
 module Tree where
 
 import           Control.Applicative ( Alternative(empty, (<|>)) )
-import           Control.Monad ( MonadPlus )
+import           Control.Concurrent.Chan ( getChanContents, newChan, writeChan )
+import           Control.Concurrent.MVar ( newEmptyMVar, putMVar, takeMVar )
 import           Control.DeepSeq ( NFData )
-import           Data.Maybe
+import           Control.Monad ( MonadPlus )
+import           Data.Maybe ( catMaybes, isJust )
 import qualified Data.Sequence as Seq
 import           GHC.Generics ( Generic )
-import           GHC.Conc
-import           Control.Concurrent.MVar
-import           Control.Concurrent.Chan
-import           System.IO.Unsafe
+import           GHC.Conc ( forkIO )
+import           System.IO.Unsafe ( unsafePerformIO )
 
 -- A normal tree implementation and bfs/dfs implementations
 data Tree a = Empty

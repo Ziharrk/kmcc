@@ -55,6 +55,7 @@ common deps
     TemplateHaskell
   other-modules:
     Narrowable
+    Solver
 
 library
   import: deps

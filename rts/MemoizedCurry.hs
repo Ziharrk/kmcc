@@ -36,14 +36,17 @@ import           Data.IORef                         (IORef, atomicModifyIORef', 
 import           Data.SBV                           ( SBool,
                                                       SymVal(literal),
                                                       SBV,
-                                                      runSMT,
                                                       constrain,
                                                       EqSymbolic((.===), (./==)),
-                                                      Uninterpreted(sym) )
-import           Data.SBV.Control                   (query, checkSat, getValue, CheckSatResult(..))
+                                                      Uninterpreted(sym), (.=>) )
+import           Data.SBV.Control                   ( checkSatAssuming,
+                                                      getValue,
+                                                      CheckSatResult(..),
+                                                      MonadQuery(queryState),
+                                                      Query )
 import           Control.Applicative                (Alternative(..))
 import           Control.Arrow                      (first)
-import           Control.Monad                      (MonadPlus(..), liftM, ap)
+import           Control.Monad                      (MonadPlus(..), liftM, ap, unless)
 import           Control.Monad.Fix                  (MonadFix(..), fix)
 import           Control.Monad.Codensity            (Codensity(..), lowerCodensity)
 import           Control.Monad.State                (StateT(..), MonadState(..), evalStateT, gets, modify)
@@ -63,6 +66,7 @@ import           Classes                            ( MonadShare(..),
 import qualified Tree
 
 import Narrowable
+import Solver
 
 -- Changes to the paper:
 -- - The performance optimization that was teasered
@@ -167,13 +171,24 @@ type ConstraintStore = [Constraint]
 insertConstraint :: Constraint -> ConstraintStore -> ConstraintStore
 insertConstraint = (:)
 
+mkStateImplic :: ID -> SBool -> Query ()
+mkStateImplic currID c = constrain $ varToSBV currID .=> c
+
 {-# NOINLINE isConsistent #-}
-isConsistent :: ConstraintStore -> Bool
-isConsistent cst = unsafePerformIO $ runSMT $ do
-  mapM_ constrain cst
-  query $ checkSat >>= \case
+isConsistent :: SolverState -> ID -> Set ID -> ConstraintStore -> Bool
+isConsistent solSt currID parents cst
+  | null cst  = True
+  | otherwise = unsafePerformIO $ evalSymbolic solSt $ do
+  mapM_ (mkStateImplic currID) cst
+  checkSatAssuming (map varToSBV (currID : Set.toList parents)) >>= \case
     Sat -> return True
     _   -> return False
+
+checkConsistency :: ND ()
+checkConsistency = do
+  s@NDState{..} <- get
+  unless (isConsistent solverState branchID parentIDs constraintStore) mzero
+  put s { constraintStore = [] }
 
 toSBV :: SymVal a => CurryVal a -> SBV a
 toSBV (Var _ i) = varToSBV i
@@ -201,7 +216,8 @@ data NDState = NDState {
     constrainedVars :: Set ID,
     branchID        :: ID,           -- (Branch) ID
     parentIDs       :: Set ID,
-    setComputation  :: Bool
+    setComputation  :: Bool,
+    solverState     :: SolverState
   }
 
 --------------------------------------------------------------------------------
@@ -213,7 +229,9 @@ data NDState = NDState {
 -- This ensures safety in the presence of unsafePerformIO.
 {-# NOINLINE initialNDState #-}
 initialNDState :: () -> NDState
-initialNDState x = NDState (unsafePerformIO (newIORef (toInteger (fromEnum x + 1)))) 0 emptyHeap mempty Set.empty 0 Set.empty False
+initialNDState x = unsafePerformIO $ do
+  r <- newIORef (toInteger (fromEnum x + 1))
+  NDState r 0 emptyHeap mempty Set.empty 0 Set.empty False <$> startSolver
 
 {-# NOINLINE freshIDFromState #-}
 freshIDFromState :: NDState -> ID
@@ -344,9 +362,10 @@ evalCurry = fmap snd . runCurry
 evalCurryTree :: Curry a -> Tree.Tree a
 evalCurryTree = fmap snd . runCurryTree
 
+-- TODO: check constraint consistency
 runCurry :: Curry a -> Tree Level (NDState, Level) (NDState, a)
-runCurry ma =
-  unVal <$> runND (unCurry ma) (initialNDState ())
+runCurry (Curry ma) =
+  unVal <$> runND (ma >>= \a -> checkConsistency >> return a) (initialNDState ())
   where
     unVal (s, Val x)   = (s, x)
     unVal (_, Var _ _) = error "evalCurry: Variable"
@@ -374,15 +393,10 @@ instantiate lvl i = Curry $
                       sX <- x
                       modify (addToVarHeap i (return sX))
                       return sX
-    Primitive   -> get >>= \NDState { constraintStore = cst } ->
-                   msumLevel lvl $ flip map (narrowPrimitive i cst) $ \x -> do
-                      s@NDState { .. } <- get
-                      let c = toSBV (Var 0 i) .=== toSBV (Val x)
-                      let cst' = insertConstraint c constraintStore
-                      let cvs' = Set.insert i constrainedVars
-                      put (s { constraintStore = cst', constrainedVars = cvs' })
-                      modify (addToVarHeap i (return x))
-                      return (Val x)
+    Primitive   -> do
+      s@NDState { constraintStore = cst } <- get
+      put s { constraintStore = [], constrainedVars = Set.insert i (constrainedVars s) }
+      narrowPrimitive cst lvl i
 
 --------------------------------------------------------------------------------
 -- Instantiation of primitive variables is done by querying the SMT solver for
@@ -391,19 +405,22 @@ instantiate lvl i = Curry $
 -- If no solution exists, there are no values that we can instantiate to.
 -- If a solution existed, we return the value from the solution and
 -- ask recursively for another solution where the variable is not equal to any previous solution.
--- For that, we accumulate inequalties on the given variable.
+-- For that, we accumulate inequalties on the given variable in the constraint store.
 
-{-# NOINLINE narrowPrimitive #-}
-narrowPrimitive :: SymVal a => ID -> ConstraintStore -> [a]
-narrowPrimitive i cst = unsafePerformIO $ runSMT $ do
-  mapM_ constrain cst
-  query $ checkSat >>= \case
-    Sat -> do
-      v <- getValue (varToSBV i)
-      let c = varToSBV i ./== toSBV (Val v)
-      return (v : narrowPrimitive i (insertConstraint c cst))
-    _   -> return []
-
+narrowPrimitive :: SymVal a => ConstraintStore -> ID -> ID -> ND (CurryVal a)
+narrowPrimitive cst lvl i = do
+  NDState { .. } <- get
+  let x = unsafePerformIO $ evalSymbolic solverState $ do
+            mapM_ (mkStateImplic branchID) cst
+            checkSatAssuming (map varToSBV (branchID : Set.toList parentIDs)) >>= \case
+              Sat -> do
+                v <- getValue (varToSBV i)
+                return (Just v)
+              _ -> return Nothing
+  case x of
+    Nothing -> mzeroLevel lvl
+    Just v  -> mplusLevel lvl (modify (addToVarHeap i (return v)) >> return (Val v))
+                              (narrowPrimitive [varToSBV i ./== toSBV (Val v)] lvl i)
 
 --------------------------------------------------------------------------------
 -- To define the Monad istance, we also use the deref function from the paper appendix.
