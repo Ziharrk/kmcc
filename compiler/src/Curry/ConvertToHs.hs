@@ -90,7 +90,7 @@ process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
     destFile = tgtDir (haskellName fn)
     skip = do
       status opts $ compMessage idx (11, 16) "Skipping" m (fn, destFile)
-      when (optCompilerVerbosity kopts > 2) $ do -- TODO: implement check file when dumping stuff only
+      when (optCompilerVerbosity kopts > 2) $ do
         eithRes <- liftIO (parseFile' destFile)
         case eithRes of
           ParseFailed loc err -> do
@@ -123,7 +123,7 @@ process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
 hsPrettyPrintMode :: PPHsMode
-hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPOffsideRule False
+hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPNoLayout False
 
 hsPrettyPrintStyle :: Style
 hsPrettyPrintStyle = Style PageMode 500 2
@@ -155,12 +155,15 @@ instance ToHs TProgWithFilePath where
         let insts = concatMap genInstances tys
         let ds = insts ++ coerce (tyds ++ tydsM) ++ concatMap @[] extract (coerce (funds ++ fundsM))
         return (header, im', ds)
-    (extPragmas, extImports, extDs) <- liftIO $ doesFileExist fp >>= \case
+    (extPragmas, extImports, extDs, extExp) <- liftIO $ doesFileExist fp >>= \case
       True -> do
         ext <- liftIO $ parseFile' fp
         case fmap void ext of
-          ParseOk (Module _ _ p i d) -> return (p, i, d)
-          ParseOk _           -> return ([] , [], [])
+          ParseOk (Module _ mh p i d) -> return (p, i, d, e)
+            where e = case mh of
+                        Just (ModuleHead _ _ _ (Just (ExportSpecList _ ex))) -> ex
+                        _ -> []
+          ParseOk _           -> return ([] , [], [], [])
           ParseFailed loc err -> do
             liftIO $ fail $ unlines
               [ "External definitions file is corrupted."
@@ -170,14 +173,14 @@ instance ToHs TProgWithFilePath where
               , "At location:"
               , prettyPrint loc
               , "Aborting compilation ..." ]
-      False -> return ([], [], [])
+      False -> return ([], [], [], [])
     let ps' = defaultPragmas ++ extPragmas
     let im' = defaultImports ++ extImports ++ curryImports
     let ds' = extDs ++ curryDs
     (header', ds'') <- case mi of
           Just ty -> patchMainPost ty opts header ds'
           Nothing -> return (header, ds')
-    return (Module () (Just header') ps' im' ds'')
+    return (Module () (Just (combineHeaderExport header' extExp)) ps' im' ds'')
     where
       getVisT (Type qname Public _ cs) = Just (qname, mapMaybe getVisC cs)
       getVisT (TypeSyn qname Public _ _) = Just (qname, [])
@@ -192,6 +195,10 @@ instance ToHs TProgWithFilePath where
 
       getVisF (TFunc qname _ Public _ _) = Just qname
       getVisF _ = Nothing
+
+      combineHeaderExport (ModuleHead a b c (Just (ExportSpecList d ex))) ex' =
+        ModuleHead a b c (Just (ExportSpecList d (ex ++ ex')))
+      combineHeaderExport h _ = h
 
 
 -- after pre-patching:
@@ -736,7 +743,7 @@ convertQualNameToFlatName (_, s) =
 convertQualNameToFlatQualName :: QName -> Hs.QName ()
 convertQualNameToFlatQualName qname@(m, _) =
   Qual () (ModuleName () (convertModName m)) $ convertQualNameToFlatName qname
-  
+
 convertModName :: String -> String
 convertModName m = convertModName' $ break (== '.') m
   where

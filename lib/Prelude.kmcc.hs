@@ -6,6 +6,7 @@
 {-# LANGUAGE TupleSections          #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE UndecidableInstances   #-}
+module Prelude (Apply_Det, Apply_ND) where
 import qualified Prelude as P
 import qualified Control.Monad as P
 import qualified Control.Monad.State as P
