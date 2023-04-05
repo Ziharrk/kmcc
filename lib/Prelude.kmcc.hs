@@ -169,8 +169,15 @@ gatherContents f g h (CCons_ND x xs) = BasicDefinitions.Curry $ do
             e <- g u
             P.return (e : ys, b))
 
+instance UnitDispatchable CUnit_ND where
+  unitDispatch = IsUnit
+
+instance UnitDispatchable CUnit_Det where
+  unitDispatch = IsUnit
+
 instance ShowFree CUnit_ND where
   showsFreePrec _ CUnit_ND = BasicDefinitions.showsStringCurry "()"
+  showsFreePrec _ (CUnitFlat# CUnit_Det) = BasicDefinitions.showsStringCurry "()"
 
 instance (Curryable x, Curryable y) => ShowFree (CTuple2_ND x y) where
   showsFreePrec _ (CTuple2_ND x y) =

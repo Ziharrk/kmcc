@@ -302,7 +302,10 @@ ensureOneResult (Curry (ND act)) = Curry $ ND $ do
 
 {-# NOINLINE bindIONDImpl #-}
 bindIONDImpl :: Curry (LiftedFunc (IO a) (LiftedFunc (LiftedFunc a (IO b)) (IO b)))
-bindIONDImpl = return $ Func $ \ioND -> return $ Func $ \fND -> do
+bindIONDImpl = returnFunc $ \ioND -> returnFunc $ \fND -> bindIO ioND fND
+
+bindIO :: Curry (IO a) -> Curry (LiftedFunc a (IO b)) -> Curry (IO b)
+bindIO ioND fND = do
   io <- ensureOneResult ioND
   Func f <- ensureOneResult fND
   f . return $! unsafePerformIO $ unsafeInterleaveIO io
@@ -310,13 +313,35 @@ bindIONDImpl = return $ Func $ \ioND -> return $ Func $ \fND -> do
 returnIONDImpl :: Curry (LiftedFunc a (IO a))
 returnIONDImpl = return $ Func $ \x -> fmap return x
 
-mainWrapperDet :: IO a -> IO ()
-mainWrapperDet = void
+data UnitDispatch a where
+  IsUnit :: UnitDispatch a
+  NotUnit :: UnitDispatch a
 
-mainWrapperNDet :: (ForeignType b, Foreign b ~ (), ToHs a, HsEquivalent a ~ b) => Curry (IO a) -> IO ()
-mainWrapperNDet x = case evalCurry (ensureOneResult x) of
-  Single x' -> toForeign . unSingle . evalCurry . ensureOneResult . to <$> x'
-  _         -> error "mainWrapper: not a single result"
+class UnitDispatchable a where
+  unitDispatch :: UnitDispatch a
+
+instance UnitDispatchable () where
+  unitDispatch = IsUnit
+
+instance {-# INCOHERENT #-} UnitDispatchable a where
+  unitDispatch = NotUnit
+
+mainWrapperDet :: forall a b. (ShowFree b, HsEquivalent b ~ a, FromHs b, UnitDispatchable a) => IO a -> IO ()
+mainWrapperDet mx = do
+  x <- mx
+  case evalCurry (showFreeCurry (return (from x)) []) of
+    Single x' -> case unitDispatch @a of
+                  IsUnit  -> return ()
+                  NotUnit -> putStrLn x'
+    _         -> error "mainWrapper: not a single result"
+
+mainWrapperNDet :: forall a. (ShowFree a, ToHs a, UnitDispatchable a) => Curry (IO a) -> IO ()
+mainWrapperNDet mx = do
+  case evalCurry (ensureOneResult (bindIO mx (returnFunc $ \x -> return <$> showFreeCurry x []))) of
+    Single x' -> x' >>= \a -> case unitDispatch @a of
+                  IsUnit  -> return ()
+                  NotUnit -> putStrLn a
+    _         -> error "mainWrapper: not a single result"
 
 unSingle :: MemoizedCurry.Tree n f l -> l
 unSingle (Single x) = x
