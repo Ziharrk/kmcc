@@ -17,6 +17,20 @@ export CURRYHOME
 REPL="$CURRYHOME/bin/kmcc_repl"
 
 ###########################################################################
+# Check for z3
+
+if [ -z "$Z3" ]; then
+  Z3=`which z3`
+  if [ -z "$Z3" ]; then
+    echo "ERROR: z3 not found!" >&2
+    echo "Please install z3 and add it to your PATH." >&2
+    echo "consider installing z3 from https://github.com/Z3Prover/z3/releases" >&2
+endif
+    exit 1
+  fi
+fi
+
+###########################################################################
 # Invoke the Curry REPL with CPM to compute CURRYPATH:
 
 # Check whether we should call CPM to compute the correct load path:
