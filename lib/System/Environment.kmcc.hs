@@ -23,7 +23,7 @@ environmentdotprimuscoresetEnviron_ND# = P.error "No implementation for setEnvir
 environmentdotprimuscoreunsetEnviron_Det# = liftForeign1 S.unsetEnv
 environmentdotprimuscoreunsetEnviron_ND# = P.error "No implementation for unsetEnviron_ND"
 
-environmentdotgetHostname_Det# = P.error "No implementation for getHostname_Det"
+environmentdotgetHostname_Det# = fromForeign N.getHostName
 environmentdotgetHostname_ND# = P.error "No implementation for getHostname_ND"
 
 environmentdotgetProgName_Det# = fromForeign S.getProgName
