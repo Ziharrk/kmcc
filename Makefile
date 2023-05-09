@@ -4,7 +4,7 @@ export ROOT = $(CURDIR)
 export BINDIR = $(ROOT)/bin
 
 .PHONY: all
-all: bin/kmcc_c bin/kmcc-frontend bin/kmcc_repl prebuild_prelude
+all: bin/kmcc_c bin/kmcc-frontend bin/kmcc_repl prebuild_prelude generate_distribution
 
 .PHONY: bin/kmcc_c
 bin/kmcc_c:
@@ -30,3 +30,7 @@ clean:
 prebuild_prelude: bin/kmcc_c
 	$(info "Pre-Compiling Prelude")
 	bin/kmcc_c lib/Prelude.curry
+
+.PHONY: generate_distribution
+generate_distribution:
+	./genDistribution.sh
