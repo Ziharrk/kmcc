@@ -419,8 +419,14 @@ narrowPrimitive cst lvl i = do
               _ -> return Nothing
   case x of
     Nothing -> mzeroLevel lvl
-    Just v  -> mplusLevel lvl (modify (addToVarHeap i (return v)) >> return (Val v))
+    Just v  -> mplusLevel lvl (modify (modifyHeap v) >> return (Val v))
                               (narrowPrimitive [varToSBV i ./== toSBV (Val v)] lvl i)
+  where
+    modifyHeap v s =
+      addToVarHeap i (return v) s
+        { constraintStore = insertConstraint (varToSBV i .=== toSBV (Val v)) (constraintStore s),
+          constrainedVars = Set.insert i (constrainedVars s)
+        }
 
 --------------------------------------------------------------------------------
 -- To define the Monad istance, we also use the deref function from the paper appendix.
