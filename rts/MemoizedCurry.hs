@@ -42,7 +42,6 @@ import           Data.SBV                           ( SBool,
 import           Data.SBV.Control                   ( checkSatAssuming,
                                                       getValue,
                                                       CheckSatResult(..),
-                                                      MonadQuery(queryState),
                                                       Query )
 import           Control.Applicative                (Alternative(..))
 import           Control.Arrow                      (first)
@@ -594,24 +593,33 @@ ma1 `unify` ma2 = Curry $ do
   a1 <- deref ma1
   a2 <- deref ma2
   unCurry $ case (a1, a2) of
-    (Var _ i1, y@(Var _ i2))
-      | i1 == i2        -> return True
-      | otherwise       -> do
+    (Var l1 i1, y@(Var _ i2))
+      | i1 == i2 -> return True
+      | Primitive <- primitiveInfo @a
+        -> Curry $ do
+          let cs = toSBV (Var l1 i1) .=== toSBV y
+          modify (\s@NDState { .. } -> addToVarHeap i1 (Curry (return y)) s
+                    { constraintStore = insertConstraint cs constraintStore
+                    , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
+                    })
+          _ <- checkConsistency
+          return (Val True)
+      | otherwise -> do
         modify (addToVarHeap i1 (Curry (return y)))
         return True
     (Val x, Val y)    -> unifyWith unify x y
-    (Var _ i1, Val y) -> unifyVar i1 y
-    (Val x, Var _ i2) -> unifyVar i2 x
+    (Var l i1, Val y) -> unifyVar i1 l y
+    (Val x, Var l i2) -> unifyVar i2 l x
   where
-    unifyVar :: ID -> a -> Curry Bool
-    unifyVar i v = case primitiveInfo @a of
+    unifyVar :: ID -> Level -> a -> Curry Bool
+    unifyVar i l v = case primitiveInfo @a of
       NoPrimitive -> do
         let x = narrowConstr v
         sX <- x
         modify (addToVarHeap i (return sX))
         unify (return sX) (return v)
       Primitive   -> do
-        let cs = toSBV (Var 0 i) .=== toSBV (Val v)
+        let cs = toSBV (Var l i) .=== toSBV (Val v)
         modify (\s@NDState { .. } -> addToVarHeap i (return v) s
                    { constraintStore = insertConstraint cs constraintStore
                    , constrainedVars = Set.insert i constrainedVars

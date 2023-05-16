@@ -15,7 +15,7 @@ module BasicDefinitions
  ) where
 
 import Control.Exception (throw, catch, evaluate, Exception)
-import Control.Monad (MonadPlus(..), (>=>), void)
+import Control.Monad (MonadPlus(..), (>=>))
 import Control.Monad.Codensity (lowerCodensity)
 import Control.Monad.State (modify, MonadState(put, get), StateT(runStateT))
 import Data.List (intercalate, sortOn)
@@ -524,7 +524,7 @@ primitive2Bool sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
     case (# a, b #) of
       (# Val x, Val y #) -> return $ Val $ from $ fromForeign $ hsF (toForeign x) (toForeign y)
       _ -> do
-          s@NDState { .. } <- get
+          NDState { .. } <- get
           let c = sbvF (toSBV a) (toSBV b)
           let csv' = foldr Set.insert constrainedVars (allVars a ++ allVars b)
           let cst1 = insertConstraint c constraintStore
