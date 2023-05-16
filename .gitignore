@@ -4,6 +4,7 @@
 bin/kmcc-frontend
 bin/kmcc_repl
 bin/kmcc_c
+bin/curry
 */.cpm/
 
 *.lock
@@ -13,6 +14,7 @@ bin/kmcc_c
 *.o-boot
 
 repl/src/KMCC/PkgConfig.curry
+repl/src/Installation.curry
 
 testing/Mainkmcc*
 testing/XXX*
