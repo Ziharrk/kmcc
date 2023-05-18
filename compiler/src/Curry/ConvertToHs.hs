@@ -18,14 +18,14 @@ import Control.Monad.State (StateT, MonadState (..), evalStateT, modify)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Coerce (coerce)
 import Data.Char (toLower, toUpper)
-import Data.List (isPrefixOf, find, (\\))
+import Data.List (isPrefixOf, find, (\\), intercalate, unfoldr)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Maybe (mapMaybe)
 import Language.Haskell.Exts hiding (Literal, Cons, Kind, QName)
 import qualified Language.Haskell.Exts as Hs
 import System.Directory (doesFileExist)
-import System.FilePath (replaceExtension, replaceBaseName, takeBaseName)
+import System.FilePath (replaceExtension, replaceFileName, takeFileName, (<.>), splitExtension, takeExtension)
 import System.IO (openFile, IOMode (..), utf8, hSetEncoding, hPutStr, hClose, hGetContents')
 
 import Base.Messages (status, abortWithMessages, message)
@@ -778,10 +778,22 @@ defaultImports =
 
 -- |Compute the filename of the Haskell file for a source file
 haskellName :: FilePath -> FilePath
-haskellName = flip updateBaseName ("Curry_"++) . flip replaceExtension haskellExt
+haskellName p = flip updateModuleName ("Curry_"++) $
+  if takeExtension p == ".curry"
+    then replaceExtension p haskellExt
+    else p <.> haskellExt
 
-updateBaseName :: FilePath -> (String -> String) -> FilePath
-updateBaseName p f = replaceBaseName p (f (takeBaseName p))
+updateModuleName :: FilePath -> (String -> String) -> FilePath
+updateModuleName p f = replaceFileName p $ intercalate "." $ reverse $ mapSecond $ splitExts $ takeFileName p
+  where
+    splitExts = unfoldr (\q -> let ~(r, e) = splitExtension q in
+      if null q
+        then Nothing
+        else if null e
+          then Just (r, "") -- keep the rest
+          else Just (drop 1 e, r)) -- drop the dot
+    mapSecond (x:y:xs) = x : f y : xs
+    mapSecond xs = xs
 
 -- |Compute the filename of the external definition file for a source file
 externalName :: FilePath -> FilePath
