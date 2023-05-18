@@ -71,10 +71,6 @@ defaultFrontendOpts = defaultOptions
   , optOutDir = ".curry" </> ("kmcc-" ++ showVersion version)
   }
 
-deriveBaseVersion :: String -> String
-deriveBaseVersion "0.1.0" = "3.0.0"
-deriveBaseVersion _       = "?.?.?"
-
 statusMessage :: KMCCOpts -> String -> IO ()
 statusMessage ops s = when (optCompilerVerbosity ops > 0) $ putStrLn s
 

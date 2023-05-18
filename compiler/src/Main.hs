@@ -1,5 +1,6 @@
 module Main where
 
+import Data.Char ( isSpace )
 import Data.Maybe ( isJust )
 import Data.Time ( getCurrentTime, diffUTCTime )
 import Data.Version ( showVersion )
@@ -10,7 +11,7 @@ import CompilerOpts ( Options(..) )
 import Base.Utils ( fst3 )
 
 import CmdParser ( getCmdOpts )
-import Options ( KMCCOpts(..), InfoCommand (..), deriveBaseVersion, statusMessage, timeMessage )
+import Options ( KMCCOpts(..), InfoCommand (..), statusMessage, timeMessage )
 import Curry.CompileToFlat ( getDependencies, compileFileToFcy, checkForMain )
 import Curry.Analysis ( analyzeNondet )
 import Curry.ConvertToHs ( compileToHs )
@@ -27,6 +28,10 @@ main = do
           , optImportPaths  = libDir : optImportPaths (frontendOpts opt)
           }
         }
+      printVersionOpt CompilerName   = putStrLn "kmcc"
+      printVersionOpt NumericVersion = putStrLn (showVersion version)
+      printVersionOpt BaseVersion    = do
+        readFile (libDir </> "VERSION") >>= putStrLn . reverse . dropWhile isSpace . reverse
   kmccopts <- includeLibDir <$> getCmdOpts
   case optInfo kmccopts of
     [] -> do
@@ -53,7 +58,3 @@ main = do
       timeMessage kmccopts "Time for GHC invokation" (diffUTCTime ghcTime convertTime)
       timeMessage kmccopts "Timne total" (diffUTCTime ghcTime firstTime)
     xs -> mapM_ printVersionOpt xs
-  where
-    printVersionOpt CompilerName   = putStrLn "kmcc"
-    printVersionOpt NumericVersion = putStrLn (showVersion version)
-    printVersionOpt BaseVersion    = putStrLn (deriveBaseVersion (showVersion version))
