@@ -49,9 +49,9 @@ repl: bin/kmcc_repl
 bin/kmcc_repl: $(INSTALLCURRY) repl/src/KMCC/ReplConfig.curry repl/package.json
 	cd repl && cypm -d BININSTALLPATH=$(BINDIR) install
 	# add alias `bin/curry`:
-	cd $(BINDIR) && rm -r curry && ln -s kmcc curry
+	cd $(BINDIR) && (rm -r curry || true) && ln -s kmcc curry
 
-# Generate a source module with metadata about the KiCS2 installation for use by the compiler
+# Generate a source module with metadata about the KMCC installation for use by the compiler
 $(INSTALLCURRY): $(INSTALLCURRYIN) compiler/kmcc.cabal Makefile
 	@echo "Generating REPL installation module"
 	@envsubst < $< > $@
