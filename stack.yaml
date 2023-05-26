@@ -1,4 +1,4 @@
-resolver: lts-20.11
+resolver: lts-20.22
 packages:
   - compiler
   - curry-frontend
