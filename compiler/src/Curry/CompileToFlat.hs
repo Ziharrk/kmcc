@@ -3,6 +3,7 @@ module Curry.CompileToFlat (getDependencies, compileFileToFcy, checkForMain) whe
 import Control.Monad.IO.Class ( liftIO )
 import Data.Bifunctor ( second )
 import Data.Binary ( decodeFileOrFail, encodeFile)
+import Data.List ( intercalate )
 import Data.Maybe ( mapMaybe, fromMaybe, catMaybes )
 import System.FilePath ( (</>), (-<.>) )
 import System.Directory ( doesFileExist )
@@ -11,7 +12,7 @@ import Base.Messages ( status )
 import Control.Monad ( msum, void )
 import Curry.Base.Monad ( CYIO )
 import Curry.Base.Pretty ( Pretty(..) )
-import Curry.Base.Ident ( ModuleIdent )
+import Curry.Base.Ident ( ModuleIdent (..) )
 import Curry.FlatCurry.Typed.Type ( TProg (..), TFuncDecl (..), TypeExpr (..) )
 import Curry.Files.Filenames
 import qualified Curry.Syntax.ShowModule as CS
@@ -24,13 +25,24 @@ import Checks ( expandExports )
 import Generators ( genTypedFlatCurry, genAnnotatedFlatCurry )
 
 import Curry.FrontendUtils ( runCurryFrontendAction )
-import Options (KMCCOpts (..), dumpMessage)
+import Options ( KMCCOpts (..), dumpMessage )
 
 getDependencies :: KMCCOpts -> IO [(ModuleIdent, Source)]
 getDependencies opts = do
   deps <- runCurryFrontendAction (frontendOpts opts) (findCurry (frontendOpts opts) (optTarget opts) >>= flatDeps (frontendOpts opts))
-  dumpMessage opts $ "Dependencies: " ++ show deps
+  dumpMessage opts $ "Dependencies:\n" ++ showDeps deps
   return deps
+
+showDeps :: [(ModuleIdent, Source)] -> String
+showDeps = concatMap showDeps'
+  where
+    showMid (ModuleIdent _ m) = intercalate "." m
+    showDeps' (m, Source _ _ []) = showMid m ++ "\n"
+    showDeps' (m, Source _ _ is) = let ms = showMid m
+                                   in case map showMid is of
+                                        []     -> ms
+                                        (x:xs) -> ms ++ " -> " ++ x ++ "\n" ++ unlines (map (\x' -> replicate (length ms + 4) ' ' ++ x') xs)
+    showDeps' (m, _) = showMid m
 
 compileFileToFcy :: KMCCOpts -> [(ModuleIdent, Source)]
                  -> IO [((TProg, Bool), ModuleIdent, FilePath)]
