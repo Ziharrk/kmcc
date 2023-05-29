@@ -7,27 +7,27 @@ import qualified Network.BSD as N
 import BasicDefinitions
 
 environmentdotgetArgs_Det# = fromForeign S.getArgs
-environmentdotgetArgs_ND# = P.error "No implementation for getArgs_ND"
+environmentdotgetArgs_ND# = P.return P.$ from environmentdotgetArgs_Det#
 
 environmentdotprimuscoregetEnviron_Det# = liftForeign1 lookup
  where
   lookup v = (S.lookupEnv v P.>>= (\x -> case x of
     P.Nothing -> P.return []
     P.Just y -> P.return y))
-environmentdotprimuscoregetEnviron_ND# = P.error "No implementation for getEnviron_ND"
+environmentdotprimuscoregetEnviron_ND# = liftConvertIO1 environmentdotprimuscoregetEnviron_Det#
 
 
 environmentdotprimuscoresetEnviron_Det# = liftForeign2 S.setEnv
-environmentdotprimuscoresetEnviron_ND# = P.error "No implementation for setEnviron_ND"
+environmentdotprimuscoresetEnviron_ND# = liftConvertIO2 environmentdotprimuscoresetEnviron_Det#
 
 environmentdotprimuscoreunsetEnviron_Det# = liftForeign1 S.unsetEnv
-environmentdotprimuscoreunsetEnviron_ND# = P.error "No implementation for unsetEnviron_ND"
+environmentdotprimuscoreunsetEnviron_ND# = liftConvertIO1 environmentdotprimuscoreunsetEnviron_Det#
 
 environmentdotgetHostname_Det# = fromForeign N.getHostName
-environmentdotgetHostname_ND# = P.error "No implementation for getHostname_ND"
+environmentdotgetHostname_ND# = P.return P.$ from environmentdotgetHostname_Det#
 
 environmentdotgetProgName_Det# = fromForeign S.getProgName
-environmentdotgetProgName_ND# = P.error "No implementation for getProgName_ND"
+environmentdotgetProgName_ND# = P.return P.$ from environmentdotgetProgName_Det#
 
 environmentdotisWindows_Det# = fromForeign (D.buildOS P.== D.Windows)
-environmentdotisWindows_ND# = P.error "No implementation for isWindows_ND"
+environmentdotisWindows_ND# = P.return P.$ from environmentdotisWindows_Det#

@@ -1,5 +1,6 @@
-{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE MagicHash    #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE BangPatterns #-}
 import qualified Prelude as P
 import qualified Control.Concurrent as C
 import qualified Control.Monad as C (zipWithM)
@@ -19,7 +20,7 @@ instance ShowFree S.Handle where
   showsFreePrec _ _ = showsStringCurry "<<Handle>>"
 
 instance NormalForm S.Handle where
-  nfWith _ _ = P.error ""
+  nfWith _ !x = P.return (P.Right x)
   
 instance Narrowable S.Handle where
   narrow = P.error "narrowing a Handle is not possible"
@@ -71,37 +72,37 @@ instance ForeignType SeekMode_Det where
 
 -- function defintions
 iOdothandleuscoreeq_Det# = liftForeign2 (P.==)
-iOdothandleuscoreeq_ND# = P.error "no implementation of handle_eq_ND"
+iOdothandleuscoreeq_ND# = liftConvert2 iOdothandleuscoreeq_Det#
 
 iOdotstdin_Det# = S.stdin
-iOdotstdin_ND# = P.error "no implementation of stdin_ND"
+iOdotstdin_ND# = P.return iOdotstdin_Det#
 
 iOdotstdout_Det# = S.stdout
-iOdotstdout_ND# = P.error "no implementation of stdout_ND"
+iOdotstdout_ND# = P.return iOdotstdout_Det#
 
 iOdotstderr_Det# = S.stderr
-iOdotstderr_ND# = P.error "no implementation of stderr_ND"
+iOdotstderr_ND# = P.return iOdotstderr_Det#
 
 iOdotprimuscoreopenFile_Det# = liftForeign2 S.openFile
-iOdotprimuscoreopenFile_ND# = P.error "no implementation of openFile_ND"
+iOdotprimuscoreopenFile_ND# = liftConvertIO2 iOdotprimuscoreopenFile_Det#
 
 iOdotprimuscorehClose_Det# = liftForeign1 S.hClose
-iOdotprimuscorehClose_ND# = P.error "no implementation of hClose_ND"
+iOdotprimuscorehClose_ND# = liftConvertIO1 iOdotprimuscorehClose_Det#
 
 iOdotprimuscorehFlush_Det# = liftForeign1 S.hFlush
-iOdotprimuscorehFlush_ND# = P.error "no implementation of hFlush_ND"
+iOdotprimuscorehFlush_ND# = liftConvertIO1 iOdotprimuscorehFlush_Det#
 
 iOdotprimuscorehIsEOF_Det# = liftForeign1 S.hIsEOF
-iOdotprimuscorehIsEOF_ND# = P.error "no implementation of hIsEOF_ND"
+iOdotprimuscorehIsEOF_ND# = liftConvertIO1 iOdotprimuscorehIsEOF_Det#
 
 iOdotprimuscorehSeek_Det# x y z = fromForeign P.$ S.hSeek (toForeign x) (toForeign y) (toForeign z)
-iOdotprimuscorehSeek_ND# = P.error "no implementation of hSeek_ND"
+iOdotprimuscorehSeek_ND# = P.return P.$ from iOdotprimuscorehSeek_Det#
 
 iOdotprimuscorehWaitForInput_Det# x y = fromForeign P.$ S.hWaitForInput x (P.fromInteger y)
-iOdotprimuscorehWaitForInput_ND# = P.error "no implementation of hWaitForInput_ND"
+iOdotprimuscorehWaitForInput_ND# = liftConvertIO2 iOdotprimuscorehWaitForInput_Det#
 
 iOdotprimuscorehWaitForInputs_Det# handles timeout = fromForeign P.$ (selectHandle (toForeign handles) (P.fromInteger timeout) P.>>= P.return P.. P.toInteger)
-iOdotprimuscorehWaitForInputs_ND# = P.error "no implementation of hWaitForInputs_ND"
+iOdotprimuscorehWaitForInputs_ND# = liftConvertIO2 iOdotprimuscorehWaitForInputs_Det#
 
 -- run every handle in its own thread
 selectHandle :: [S.Handle] -> P.Int -> P.IO P.Int
@@ -128,16 +129,16 @@ inspectRes n mvar threads = do
     P.Just v  -> P.mapM_ C.killThread threads P.>> P.return v
 
 iOdotprimuscorehGetChar_Det# = liftForeign1 S.hGetChar
-iOdotprimuscorehGetChar_ND# = P.error "no implementation of hGetChar_ND"
+iOdotprimuscorehGetChar_ND# = liftConvertIO1 iOdotprimuscorehGetChar_Det#
 
 iOdotprimuscorehPutChar_Det# = liftForeign2 S.hPutChar
-iOdotprimuscorehPutChar_ND# = P.error "no implementation of hPutChar_ND"
+iOdotprimuscorehPutChar_ND# = liftConvertIO2 iOdotprimuscorehPutChar_Det#
 
 iOdotprimuscorehIsReadable_Det# = liftForeign1 S.hIsReadable
-iOdotprimuscorehIsReadable_ND# = P.error "no implementation of hIsReadable_ND"
+iOdotprimuscorehIsReadable_ND# = liftConvertIO1 iOdotprimuscorehIsReadable_Det#
 
 iOdotprimuscorehIsWritable_Det# = liftForeign1 S.hIsWritable
-iOdotprimuscorehIsWritable_ND# = P.error "no implementation of hIsWritable_ND"
+iOdotprimuscorehIsWritable_ND# = liftConvertIO1 iOdotprimuscorehIsWritable_Det#
 
 iOdotprimuscorehIsTerminalDevice_Det# = liftForeign1 S.hIsTerminalDevice
-iOdotprimuscorehIsTerminalDevice_ND# = P.error "no implementation of hIsTerminalDevice_ND"
+iOdotprimuscorehIsTerminalDevice_ND# = liftConvertIO1 iOdotprimuscorehIsTerminalDevice_Det#
