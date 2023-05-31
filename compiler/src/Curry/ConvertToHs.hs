@@ -44,8 +44,9 @@ import CurryBuilder (compMessage)
 import Options (KMCCOpts(..), dumpMessage)
 import Curry.Analysis (NDAnalysisResult, NDInfo (..))
 import Curry.Annotate (annotateND, isFunFree, exprAnn, annotateND')
-import Curry.GenInstances (genInstances)
+import Curry.CompileToFlat (externalName)
 import Curry.ConvertUtils
+import Curry.GenInstances (genInstances)
 
 newtype CM a = CM {
     runCM :: ReaderT NDAnalysisResult (ExceptT [Message] (StateT Int IO)) a
@@ -795,17 +796,9 @@ updateModuleName p f = replaceFileName p $ intercalate "." $ reverse $ mapSecond
     mapSecond (x:y:xs) = x : f y : xs
     mapSecond xs = xs
 
--- |Compute the filename of the external definition file for a source file
-externalName :: FilePath -> FilePath
-externalName = flip replaceExtension externalExt
-
 -- |Filename extension for Haskell files
 haskellExt :: String
 haskellExt = ".hs"
-
--- |Filename extension for external definition files
-externalExt :: String
-externalExt = ".kmcc.hs"
 
 escapeFuncName :: String -> String
 escapeFuncName s = case escapeName s of
