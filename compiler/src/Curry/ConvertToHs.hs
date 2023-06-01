@@ -113,10 +113,10 @@ process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
       status opts $ compMessage idx (11, 16) "Translating" m (fn, destFile)
       res <- convertToHs (TWFP (tprog, externalName fn, mi, kopts))
       let printed = prettyPrintStyleMode hsPrettyPrintStyle hsPrettyPrintMode res
+      liftIO $ writeUTF8File' (tgtDir (haskellName fn)) printed
       if thisIdx == maxIdx
         then liftIO $ dumpMessage kopts ("Generated Haskell file:\n" ++ printed)
         else liftIO $ dumpMessage kopts "Generated Haskell file."
-      liftIO $ writeUTF8File' (tgtDir (haskellName fn)) printed
       return ()
 
     opts = frontendOpts kopts
