@@ -14,19 +14,19 @@ module BasicDefinitions
  , fs ,bfs , dfs
  ) where
 
-import Control.Exception
-import Control.Monad
-import Control.Monad.Codensity
-import Control.Monad.State
-import Data.List
+import Control.Exception (throw, catch, evaluate, Exception)
+import Control.Monad (MonadPlus(..), (>=>))
+import Control.Monad.Codensity (lowerCodensity)
+import Control.Monad.State (modify, MonadState(put, get), StateT(runStateT))
+import Data.List (intercalate, sortOn)
 import qualified Data.Set as Set
-import System.IO.Unsafe
-import GHC.IO.Exception
+import GHC.IO.Exception (IOException(..), IOErrorType(..))
+import System.IO.Unsafe (unsafeInterleaveIO, unsafePerformIO)
 
 import MemoizedCurry
 import Narrowable
 import Classes
-import Tree
+import Tree (Tree, dfs, bfs, fs)
 import Data.SBV (SBV, (.===), sNot)
 
 type family HsEquivalent (a :: k) = (b :: k) | b -> a
@@ -302,7 +302,10 @@ ensureOneResult (Curry (ND act)) = Curry $ ND $ do
 
 {-# NOINLINE bindIONDImpl #-}
 bindIONDImpl :: Curry (LiftedFunc (IO a) (LiftedFunc (LiftedFunc a (IO b)) (IO b)))
-bindIONDImpl = return $ Func $ \ioND -> return $ Func $ \fND -> do
+bindIONDImpl = returnFunc $ \ioND -> returnFunc $ \fND -> bindIO ioND fND
+
+bindIO :: Curry (IO a) -> Curry (LiftedFunc a (IO b)) -> Curry (IO b)
+bindIO ioND fND = do
   io <- ensureOneResult ioND
   Func f <- ensureOneResult fND
   f . return $! unsafePerformIO $ unsafeInterleaveIO io
@@ -310,13 +313,35 @@ bindIONDImpl = return $ Func $ \ioND -> return $ Func $ \fND -> do
 returnIONDImpl :: Curry (LiftedFunc a (IO a))
 returnIONDImpl = return $ Func $ \x -> fmap return x
 
-mainWrapperDet :: IO a -> IO ()
-mainWrapperDet = void
+data UnitDispatch a where
+  IsUnit :: UnitDispatch a
+  NotUnit :: UnitDispatch a
 
-mainWrapperNDet :: (ForeignType b, Foreign b ~ (), ToHs a, HsEquivalent a ~ b) => Curry (IO a) -> IO ()
-mainWrapperNDet x = case evalCurry (ensureOneResult x) of
-  Single x' -> toForeign . unSingle . evalCurry . ensureOneResult . to <$> x'
-  _         -> error "mainWrapper: not a single result"
+class UnitDispatchable a where
+  unitDispatch :: UnitDispatch a
+
+instance UnitDispatchable () where
+  unitDispatch = IsUnit
+
+instance {-# INCOHERENT #-} UnitDispatchable a where
+  unitDispatch = NotUnit
+
+mainWrapperDet :: forall a b. (ShowFree b, HsEquivalent b ~ a, FromHs b, UnitDispatchable a) => IO a -> IO ()
+mainWrapperDet mx = do
+  x <- mx
+  case evalCurry (showFreeCurry (return (from x)) []) of
+    Single x' -> case unitDispatch @a of
+                  IsUnit  -> return ()
+                  NotUnit -> putStrLn x'
+    _         -> error "mainWrapper: not a single result"
+
+mainWrapperNDet :: forall a. (ShowFree a, ToHs a, UnitDispatchable a) => Curry (IO a) -> IO ()
+mainWrapperNDet mx = do
+  case evalCurry (ensureOneResult (bindIO mx (returnFunc $ \x -> return <$> showFreeCurry x []))) of
+    Single x' -> x' >>= \a -> case unitDispatch @a of
+                  IsUnit  -> return ()
+                  NotUnit -> putStrLn a
+    _         -> error "mainWrapper: not a single result"
 
 unSingle :: MemoizedCurry.Tree n f l -> l
 unSingle (Single x) = x
@@ -428,7 +453,6 @@ condSeq a b = do
   a' <- a
   if a' then b else mzero
 
--- TODO update constrained vars
 {-# INLINABLE primitive1 #-}
 primitive1 :: forall a b
             . ( HasPrimitiveInfo a, ForeignType a
@@ -500,18 +524,20 @@ primitive2Bool sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
     case (# a, b #) of
       (# Val x, Val y #) -> return $ Val $ from $ fromForeign $ hsF (toForeign x) (toForeign y)
       _ -> do
-          s@NDState { .. } <- get
+          NDState { .. } <- get
           let c = sbvF (toSBV a) (toSBV b)
           let csv' = foldr Set.insert constrainedVars (allVars a ++ allVars b)
           let cst1 = insertConstraint c constraintStore
           let cst2 = insertConstraint (sNot c) constraintStore
           mplusLevel currentLevel
-            (guard (isConsistent cst1) >>
-             put (s { constraintStore = cst1, constrainedVars = csv' }) >>
-             return (Val (from $ fromForeign True)))
-            (guard (isConsistent cst2) >>
-             put (s { constraintStore = cst2, constrainedVars = csv' }) >>
-             return (Val (from $ fromForeign False)))
+            (do s' <- get
+                put (s' { constraintStore = cst1, constrainedVars = csv' })
+                checkConsistency
+                return (Val (from $ fromForeign True)))
+            (do s' <- get
+                put (s' { constraintStore = cst2, constrainedVars = csv' })
+                checkConsistency
+                return (Val (from $ fromForeign False)))
   _ -> error "internalError: primitive2: non-primitive type"
 
 allVars :: CurryVal a -> [Integer]

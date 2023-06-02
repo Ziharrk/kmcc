@@ -1,0 +1,29 @@
+-- Make sure to edit Installation.curry.in, not Installation.curry,
+-- since the latter is auto-generated!
+module Installation where
+
+-- The installation directory of the compiler system
+installDir :: String
+installDir = "$ROOT"
+
+compilerName :: String
+compilerName = "kmcc"
+
+compilerVersion :: String
+compilerVersion = "$VERSION"
+
+majorVersion :: Int
+majorVersion = $MAJORVERSION
+
+minorVersion :: Int
+minorVersion = $MINORVERSION
+
+revisionVersion :: Int
+revisionVersion = $REVISIONVERSION
+
+compilerDate :: String
+compilerDate = "$COMPILERDATE"
+
+installDate :: String
+installDate = "$INSTALLDATE"
+

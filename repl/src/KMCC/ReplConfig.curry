@@ -1,7 +1,7 @@
 ------------------------------------------------------------------------------
 --- A REPL for the KMC compiler.
 --- @author  Kai-Oliver Prott
---- @version July 2022
+--- @version May 2023
 ------------------------------------------------------------------------------
 
 module KMCC.ReplConfig where
@@ -9,7 +9,7 @@ module KMCC.ReplConfig where
 import Data.List          ( intercalate )
 import System.CurryPath   ( inCurrySubdir, modNameToPath, sysLibPath )
 import System.FilePath    ( (</>) )
-import KMCC.PkgConfig     ( packagePath )
+import Installation as I
 
 import REPL.Compiler
 import REPL.Main          ( mainREPL )
@@ -18,17 +18,17 @@ main :: IO ()
 main = mainREPL kmcc
 
 kmccHome :: String
-kmccHome = packagePath </> ".."
+kmccHome = I.installDir
 
 --- The version number
 kmccVersion :: (Int,Int,Int)
-kmccVersion = (0,1,0)
+kmccVersion = (I.majorVersion,I.minorVersion,I.revisionVersion)
 
 --- The subdirectory where intermediate program files and the compiled
 --- Go target files will be stored, e.g., `.curry/kmcc-1.0.0`.
 kmccSubDir :: String
 kmccSubDir =
-  ".curry" </> "kmcc" ++ "-" ++
+  ".curry" </> I.compilerName ++ "-" ++
   intercalate "." (map show [maj,min,rev])
  where
   (maj,min,rev) = kmccVersion
@@ -37,7 +37,7 @@ kmccSubDir =
 -- The specification of the KMCC REPL.
 kmcc :: CCDescription
 kmcc = CCDescription
-  "kmcc"                         -- the compiler name
+  I.compilerName                 -- the compiler name
   kmccVersion                    -- the version number
   kmccBanner                     -- the banner
   -- description of specific REPL options:
@@ -76,7 +76,8 @@ quote s = "\"" ++ s ++ "\""
 kmccBanner :: String
 kmccBanner = unlines [bannerLine, bannerText, bannerLine]
  where
-  bannerText = "KMCC Interactive Environment"
+  bannerText = "KMCC Interactive Environment (Version " ++
+               I.compilerVersion ++ " of " ++ I.compilerDate ++ ")"
   bannerLine = take (length bannerText) (repeat '-')
 
 stratOpt :: CCOption

@@ -3,6 +3,7 @@ module CmdParser where
 import Data.Either ( fromLeft, fromRight )
 import Data.Maybe ( fromMaybe )
 import Options.Applicative
+import System.FilePath ( pathSeparator )
 
 import CompilerOpts ( Options(..), KnownExtension, parseOpts, updateOpts, Verbosity (..) )
 
@@ -120,7 +121,10 @@ adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b strat pr int torv = def
     adjustFrontendOpts = fromMaybe id p $ defaultFrontendOpts
       { optForce = f
       , optVerbosity = if verbosity == 0 then VerbQuiet else VerbStatus
-      , optImportPaths = optImportPaths defaultFrontendOpts ++ is
+      , optImportPaths = optImportPaths defaultFrontendOpts ++ map normalizeDir is
       , optOutDir = fromMaybe (optOutDir defaultFrontendOpts) o
       , optExtensions = optExtensions defaultFrontendOpts ++ x
       }
+
+    normalizeDir "" = [pathSeparator]
+    normalizeDir dir = if last dir == pathSeparator then dir else dir ++ [pathSeparator]

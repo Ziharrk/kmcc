@@ -3,15 +3,16 @@
 module Tree where
 
 import           Control.Applicative ( Alternative(empty, (<|>)) )
-import           Control.Monad ( MonadPlus )
+import           Control.Concurrent.Chan ( getChanContents, newChan, writeChan )
+import           Control.Concurrent.MVar ( newEmptyMVar, putMVar, takeMVar )
 import           Control.DeepSeq ( NFData )
-import           Data.Maybe
+import           Control.Monad ( MonadPlus )
+import           Data.Maybe ( catMaybes, isJust )
 import qualified Data.Sequence as Seq
 import           GHC.Generics ( Generic )
-import           GHC.Conc
-import           Control.Concurrent.MVar
-import           Control.Concurrent.Chan
-import           System.IO.Unsafe
+import           GHC.Conc ( forkIO, killThread )
+import           System.IO.Unsafe ( unsafePerformIO )
+import           System.Mem.Weak ( addFinalizer )
 
 -- A normal tree implementation and bfs/dfs implementations
 data Tree a = Empty
@@ -58,6 +59,7 @@ bfs t' = bfs' (Seq.singleton t')
           Leaf x -> x : bfs' ts
           Node l r -> bfs' (ts Seq.:|> l Seq.:|> r)
 
+{-# NOINLINE fs #-}
 fs :: Tree a -> [a]
 fs t' = unsafePerformIO $ do
   ch <- newChan
@@ -71,8 +73,10 @@ fs t' = unsafePerformIO $ do
           _ <- forkIO $ fsIO r >> putMVar mvarR ()
           takeMVar mvarL
           takeMVar mvarR
-  _ <- forkIO $ fsIO t' >> writeChan ch Nothing
-  catMaybes . takeWhile isJust <$> getChanContents ch
+  tid <- forkIO $ fsIO t' >> writeChan ch Nothing
+  res <- catMaybes . takeWhile isJust <$> getChanContents ch
+  addFinalizer res $ killThread tid
+  return res
 
 {-
 fs :: Tree a -> [a]

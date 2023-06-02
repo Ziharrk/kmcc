@@ -18,14 +18,14 @@ import Control.Monad.State (StateT, MonadState (..), evalStateT, modify)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Coerce (coerce)
 import Data.Char (toLower, toUpper)
-import Data.List (isPrefixOf, find, (\\))
+import Data.List (isPrefixOf, find, (\\), intercalate, unfoldr)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Maybe (mapMaybe)
 import Language.Haskell.Exts hiding (Literal, Cons, Kind, QName)
 import qualified Language.Haskell.Exts as Hs
 import System.Directory (doesFileExist)
-import System.FilePath (replaceExtension, replaceBaseName, takeBaseName)
+import System.FilePath (replaceExtension, replaceFileName, takeFileName, (<.>), splitExtension, takeExtension)
 import System.IO (openFile, IOMode (..), utf8, hSetEncoding, hPutStr, hClose, hGetContents')
 
 import Base.Messages (status, abortWithMessages, message)
@@ -45,8 +45,9 @@ import CurryBuilder (compMessage)
 import Options (KMCCOpts(..), dumpMessage)
 import Curry.Analysis (NDAnalysisResult, NDInfo (..))
 import Curry.Annotate (annotateND, isFunFree, exprAnn, annotateND')
-import Curry.GenInstances (genInstances)
+import Curry.CompileToFlat (externalName)
 import Curry.ConvertUtils
+import Curry.GenInstances (genInstances)
 
 newtype CM a = CM {
     runCM :: ReaderT NDAnalysisResult (ExceptT [Message] (StateT Int IO)) a
@@ -98,7 +99,7 @@ process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
           Just extTime -> if hsTime < extTime then compile else skip
     skip = do
       status opts $ compMessage idx (11, 16) "Skipping" m (fn, destFile)
-      when (optCompilerVerbosity kopts > 2) $ do -- TODO: implement check file when dumping stuff only
+      when (optCompilerVerbosity kopts > 2) $ do
         eithRes <- liftIO (parseFile' destFile)
         case eithRes of
           ParseFailed loc err -> do
@@ -120,10 +121,10 @@ process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
       status opts $ compMessage idx (11, 16) "Translating" m (fn, destFile)
       res <- convertToHs (TWFP (tprog, externalName fn, mi, kopts))
       let printed = prettyPrintStyleMode hsPrettyPrintStyle hsPrettyPrintMode res
+      liftIO $ writeUTF8File' (tgtDir (haskellName fn)) printed
       if thisIdx == maxIdx
         then liftIO $ dumpMessage kopts ("Generated Haskell file:\n" ++ printed)
         else liftIO $ dumpMessage kopts "Generated Haskell file."
-      liftIO $ writeUTF8File' (tgtDir (haskellName fn)) printed
       return ()
 
     opts = frontendOpts kopts
@@ -131,7 +132,7 @@ process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
 hsPrettyPrintMode :: PPHsMode
-hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPOffsideRule False
+hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPNoLayout False
 
 hsPrettyPrintStyle :: Style
 hsPrettyPrintStyle = Style PageMode 500 2
@@ -163,12 +164,15 @@ instance ToHs TProgWithFilePath where
         let insts = concatMap genInstances tys
         let ds = insts ++ coerce (tyds ++ tydsM) ++ concatMap @[] extract (coerce (funds ++ fundsM))
         return (header, im', ds)
-    (extPragmas, extImports, extDs) <- liftIO $ doesFileExist fp >>= \case
+    (extPragmas, extImports, extDs, extExp) <- liftIO $ doesFileExist fp >>= \case
       True -> do
         ext <- liftIO $ parseFile' fp
         case fmap void ext of
-          ParseOk (Module _ _ p i d) -> return (p, i, d)
-          ParseOk _           -> return ([] , [], [])
+          ParseOk (Module _ mh p i d) -> return (p, i, d, e)
+            where e = case mh of
+                        Just (ModuleHead _ _ _ (Just (ExportSpecList _ ex))) -> ex
+                        _ -> []
+          ParseOk _           -> return ([] , [], [], [])
           ParseFailed loc err -> do
             liftIO $ fail $ unlines
               [ "External definitions file is corrupted."
@@ -178,14 +182,14 @@ instance ToHs TProgWithFilePath where
               , "At location:"
               , prettyPrint loc
               , "Aborting compilation ..." ]
-      False -> return ([], [], [])
+      False -> return ([], [], [], [])
     let ps' = defaultPragmas ++ extPragmas
     let im' = defaultImports ++ extImports ++ curryImports
     let ds' = extDs ++ curryDs
     (header', ds'') <- case mi of
           Just ty -> patchMainPost ty opts header ds'
           Nothing -> return (header, ds')
-    return (Module () (Just header') ps' im' ds'')
+    return (Module () (Just (combineHeaderExport header' extExp)) ps' im' ds'')
     where
       getVisT (Type qname Public _ cs) = Just (qname, mapMaybe getVisC cs)
       getVisT (TypeSyn qname Public _ _) = Just (qname, [])
@@ -200,6 +204,10 @@ instance ToHs TProgWithFilePath where
 
       getVisF (TFunc qname _ Public _ _) = Just qname
       getVisF _ = Nothing
+
+      combineHeaderExport (ModuleHead a b c (Just (ExportSpecList d ex))) ex' =
+        ModuleHead a b c (Just (ExportSpecList d (ex ++ ex')))
+      combineHeaderExport h _ = h
 
 
 -- after pre-patching:
@@ -744,7 +752,7 @@ convertQualNameToFlatName (_, s) =
 convertQualNameToFlatQualName :: QName -> Hs.QName ()
 convertQualNameToFlatQualName qname@(m, _) =
   Qual () (ModuleName () (convertModName m)) $ convertQualNameToFlatName qname
-  
+
 convertModName :: String -> String
 convertModName m = convertModName' $ break (== '.') m
   where
@@ -779,22 +787,26 @@ defaultImports =
 
 -- |Compute the filename of the Haskell file for a source file
 haskellName :: FilePath -> FilePath
-haskellName = flip updateBaseName ("Curry_"++) . flip replaceExtension haskellExt
+haskellName p = flip updateModuleName ("Curry_"++) $
+  if takeExtension p == ".curry"
+    then replaceExtension p haskellExt
+    else p <.> haskellExt
 
-updateBaseName :: FilePath -> (String -> String) -> FilePath
-updateBaseName p f = replaceBaseName p (f (takeBaseName p))
-
--- |Compute the filename of the external definition file for a source file
-externalName :: FilePath -> FilePath
-externalName = flip replaceExtension externalExt
+updateModuleName :: FilePath -> (String -> String) -> FilePath
+updateModuleName p f = replaceFileName p $ intercalate "." $ reverse $ mapSecond $ splitExts $ takeFileName p
+  where
+    splitExts = unfoldr (\q -> let ~(r, e) = splitExtension q in
+      if null q
+        then Nothing
+        else if null e
+          then Just (r, "") -- keep the rest
+          else Just (drop 1 e, r)) -- drop the dot
+    mapSecond (x:y:xs) = x : f y : xs
+    mapSecond xs = xs
 
 -- |Filename extension for Haskell files
 haskellExt :: String
 haskellExt = ".hs"
-
--- |Filename extension for external definition files
-externalExt :: String
-externalExt = ".kmcc.hs"
 
 escapeFuncName :: String -> String
 escapeFuncName s = case escapeName s of
