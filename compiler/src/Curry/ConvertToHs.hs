@@ -43,7 +43,7 @@ import CurryBuilder (compMessage)
 
 import Options (KMCCOpts(..), dumpMessage)
 import Curry.Analysis (NDAnalysisResult, NDInfo (..))
-import Curry.Annotate (annotateND, isFunFree, exprAnn, annotateND')
+import Curry.Annotate (annotateND, exprAnn, annotateND')
 import Curry.CompileToFlat (externalName)
 import Curry.ConvertUtils
 import Curry.GenInstances (genInstances)
@@ -556,10 +556,8 @@ convertExprToMonadicHs vset (AVar _ idx) = if idx `elem` vset
   then return $ Hs.Var () (UnQual () (appendName "_nd" (indexToName idx)))
   else return $ Hs.Var () (UnQual () (indexToName idx))
 convertExprToMonadicHs _ (ALit _ lit) = return $ mkReturn $ Hs.Lit () (convertLit lit)
-convertExprToMonadicHs _ ex@(AComb (ty, Det) FuncCall _ _)
-  | isFunFree ty = mkFromHaskell <$> convertToHs ex
-convertExprToMonadicHs _ ex@(AComb (ty, Det) ConsCall  _ _)
-  | isFunFree ty = mkFromHaskell <$> convertToHs ex
+convertExprToMonadicHs _ ex@(AComb (_, Det) FuncCall _ _)  = mkFromHaskell <$> convertToHs ex
+convertExprToMonadicHs _ ex@(AComb (_, Det) ConsCall  _ _) = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs vset (AComb _ ConsCall (qname, _) args) = do
   args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
   applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) args'
@@ -571,8 +569,7 @@ convertExprToMonadicHs vset (AComb _ (ConsPartCall missing) (qname, _) args) = d
 convertExprToMonadicHs vset (AComb _ _ (qname, _) args) = do -- (Partial) FuncCall
   args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
   applyToArgs mkMonadicApp id (Hs.Var () (convertFuncNameToMonadicHs qname)) args'
-convertExprToMonadicHs _ ex@(ALet (ty, Det) _ _)
-  | isFunFree ty = mkFromHaskell <$> convertToHs ex
+convertExprToMonadicHs _ ex@(ALet (_, Det) _ _) = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs vset ex@(ALet _ bs e) = do
   e' <- convertExprToMonadicHs vset e
   bs' <- mapM (\((a, _), b) -> (indexToName a, , countVarUse ex a) <$> convertExprToMonadicHs vset b) bs
@@ -581,31 +578,28 @@ convertExprToMonadicHs vset (AFree _ vs e) = do
   e' <- convertExprToMonadicHs vset e
   return $ foldr (mkShareBind . (,mkFree) . indexToName . fst) e' vs
 convertExprToMonadicHs vset (AOr _ e1 e2) = mkMplus <$> convertExprToMonadicHs vset e1 <*> convertExprToMonadicHs vset e2
-convertExprToMonadicHs _ ex@(ACase (ty, Det) _ _ _)
-  | isFunFree ty = mkFromHaskell <$> convertToHs ex
+convertExprToMonadicHs _ ex@(ACase (_, Det) _ _ _) = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs vset (ACase _ Flex e bs)
-  | all (\(ABranch p _) -> isLit p) bs = do
-    e' <- convertExprToMonadicHs vset e
-    v <- freshVarName
-    orExpr <- if null bs
-      then return mkFailed
-      else foldr1 mkMplus <$> mapM (mkFlexBranch vset (Hs.Var () (UnQual () v))) bs
-    applyToArgs (\orExp' e'' -> mkLetBind (v, e'') orExp') id orExpr [(Just e, e')]
+  | all (\(ABranch p _) -> isLit p) bs = do -- TODO: Guard wrong!, do this every time this is Flex. Note: Add Rigid match in following case  matches and fix mkFlexBranch.
+      e' <- convertExprToMonadicHs vset e
+      v <- freshVarName
+      orExpr <- if null bs
+        then return mkFailed
+        else foldr1 mkMplus <$> mapM (mkFlexBranch vset (Hs.Var () (UnQual () v))) bs
+      applyToArgs (\orExp' e'' -> mkLetBind (v, e'') orExp') id orExpr [(Just e, e')]
   where
     isLit (ALPattern _ _) = True
     isLit _ = False
 convertExprToMonadicHs vset (ACase _ _ e bs)
-  | (ty, Det) <- exprAnn e,
-    isFunFree ty = do
+  | (_, Det) <- exprAnn e = do
       e' <- convertToHs e
       bs' <- mapM (convertDetBranchToMonadic vset) bs
       return $ Hs.Case () e' (bs' ++ [failedMonadicBranch])
   | otherwise = do
-  e' <- convertExprToMonadicHs vset e
-  bs' <- concat <$> mapM (convertBranchToMonadicHs vset) bs
-  return $ mkBind e' $ Hs.LCase () (bs' ++ [failedMonadicBranch])
-convertExprToMonadicHs _ ex@(ATyped (ty, Det) _ _)
-  | isFunFree ty = mkFromHaskell <$> convertToHs ex
+      e' <- convertExprToMonadicHs vset e
+      bs' <- concat <$> mapM (convertBranchToMonadicHs vset) bs
+      return $ mkBind e' $ Hs.LCase () (bs' ++ [failedMonadicBranch])
+convertExprToMonadicHs _ ex@(ATyped (_, Det) _ _) = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs vset (ATyped _ e ty) = ExpTypeSig () <$> convertExprToMonadicHs vset e <*> convertQualType ty
 
 mkFlexBranch :: Set.Set Int -> Exp ()
@@ -631,9 +625,7 @@ instance ToHs (ABranchExpr (TypeExpr, NDInfo)) where
 
 convertDetBranchToMonadic :: Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM (Alt ())
 convertDetBranchToMonadic vSet (ABranch pat e)
-  | (ty, annot) <- exprAnn e,
-    Det <- annot,
-    isFunFree ty = do
+  | (_, Det) <- exprAnn e = do
       e' <- convertToHs e
       pat' <- convertToHs pat
       return (Alt () pat' (UnGuardedRhs () (mkFromHaskell e')) Nothing)
@@ -643,14 +635,14 @@ convertDetBranchToMonadic vSet (ABranch pat e)
                       APattern _ _ args -> map fst args
                       _                 -> []
       let vSet' = Set.union vSet (Set.fromList vsNames)
-      e' <- convertExprToMonadicHs vSet' e
+      analysis <- ask
+      let annE = annotateND' analysis (Map.fromSet (const Det) vSet') (genTypedExpr (fmap fst e))
+      e' <- convertExprToMonadicHs vSet' annE
       return (Alt () pat' (UnGuardedRhs () (foldr mkFromHaskellBind e' vsNames)) Nothing)
 
 convertBranchToMonadicHs :: Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM [Alt ()]
 convertBranchToMonadicHs vSet (ABranch pat e)
-  | let (ty, annot) = exprAnn e,
-    Det <- annot,
-    isFunFree ty = do
+  | (_, Det) <- exprAnn e = do
       e' <- convertToHs e
       let transE = mkFromHaskell e'
       pat1 <- convertToMonadicHs pat
