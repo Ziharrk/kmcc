@@ -62,6 +62,7 @@ stackPkgArgs = concatMap (("--package":) . return)
   , "sbv"
   , "adjunctions"
   , "deepseq"
+  , "network-bsd"
   ]
 
 invokeGHCDefaultArgs :: [String]
