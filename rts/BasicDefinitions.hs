@@ -81,6 +81,16 @@ showsVar i fm = case lookup i fm of
   Nothing -> fmap (++ ("_" ++ show i))
   Just s  -> fmap (++ s)
 
+literalCase :: HasPrimitiveInfo a => Curry a -> (ID -> Curry b) -> (a -> Curry b) -> Curry b
+literalCase x f g = Curry $ do
+  x' <- deref x
+  unCurry $ case x' of
+    Val   y -> g y
+    Var _ i -> f i
+
+bindVar :: Curryable a => ID -> Curry a -> Curry Bool
+bindVar i = unify (freeWith 0 i)
+
 -- Class to pull all non-determinisim to the top
 class NormalForm a where
   nfWith :: (forall x. NormalForm x => Curry x -> ND (Either (CurryVal x) (HsEquivalent x)))
@@ -294,11 +304,11 @@ ensureOneResult (Curry (ND act)) = Curry $ ND $ do
   s <- get
   case lowerCodensity (runStateT act s) of
     Fail _
-      -> throw (IOError Nothing OtherError "ensureOneResult" "FAILERR_ IO action failed non-determinsitically" Nothing Nothing)
+      -> throw (IOError Nothing OtherError "ensureOneResult" "FAILERR_ IO action failed non-deterministic" Nothing Nothing)
     Single (x, s')
       -> put s' >> return x
     Choice {}
-      -> throw (IOError Nothing OtherError "ensureOneResult" "NDERR_ IO action was non-determinsitically" Nothing Nothing)
+      -> throw (IOError Nothing OtherError "ensureOneResult" "NDERR_ IO action was non-deterministic" Nothing Nothing)
 
 {-# NOINLINE bindIONDImpl #-}
 bindIONDImpl :: Curry (LiftedFunc (IO a) (LiftedFunc (LiftedFunc a (IO b)) (IO b)))

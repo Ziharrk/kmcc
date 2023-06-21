@@ -72,6 +72,12 @@ mkUnify e = App () (App () (Var () unifyQualName) e)
 mkUnifyWith :: Exp () -> Exp () -> Exp () -> Exp ()
 mkUnifyWith e1 e2 = App () (App () (App () (Var () unifyWithQualName) e1) e2)
 
+mkBindVar :: Exp () -> Exp () -> Exp ()
+mkBindVar e = App () (App () (Var () bindVarQualName) e)
+
+mkLiteralCase :: Exp () -> Exp () -> Exp () -> Exp ()
+mkLiteralCase e1 e2 = App () (App () (App () (Var () literalCaseQualName) e1) e2)
+
 data VarUse = None | One | Many
   deriving (Eq, Ord, Enum, Show)
 
@@ -103,6 +109,8 @@ mkFromHaskellBind i = Let () (BDecls ()
     (UnGuardedRhs () (mkFromHaskell (Var () (UnQual () (indexToName i))))) Nothing])
 
 mkShareBind :: (Name (), Exp ()) -> Exp () -> Exp ()
+mkShareBind (v, e1@(App _ (Var _ fromHs) _)) e2 | fromHs == fromHaskellQualName =
+  Let () (BDecls () [PatBind () (PVar () v) (UnGuardedRhs () e1) Nothing]) e2
 mkShareBind (v, e1) e2 = mkBind (mkShare e1) (Lambda () [PVar () v] e2)
 
 mkLetBind :: (Name (), Exp ()) -> Exp () -> Exp ()
@@ -303,6 +311,12 @@ unifyWithQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "unifyW
 
 lazyUnifyQualName :: QName ()
 lazyUnifyQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "unifyL")
+
+bindVarQualName :: QName ()
+bindVarQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "bindVar")
+
+literalCaseQualName :: QName ()
+literalCaseQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "literalCase")
 
 addToVarHeapQualName :: QName ()
 addToVarHeapQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "addToVarHeapM")

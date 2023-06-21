@@ -24,7 +24,10 @@ annotateND' analysis vMap (TComb ty ct qname args) =
                 Nothing -> if all isFunFree argTys then Det else NonDet
                 Just det -> det
     args' = map (annotateND' analysis vMap) args
-    ann = maximum (annHere : map (snd . exprAnn) args')
+    ann | isFunFree ty = maximum (annHere : map (snd . exprAnn) args')
+        -- If the result is a function, do not use determinism optimization.
+        -- Might happen if this is a partial application.
+        | otherwise    = NonDet
 annotateND' analysis vMap (TFree bs e) =
   AFree (typeOf e, NonDet) (map (second (,NonDet)) bs) (annotateND' analysis vMap' e)
   where vMap' = Map.union vMap (Map.fromList (map ((,NonDet) . fst) bs))
