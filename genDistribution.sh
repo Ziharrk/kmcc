@@ -21,7 +21,8 @@ baseVersion=$(cat lib/VERSION)
 
 ### update distribution file ###
 
-# path to distribution file
+# paths to distribution files
+defaultFile="lib/Curry/Compiler/Distribution.default.hs"
 distributionFile="lib/Curry/Compiler/Distribution.kmcc.hs"
 
 # compiler name
@@ -47,6 +48,9 @@ baseVerNew="fromForeign \"$baseVersion\""
 # install directory
 instDirOld="P.error \"No implementation of installDir\""
 instDirNew="fromForeign \"$PWD\""
+
+# copy default file to distribution file
+cp $defaultFile $distributionFile
 
 # replace functions
 sed -i "s|$compilerOld|$compilerNew|" $distributionFile

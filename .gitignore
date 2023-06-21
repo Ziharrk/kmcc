@@ -15,6 +15,7 @@ bin/curry
 
 repl/src/KMCC/PkgConfig.curry
 repl/src/Installation.curry
+lib/Curry/Compiler/Distribution.kmcc.hs
 
 testing/Mainkmcc*
 testing/XXX*
