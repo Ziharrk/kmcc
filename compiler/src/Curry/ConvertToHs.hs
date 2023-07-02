@@ -490,7 +490,7 @@ instance ToMonadicHs RuleInfo where
 type instance HsEquivalent (AExpr (TypeExpr, NDInfo)) = Exp ()
 instance ToHs (AExpr (TypeExpr, NDInfo)) where
   convertToHs (AVar _ idx) = return $ Hs.Var () (UnQual () (indexToName idx))
-  convertToHs (ALit _ lit) = return $ Hs.Lit () (convertLit lit)
+  convertToHs (ALit _ lit) = return $ convertLit (Paren ()) (Hs.Lit ()) lit
   convertToHs (AComb _ ct (qname, _) args) = do
     args' <- mapM convertToHs args
     let convertNameToHs = case ct of
@@ -555,7 +555,7 @@ convertExprToMonadicHs :: Set.Set Int -> AExpr (TypeExpr, NDInfo) -> CM (Exp ())
 convertExprToMonadicHs vset (AVar _ idx) = if idx `elem` vset
   then return $ Hs.Var () (UnQual () (appendName "_nd" (indexToName idx)))
   else return $ Hs.Var () (UnQual () (indexToName idx))
-convertExprToMonadicHs _ (ALit _ lit) = return $ mkReturn $ Hs.Lit () (convertLit lit)
+convertExprToMonadicHs _ (ALit _ lit) = return $ mkReturn $ convertLit (Paren ()) (Hs.Lit ()) lit
 convertExprToMonadicHs _ ex@(AComb (_, Det) FuncCall _ _)  = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs _ ex@(AComb (_, Det) ConsCall  _ _) = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs vset (AComb _ ConsCall (qname, _) args) = do
@@ -696,8 +696,7 @@ mkFlatPattern qname ty args =
 type instance HsEquivalent (APattern (TypeExpr, NDInfo)) = (Pat ())
 instance ToHs (APattern (TypeExpr, NDInfo)) where
   convertToHs (APattern _ (qname, _) args) = return (PApp () (convertTypeNameToHs qname) (map (PVar () . indexToName . fst) args))
-  convertToHs (ALPattern _ lit) = return (PLit () (litSign lit) (convertLit lit))
-  -- TODO: remove sign?
+  convertToHs (ALPattern _ lit) = return $ convertLit (PParen ()) (PLit () (Signless ())) lit
 
 instance ToMonadicHs (APattern (TypeExpr, NDInfo)) where
   convertToMonadicHs p@(ALPattern _ _) = convertToHs p
@@ -711,10 +710,14 @@ litSign (Floatc f)
   | f < 0 = Negative ()
 litSign _ = Signless ()
 
-convertLit :: Literal -> Hs.Literal ()
-convertLit (Intc i) = Hs.Int () i (show i)
-convertLit (Floatc d) = Hs.Frac () (toRational d) (show d)
-convertLit (Charc c) = Hs.Char () c (show c)
+convertLit :: (a -> a) -> (Hs.Literal () -> a) -> Literal -> a
+convertLit f g l = case l of
+  Intc i   -> f' $ g $ Hs.Int () i (show i)
+  Floatc d -> f' $ g $ Hs.Frac () (toRational d) (show d)
+  Charc c  ->  f' $ g $ Hs.Char () c (show c)
+  where f' = case litSign l of
+              Negative _ -> f
+              Signless _ -> id
 
 class ToHsName a where
   convertTypeNameToHs :: a -> HsEquivalent a
