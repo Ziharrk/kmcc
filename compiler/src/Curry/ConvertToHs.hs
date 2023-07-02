@@ -231,7 +231,7 @@ patchMainPre ty opts fs = case ty of
 -- update the name of the function that was extended with arguments to mainND##
 -- call the wrapper on the mainND## function, or if main is actually deterministic or IO, call the respective wrapper
 patchMainPost :: TypeExpr -> KMCCOpts -> ModuleHead () -> [Decl ()] -> CM (ModuleHead (), [Decl ()])
-patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do -- TODO: pass options to wrapper
+patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do
   let hasDetMain = EVar () (Qual () nm (Ident () "main_Det")) `elem` es
   let mainExport = EVar () (Qual () nm (Ident () "main##"))
 
