@@ -44,9 +44,10 @@ annotateND' analysis vMap (TTyped e ty) =
   let e' = annotateND' analysis vMap e
   in  ATyped (exprAnn e') e' ty
 annotateND' analysis vMap (TLet bs e) =
-  ALet (typeOf e, ann) bs' e' -- TODO passing of vMap is overly conservative by not updating
+  ALet (typeOf e, ann) bs' e'
   where
-    e' = annotateND' analysis vMap e
+    e' = annotateND' analysis vMap' e
+    vMap' = Map.union vMap (Map.fromList (map (\((i,(_,nd)),_) -> (i, nd)) bs'))
     ann = maximum (snd (exprAnn e') : map (snd . snd . fst) bs')
     bs' = map annBind bs
     annBind ((x, _), e2) =
