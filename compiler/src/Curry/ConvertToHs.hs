@@ -621,7 +621,7 @@ mkFlexValBranch :: Set.Set Int
                 -> CM (Exp ())
 mkFlexValBranch vset bs = do
   bs' <- mapM (convertDetBranchToMonadic vset) bs
-  return (Hs.LCase () bs')
+  return (Hs.LCase () (bs' ++ [failedMonadicBranch]))
 
 failedMonadicBranch :: Alt ()
 failedMonadicBranch = Alt () (PWildCard ())
