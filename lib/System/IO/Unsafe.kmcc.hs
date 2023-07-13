@@ -1,9 +1,13 @@
 {-# LANGUAGE MagicHash    #-}
 
+import BasicDefinitions
 import qualified Prelude as P
+import qualified System.IO.Unsafe as S
 
-iOdotUnsafedotunsafePerformIO_Det# = P.error "No implementation of unsafePerformIO_Det"
-iOdotUnsafedotunsafePerformIO_ND# = P.error "No implementation of unsafePerformIO_ND"
+iOdotUnsafedotunsafePerformIO_Det# = S.unsafePerformIO
+iOdotUnsafedotunsafePerformIO_ND# = P.return P.$ Func P.$ \x -> do
+  x' <- x
+  P.return (S.unsafePerformIO x')
 
 iOdotUnsafedotspawnConstraint_Det# = P.error "No implementation of spawnConstraint_Det"
 iOdotUnsafedotspawnConstraint_ND# = P.error "No implementation of spawnConstraint_ND"
