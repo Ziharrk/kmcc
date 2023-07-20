@@ -571,8 +571,15 @@ convertExprToMonadicHs vset (AComb _ _ (qname, _) args) = do -- (Partial) FuncCa
   applyToArgs mkMonadicApp id (Hs.Var () (convertFuncNameToMonadicHs qname)) args'
 convertExprToMonadicHs _ ex@(ALet (_, Det) _ _) = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs vset ex@(ALet _ bs e) = do
-  e' <- convertExprToMonadicHs vset e
-  bs' <- mapM (\((a, _), b) -> (indexToName a, , countVarUse ex a) <$> convertExprToMonadicHs vset b) bs
+  let detIdx ((i, (_, Det)), _) = Just i
+      detIdx _ = Nothing
+      vset' = Set.union vset (Set.fromList (mapMaybe detIdx bs))
+  res <- mapM (convertBindingToMonadic vset' ex) bs
+  -- bool = was deterministic
+  let collect (a, b, c, Just (x, y)) = [(a, b, c, True), (x, y, c, False)]
+      collect (a, b, c, Nothing) = [(a, b, c, False)]
+      bs' = concatMap collect res
+  e' <- convertExprToMonadicHs vset' e
   return $ mkShareLet e' bs'
 convertExprToMonadicHs vset (AFree _ vs e) = do
   e' <- convertExprToMonadicHs vset e
@@ -600,6 +607,18 @@ convertExprToMonadicHs vset (ACase _ _ e bs)
       return $ mkBind e' $ Hs.LCase () (bs' ++ [failedMonadicBranch])
 convertExprToMonadicHs _ ex@(ATyped (_, Det) _ _) = mkFromHaskell <$> convertToHs ex
 convertExprToMonadicHs vset (ATyped _ e ty) = ExpTypeSig () <$> convertExprToMonadicHs vset e <*> convertQualType ty
+
+convertBindingToMonadic :: Set.Set Int -> AExpr a
+                        -> ((Int, (b, NDInfo)), AExpr (TypeExpr, NDInfo))
+                        -> CM (Name (), Exp (), VarUse, Maybe (Name (), Exp ()))
+convertBindingToMonadic _ _ ((a, (_, Det)), b) =
+  (indexToName a, , One, nd)
+          <$> convertToHs b
+  where nd = Just (appendName "_nd" $ indexToName a
+                  , mkFromHaskell (Hs.Var () (UnQual () (indexToName a))))
+convertBindingToMonadic vset ex ((a, (_, NonDet)), b) =
+  (indexToName a, , countVarUse ex a, Nothing)
+          <$> convertExprToMonadicHs vset b
 
 mkFlexVarBranch :: Set.Set Int -> Name ()
                 -> ABranchExpr (TypeExpr, NDInfo)

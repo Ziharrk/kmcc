@@ -110,23 +110,25 @@ mkFromHaskellBind i = Let () (BDecls ()
 
 mkShareBind :: (Name (), Exp ()) -> Exp () -> Exp ()
 mkShareBind (v, e1@(App _ (Var _ fromHs) _)) e2 | fromHs == fromHaskellQualName =
-  Let () (BDecls () [PatBind () (PVar () v) (UnGuardedRhs () e1) Nothing]) e2
+  mkLetBind (v, e1) e2
 mkShareBind (v, e1) e2 = mkBind (mkShare e1) (Lambda () [PVar () v] e2)
 
 mkLetBind :: (Name (), Exp ()) -> Exp () -> Exp ()
 mkLetBind (v, e1) = Let () (BDecls () [PatBind () (PVar () v) (UnGuardedRhs () e1) Nothing])
 
-mkShareLet :: Exp () -> [(Name (), Exp (), VarUse)] -> Exp ()
+mkShareLet :: Exp () -> [(Name (), Exp (), VarUse, Bool)] -> Exp ()
 mkShareLet e [] = e
 mkShareLet e bs
-  | all (\(_, _, m) -> notMany m) bs = foldr (\(a, b, _) -> mkShareBind (a, b)) e bs
+  | all (\(_, _, m, _) -> notMany m) bs = foldr go e bs
   | otherwise = mkBind (mkMFix fixLam) bindLam
   where
+    go (a, b, _, True)  = mkLetBind (a, b)
+    go (a, b, _, False) = mkShareBind (a, b)
     notMany Many = False
     notMany _    = True
-    lamHead = Lambda () [mkLazyTuplePat $ map (\(v, _, _) -> PVar () v) bs]
+    lamHead = Lambda () [mkLazyTuplePat $ map (\(v, _, _, _) -> PVar () v) bs]
     fixLam = lamHead $ mkApplicativeChain (mkTupleCon (length bs))
-                     $ map (\(_, e',_) -> mkShare e') bs
+                     $ map (\(_, e',_, _) -> mkShare e') bs
     bindLam = lamHead e
 
 mkShare :: Exp () -> Exp ()
