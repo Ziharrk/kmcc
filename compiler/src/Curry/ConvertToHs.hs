@@ -803,6 +803,7 @@ defaultImports :: [ImportDecl ()]
 defaultImports =
   [ ImportDecl () (ModuleName () "Data.Kind") True False False Nothing Nothing Nothing
   , ImportDecl () (ModuleName () "BasicDefinitions") True False False Nothing Nothing Nothing
+  , ImportDecl () (ModuleName () "BasicDefinitions") True False False Nothing (Just (ModuleName () "B")) Nothing
   , ImportDecl () (ModuleName () "Control.Monad") True False False Nothing (Just (ModuleName () "M")) Nothing
   , ImportDecl () (ModuleName () "Control.Monad.Fix") True False False Nothing (Just (ModuleName () "M")) Nothing
   , ImportDecl () (ModuleName () "Prelude") True False False Nothing (Just (ModuleName () "P")) Nothing

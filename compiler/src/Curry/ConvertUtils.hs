@@ -198,40 +198,40 @@ mkAddVarIds :: Exp () -> [Exp ()] -> Exp ()
 mkAddVarIds e es = App () (App () (Var () addVarIdsQualName) e) (List () es)
 
 showsBracketsCurryQualName :: QName ()
-showsBracketsCurryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "showsBracketsCurry")
+showsBracketsCurryQualName = Qual () (ModuleName () "B") (Ident () "showsBracketsCurry")
 
 showSpaceCurryQualName :: QName ()
-showSpaceCurryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "showSpaceCurry")
+showSpaceCurryQualName = Qual () (ModuleName () "B") (Ident () "showSpaceCurry")
 
 showsFreePrecCurryQualName :: QName ()
-showsFreePrecCurryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "showsFreePrecCurry")
+showsFreePrecCurryQualName = Qual () (ModuleName () "B") (Ident () "showsFreePrecCurry")
 
 getVarIdQualName :: QName ()
-getVarIdQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "getVarId")
+getVarIdQualName = Qual () (ModuleName () "B") (Ident () "getVarId")
 
 addVarIdsQualName :: QName ()
-addVarIdsQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "addVarIds")
+addVarIdsQualName = Qual () (ModuleName () "B") (Ident () "addVarIds")
 
 mplusQualName :: QName ()
 mplusQualName = Qual () (ModuleName () "M") (Ident () "mplus")
 
 shareableQualName :: QName ()
-shareableQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Shareable")
+shareableQualName = Qual () (ModuleName () "B") (Ident () "Shareable")
 
 unifiableQualName :: QName ()
-unifiableQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Unifiable")
+unifiableQualName = Qual () (ModuleName () "B") (Ident () "Unifiable")
 
 narrowableQualName :: QName ()
-narrowableQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Narrowable")
+narrowableQualName = Qual () (ModuleName () "B") (Ident () "Narrowable")
 
 narrowSameConstrQualName :: QName ()
-narrowSameConstrQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "narrowConstr")
+narrowSameConstrQualName = Qual () (ModuleName () "B") (Ident () "narrowConstr")
 
 liftedFuncQualName :: QName ()
-liftedFuncQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "LiftedFunc")
+liftedFuncQualName = Qual () (ModuleName () "B") (Ident () "LiftedFunc")
 
 curryQualName :: QName ()
-curryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Curry")
+curryQualName = Qual () (ModuleName () "B") (Ident () "Curry")
 
 dollarApplicativeQualName :: QName ()
 dollarApplicativeQualName = Qual () (ModuleName () "P") (Symbol () "<$>")
@@ -240,25 +240,25 @@ starApplicativeQualName :: QName ()
 starApplicativeQualName = Qual () (ModuleName () "P") (Symbol () "<*>")
 
 fromHaskellQualName :: QName ()
-fromHaskellQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "fromHaskell")
+fromHaskellQualName = Qual () (ModuleName () "B") (Ident () "fromHaskell")
 
 toHaskellQualName :: QName ()
-toHaskellQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "toHaskell")
+toHaskellQualName = Qual () (ModuleName () "B") (Ident () "toHaskell")
 
 hsEquivQualName :: QName ()
-hsEquivQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "HsEquivalent")
+hsEquivQualName = Qual () (ModuleName () "B") (Ident () "HsEquivalent")
 
 hsToQualName :: QName ()
-hsToQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "ToHs")
+hsToQualName = Qual () (ModuleName () "B") (Ident () "ToHs")
 
 hsFromQualName :: QName ()
-hsFromQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "FromHs")
+hsFromQualName = Qual () (ModuleName () "B") (Ident () "FromHs")
 
 appQualName :: QName ()
-appQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "app")
+appQualName = Qual () (ModuleName () "B") (Ident () "app")
 
 freeQualName :: QName ()
-freeQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "free")
+freeQualName = Qual () (ModuleName () "B") (Ident () "free")
 
 failedQualName :: QName ()
 failedQualName = Qual () (ModuleName () "M") (Ident () "mzero")
@@ -267,22 +267,22 @@ bindQualName :: QName ()
 bindQualName = Qual () (ModuleName () "M") (Symbol () ">>=")
 
 shareQualName :: QName ()
-shareQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "share")
+shareQualName = Qual () (ModuleName () "B") (Ident () "share")
 
 curryClassQualName :: QName ()
-curryClassQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Curryable")
+curryClassQualName = Qual () (ModuleName () "B") (Ident () "Curryable")
 
 normalFormQualName :: QName ()
-normalFormQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "NormalForm")
+normalFormQualName = Qual () (ModuleName () "B") (Ident () "NormalForm")
 
 showFreeClassQualName :: QName ()
-showFreeClassQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "ShowFree")
+showFreeClassQualName = Qual () (ModuleName () "B") (Ident () "ShowFree")
 
 showStringCurryQualName :: QName ()
-showStringCurryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "showsStringCurry")
+showStringCurryQualName = Qual () (ModuleName () "B") (Ident () "showsStringCurry")
 
 primitiveQualName :: QName ()
-primitiveQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "HasPrimitiveInfo")
+primitiveQualName = Qual () (ModuleName () "B") (Ident () "HasPrimitiveInfo")
 
 returnQualName :: QName ()
 returnQualName = Qual () (ModuleName () "M") (Ident () "return")
@@ -297,46 +297,46 @@ mkReturnFunc :: Exp () -> Exp ()
 mkReturnFunc = App () (Var () returnFuncQualName)
 
 returnFuncQualName :: QName ()
-returnFuncQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "returnFunc")
+returnFuncQualName = Qual () (ModuleName () "B") (Ident () "returnFunc")
 
 valQualName :: QName ()
-valQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "Val")
+valQualName = Qual () (ModuleName () "B") (Ident () "Val")
 
 eitherToCurryQualName :: QName ()
-eitherToCurryQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "eitherToCurry")
+eitherToCurryQualName = Qual () (ModuleName () "B") (Ident () "eitherToCurry")
 
 unifyQualName :: QName ()
-unifyQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "unify")
+unifyQualName = Qual () (ModuleName () "B") (Ident () "unify")
 
 unifyWithQualName :: QName ()
-unifyWithQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "unifyWith")
+unifyWithQualName = Qual () (ModuleName () "B") (Ident () "unifyWith")
 
 lazyUnifyQualName :: QName ()
-lazyUnifyQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "unifyL")
+lazyUnifyQualName = Qual () (ModuleName () "B") (Ident () "unifyL")
 
 bindVarQualName :: QName ()
-bindVarQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "bindVar")
+bindVarQualName = Qual () (ModuleName () "B") (Ident () "bindVar")
 
 literalCaseQualName :: QName ()
-literalCaseQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "literalCase")
+literalCaseQualName = Qual () (ModuleName () "B") (Ident () "literalCase")
 
 addToVarHeapQualName :: QName ()
-addToVarHeapQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "addToVarHeapM")
+addToVarHeapQualName = Qual () (ModuleName () "B") (Ident () "addToVarHeapM")
 
 condSeqQualName :: QName ()
-condSeqQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "condSeq")
+condSeqQualName = Qual () (ModuleName () "B") (Ident () "condSeq")
 
 mainWrapperDetQualName :: QName ()
-mainWrapperDetQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "mainWrapperDet")
+mainWrapperDetQualName = Qual () (ModuleName () "B") (Ident () "mainWrapperDet")
 
 mainWrapperNDetQualName :: QName ()
-mainWrapperNDetQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "mainWrapperNDet")
+mainWrapperNDetQualName = Qual () (ModuleName () "B") (Ident () "mainWrapperNDet")
 
 exprWrapperDetQualName :: QName ()
-exprWrapperDetQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "exprWrapperDet")
+exprWrapperDetQualName = Qual () (ModuleName () "B") (Ident () "exprWrapperDet")
 
 exprWrapperNDetQualName :: QName ()
-exprWrapperNDetQualName = Qual () (ModuleName () "BasicDefinitions") (Ident () "exprWrapperNDet")
+exprWrapperNDetQualName = Qual () (ModuleName () "B") (Ident () "exprWrapperNDet")
 
 trueQualName :: QName ()
 trueQualName = Qual () (ModuleName () "P") (Ident () "True")
@@ -345,9 +345,12 @@ falseQualName :: QName ()
 falseQualName = Qual () (ModuleName () "P") (Ident () "False")
 
 searchStratQualName :: SearchStrat -> QName ()
-searchStratQualName DFS = Qual () (ModuleName () "BasicDefinitions") (Ident () "dfs")
-searchStratQualName BFS = Qual () (ModuleName () "BasicDefinitions") (Ident () "bfs")
-searchStratQualName FS  = Qual () (ModuleName () "BasicDefinitions") (Ident () "fs")
+searchStratQualName DFS = Qual () (ModuleName () "B") (Ident () "dfs")
+searchStratQualName BFS = Qual () (ModuleName () "B") (Ident () "bfs")
+searchStratQualName FS  = Qual () (ModuleName () "B") (Ident () "fs")
+
+anyHsQualName :: QName ()
+anyHsQualName = Qual () (ModuleName () "B") (Ident () "Any")
 
 appendName :: String -> Name () -> Name ()
 appendName suff (Ident  () s) = Ident  () (s ++ suff)
