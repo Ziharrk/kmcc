@@ -125,7 +125,7 @@ process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
 hsPrettyPrintMode :: PPHsMode
-hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPOffsideRule False
+hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPNoLayout False
 
 hsPrettyPrintStyle :: Style
 hsPrettyPrintStyle = Style PageMode 500 2
