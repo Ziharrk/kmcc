@@ -21,6 +21,7 @@ executable kmcc_c
                       Curry.ConvertUtils,
                       Curry.FrontendUtils,
                       Curry.GenInstances,
+                      Curry.Default,
                       Haskell.ExtsInstances,
                       Haskell.GHCInvokation,
                       Paths_kmcc,

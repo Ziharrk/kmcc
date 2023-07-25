@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes    #-}
 {-# LANGUAGE DerivingStrategies     #-}
 {-# LANGUAGE LambdaCase             #-}
+{-# LANGUAGE QuantifiedConstraints  #-}
 {-# LANGUAGE RecordWildCards        #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE UnboxedTuples          #-}
@@ -18,6 +19,7 @@ import Control.Exception (throw, catch, evaluate, Exception)
 import Control.Monad (MonadPlus(..), (>=>))
 import Control.Monad.Codensity (lowerCodensity)
 import Control.Monad.State (modify, MonadState(put, get), StateT(runStateT))
+import Data.Kind
 import Data.List (intercalate, sortOn)
 import qualified Data.Set as Set
 import GHC.IO.Exception (IOException(..), IOErrorType(..))
@@ -553,3 +555,109 @@ primitive2Bool sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
 allVars :: CurryVal a -> [Integer]
 allVars (Var _ i) = [i]
 allVars _         = []
+
+-- A type variable of any kind can be defaulted to `Any`.
+-- Every required instance is provided for `Any`.
+type Any :: forall k. k
+type family Any where
+  Any @Type = None
+  Any @(a -> Type) = IgnoreKind
+
+type None :: Type
+data None
+
+type instance HsEquivalent None = None
+
+instance ToHs None where
+  to = error "FFI Error: 'To' Conversion on ambigouous type variable"
+
+instance FromHs None where
+  from = error "FFI Error: 'From' Conversion on ambigouous type variable"
+
+instance HasPrimitiveInfo None where
+  primitiveInfo = NoPrimitive
+
+instance Narrowable None where
+  narrow = error "narrowing an ambigouous type variable is not possible"
+  narrowConstr _ = error "narrowing an ambigouous type variable is not possible"
+
+instance NormalForm None where
+  nfWith _ _ = error "normalizing an ambigouous type variable is not possible"
+
+instance Unifiable None where
+  unifyWith _ _ _ = error "unifying an ambigouous type variable is not possible"
+  lazyUnifyVar _ _ = error "lazily unifying an ambigouous type variable is not possible"
+
+instance ShowFree None where
+  showsFreePrec _ _ = error "showing an ambigouous type variable is not possible"
+
+instance Curryable None
+
+type IgnoreKind :: k -> Type
+data IgnoreKind a
+
+type instance HsEquivalent IgnoreKind = IgnoreKind
+type instance HsEquivalent (IgnoreKind a) = IgnoreKind (HsEquivalent a)
+
+instance ToHs (IgnoreKind a) where
+  to = error "FFI Error: 'To' Conversion on ambigouous type variable"
+
+instance FromHs (IgnoreKind a) where
+  from = error "FFI Error: 'From' Conversion on ambigouous type variable"
+
+instance HasPrimitiveInfo (IgnoreKind a) where
+  primitiveInfo = NoPrimitive
+
+instance Narrowable (IgnoreKind a) where
+  narrow = error "narrowing an ambigouous type variable is not possible"
+  narrowConstr _ = error "narrowing an ambigouous type variable is not possible"
+
+instance NormalForm (IgnoreKind a) where
+  nfWith _ _ = error "normalizing an ambigouous type variable is not possible"
+
+instance Unifiable (IgnoreKind a) where
+  unifyWith _ _ _ = error "unifying an ambigouous type variable is not possible"
+  lazyUnifyVar _ _ = error "lazily unifying an ambigouous type variable is not possible"
+
+instance ShowFree (IgnoreKind a) where
+  showsFreePrec _ _ = error "showing an ambigouous type variable is not possible"
+
+instance Curryable (IgnoreKind a)
+
+{-
+-- Testing Code:
+
+-- If this does not compile, defaultiong does not work correctly.
+-- This is commented out to not pollute the module.
+-- Note that -XQuantifiedConstraints is required for this to work.
+
+type Test = Any (Int -> Int -> Int)
+
+test :: Curry Int
+test = lengthC (nilC :: Curry (L Any Any))
+
+data L f a = N | C (Curry (f a)) (Curry (L f a))
+
+nilC :: Curry (L f a)
+nilC = return N
+
+lengthC :: forall f a. (forall x. Curryable x => Curryable (f x), Curryable a)
+        => Curry (L f a) -> Curry Int
+lengthC l = l >>= \case
+  N -> return 0
+  C _ xs -> returnFunc (fmap (+1)) `app` lengthC xs
+
+data Ln a = L (Curry (Ln a))
+data LD a = LD (LD a)
+type instance HsEquivalent Ln = LD
+type instance HsEquivalent (Ln a) = LD (HsEquivalent a)
+data Flat a = Flat (HsEquivalent a)
+
+instance FromHs (Ln a) where
+  from = undefined
+
+test2 :: forall a. Curryable a => Curry (Flat (Ln a) :-> Int)
+test2 = returnFunc (\x' -> x' >>= \(Flat (LD x)) ->
+  let x_nd = fromHaskell x
+  in return 1)
+-}

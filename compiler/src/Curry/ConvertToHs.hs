@@ -46,6 +46,7 @@ import Curry.Analysis (NDAnalysisResult, NDInfo (..))
 import Curry.Annotate (annotateND, exprAnn, annotateND')
 import Curry.CompileToFlat (externalName)
 import Curry.ConvertUtils
+import Curry.Default (defaultAmbiguousDecl, anyQName)
 import Curry.GenInstances (genInstances)
 
 newtype CM a = CM {
@@ -142,14 +143,15 @@ instance ToHs TProgWithFilePath where
     (header, curryImports, curryDs) <- do
         im' <- mapM (convertToHs . IS) im
         tyds <- mapM convertToHs tys
-        funds <- mapM convertToHs fs
+        let defaultedFs = map defaultAmbiguousDecl fs
+        funds <- mapM convertToHs defaultedFs
         tydsM <- mapM convertToMonadicHs tys
         fs' <- case mi of
-          Just ty -> patchMainPre ty opts fs
-          Nothing -> return fs
+          Just ty -> patchMainPre ty opts defaultedFs
+          Nothing -> return defaultedFs
         fundsM <- mapM convertToMonadicHs fs'
         let visT = mapMaybe getVisT tys
-        let visF = mapMaybe getVisF fs
+        let visF = mapMaybe getVisF defaultedFs
         header <- convertToHs (MS (nm, visT, visF))
         let extract (Just (x, y)) = [x,y]
             extract Nothing = []
@@ -267,7 +269,7 @@ patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do
           let bindingOpt = Hs.Var () $ if optShowBindings opts then trueQualName else falseQualName
           let searchOpt = Hs.Var () (searchStratQualName (optSearchStrategy opts))
           let intOpt = Hs.Var () $ if optInteractive opts then trueQualName else falseQualName
-          return (App () (App () (App () ( App () ( App () (Hs.Var () exprWrapperNDetQualName) searchOpt ) intOpt )varInfos) bindingOpt) mainE, mainNDDecl:mainNDHashDecl:mainNDHashType:rest)
+          return (App () (App () (App () ( App () ( App () (Hs.Var () exprWrapperNDetQualName) searchOpt ) intOpt ) varInfos) bindingOpt) mainE, mainNDDecl:mainNDHashDecl:mainNDHashType:rest)
 
   let mainDecl = PatBind () (PVar () (Ident () "main##")) (UnGuardedRhs () mainExpr) Nothing
   return (ModuleHead () nm w (Just (ExportSpecList () (mainExport:es))), mainDecl:ds')
@@ -702,10 +704,9 @@ convertBranchToMonadicHs vSet (ABranch pat e)
 
 mkFlatPattern :: QName -> TypeExpr -> [Int] -> Pat ()
 mkFlatPattern qname ty args =
-  PApp () (convertQualNameToFlatQualName (typeExprQualName ty)) $
-  return $
-  PApp () (convertTypeNameToHs qname) $
-  map (PVar () . indexToName) args
+  PApp () (convertQualNameToFlatQualName (typeExprQualName ty))
+  [PApp () (convertTypeNameToHs qname) $
+  map (PVar () . indexToName) args]
   where
    typeExprQualName x = case x of
      TCons qname' _   -> qname'
@@ -756,11 +757,15 @@ instance ToMonadicHsName UnqualName where
   convertFuncNameToMonadicHs (Unqual (_, s)) = Ident () $ escapeFuncName s ++ "_ND"
 
 instance ToHsName QName where
-  convertTypeNameToHs n@(m, _) = Hs.Qual () (ModuleName () (convertModName m)) (convertTypeNameToHs (Unqual n))
+  convertTypeNameToHs n@(m, _)
+    | n == anyQName = anyHsQualName
+    | otherwise = Hs.Qual () (ModuleName () (convertModName m)) (convertTypeNameToHs (Unqual n))
   convertFuncNameToHs n@(m, _) = Hs.Qual () (ModuleName () (convertModName m)) (convertFuncNameToHs (Unqual n))
 
 instance ToMonadicHsName QName where
-  convertTypeNameToMonadicHs n@(m, _) = Hs.Qual () (ModuleName () (convertModName m)) (convertTypeNameToMonadicHs (Unqual n))
+  convertTypeNameToMonadicHs n@(m, _)
+    | n == anyQName = anyHsQualName
+    | otherwise = Hs.Qual () (ModuleName () (convertModName m)) (convertTypeNameToMonadicHs (Unqual n))
   convertFuncNameToMonadicHs n@(m, _) = Hs.Qual () (ModuleName () (convertModName m)) (convertFuncNameToMonadicHs (Unqual n))
 
 convertQualNameToFlatName :: QName -> Name ()
