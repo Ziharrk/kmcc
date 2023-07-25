@@ -16,8 +16,7 @@ genInstances (Type _ _ _ []) = []
 genInstances (Type qname _ vs cs) =
   [hsShowFreeDecl | not (isListOrTuple qname)]
   ++
-  map hsEquivDecl [0..length vs] ++
-  [ hsToDecl, hsFromDecl, hsNarrowableDecl
+  [ hsEquivDecl 0, hsToDecl, hsFromDecl, hsNarrowableDecl
   , hsUnifiableDecl, hsPrimitiveDecl, hsNormalFormDecl, hsCurryDecl ]
   where
     hsEquivDecl arity = TypeInsDecl () (TyApp () (TyCon () hsEquivQualName)
@@ -123,7 +122,7 @@ genInstances (Type qname _ vs cs) =
       [PVar () (Ident () "_p"), PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkShowsFreePrecImpl qname2 ar]] ++
       [Match () (Ident () "showsFreePrec")
-      [PVar () (Ident () "_p"), mkFlatPattern qname2 (TCons qname []) [1..ar]]
+      [PVar () (Ident () "_p"), PAsPat () (Ident () "_x") (mkFlatPattern qname2 (TCons qname []) [1..ar])]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkShowsFreePrecDetImpl qname2 ar]]
 
 
@@ -201,16 +200,10 @@ genInstances (Type qname _ vs cs) =
         (foldl1 mkShowSpace (mkShowStringCurry (snd qname2) :
           map (mkShowsCurryHighPrec . Hs.Var () . UnQual () . indexToName) [1..ar]))
     mkShowsFreePrecDetImpl qname2 0 = mkShowStringCurry (snd qname2)
-    mkShowsFreePrecDetImpl qname2 ar
-      | isOpQName qname2 =
-        mkShowsBrackets (Hs.Var () (UnQual () (Ident () "_p")))
-        (mkShowSpace (mkShowSpace (mkShowsCurryHighPrec (mkFromHaskell $ Hs.Var () $ UnQual () $ indexToName 1))
-          (mkShowStringCurry (snd qname2)))
-          (mkShowsCurryHighPrec (mkFromHaskell $ Hs.Var () $ UnQual () $ indexToName 2)))
-      | otherwise        =
-        mkShowsBrackets (Hs.Var () (UnQual () (Ident () "_p")))
-        (foldl1 mkShowSpace (mkShowStringCurry (snd qname2) :
-          map (mkShowsCurryHighPrec . mkFromHaskell . Hs.Var () . UnQual () . indexToName) [1..ar]))
+    mkShowsFreePrecDetImpl qname2 ar = mkShowsFreePrec (Hs.Var () (UnQual () (Ident () "_p"))) $
+                                       (`mkAsTypeOf` Hs.Var () (UnQual () (Ident () "_x"))) $
+                                       foldl (Hs.App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2)) $
+                                       map (mkFromHaskell . Hs.Var () . UnQual () . indexToName) [1..ar]
 
     maybeAddReturnTrue [] = [Qualifier () $ mkReturn (Hs.Var () trueQualName)]
     maybeAddReturnTrue xs = xs

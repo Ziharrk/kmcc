@@ -125,7 +125,7 @@ process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
 hsPrettyPrintMode :: PPHsMode
-hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPNoLayout False
+hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPOffsideRule False
 
 hsPrettyPrintStyle :: Style
 hsPrettyPrintStyle = Style PageMode 500 2
@@ -664,14 +664,14 @@ convertDetBranchToMonadic vSet (ABranch pat e)
       return (Alt () pat' (UnGuardedRhs () (mkFromHaskell e')) Nothing)
   | otherwise = do
       pat' <- convertToHs pat
-      let vsNames = case pat of
-                      APattern _ _ args -> map fst args
-                      _                 -> []
-      let vSet' = Set.union vSet (Set.fromList vsNames)
+      vsNames <- case pat of
+                  APattern _ _ args -> mapM (\(i, (ty, _)) -> (i,) <$> convertToMonadicHs ty) args
+                  _                 -> return []
+      let vSet' = Set.union vSet (Set.fromList (map fst vsNames))
       analysis <- ask
       let annE = annotateND' analysis (Map.fromSet (const Det) vSet') (genTypedExpr (fmap fst e))
       e' <- convertExprToMonadicHs vSet' annE
-      return (Alt () pat' (UnGuardedRhs () (foldr mkFromHaskellBind e' vsNames)) Nothing)
+      return (Alt () pat' (UnGuardedRhs () (foldr (uncurry mkFromHaskellBind) e' vsNames)) Nothing)
 
 convertBranchToMonadicHs :: Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM [Alt ()]
 convertBranchToMonadicHs vSet (ABranch pat e)
@@ -693,13 +693,14 @@ convertBranchToMonadicHs vSet (ABranch pat e)
       case pat of
         APattern _ (qname@(_, baseName), (ty', _)) vs
           | not ("_Dict#" `isPrefixOf` baseName) -> do
-          let vsNames = map fst vs
+          vsTyped <- mapM (\(i, (ty, _)) -> (i,) <$> convertToMonadicHs ty) vs
+          let vsNames = map fst vsTyped
           let vSet' = Set.union vSet (Set.fromList vsNames)
           analysis <- ask
           let annE = annotateND' analysis (Map.fromSet (const Det) vSet') (genTypedExpr (fmap fst e))
           e' <- convertExprToMonadicHs vSet' annE
           let pat' = mkFlatPattern qname ty' vsNames
-          return [alt1, Alt () pat' (UnGuardedRhs () (foldr mkFromHaskellBind e' vsNames)) Nothing]
+          return [alt1, Alt () pat' (UnGuardedRhs () (foldr (uncurry mkFromHaskellBind) e' vsTyped)) Nothing]
         _ -> return [alt1]
 
 mkFlatPattern :: QName -> TypeExpr -> [Int] -> Pat ()

@@ -103,10 +103,10 @@ countVarUse (ACase _ _ e bs) vidx = maximum (map (\(ABranch _ e') -> scrUse <> c
 countVarUse (ALit _ _) _ = None
 countVarUse (ATyped _ e _) vidx = countVarUse e vidx
 
-mkFromHaskellBind :: Int -> Exp () -> Exp ()
-mkFromHaskellBind i = Let () (BDecls ()
+mkFromHaskellBind :: Int -> Type () -> Exp () -> Exp ()
+mkFromHaskellBind i ty = Let () (BDecls ()
   [PatBind () (PVar () (appendName "_nd" (indexToName i)))
-    (UnGuardedRhs () (mkFromHaskell (Var () (UnQual () (indexToName i))))) Nothing])
+    (UnGuardedRhs () (ExpTypeSig () (mkFromHaskell (Var () (UnQual () (indexToName i)))) (mkCurry ty))) Nothing])
 
 mkShareBind :: (Name (), Exp ()) -> Exp () -> Exp ()
 mkShareBind (v, e1@(App _ (Var _ fromHs) _)) e2 | fromHs == fromHaskellQualName =
@@ -185,6 +185,12 @@ mkShowStringCurry s = App () (Var () showStringCurryQualName) (Lit () (String ()
 mkShowsCurryHighPrec :: Exp () -> Exp ()
 mkShowsCurryHighPrec = App () (App () (Var () showsFreePrecCurryQualName) (Lit () (Int () 9 "9")))
 
+mkShowsFreePrec :: Exp () -> Exp () -> Exp ()
+mkShowsFreePrec e1 = App () (App () (Var () showsFreePrecQualName) e1)
+
+mkAsTypeOf :: Exp () -> Exp () -> Exp ()
+mkAsTypeOf e1 = App () (App () (Var () asTypeOfQualName) e1)
+
 mkShowSpace :: Exp () -> Exp () -> Exp ()
 mkShowSpace e1 = App () (App () (Var () showSpaceCurryQualName) e1)
 
@@ -205,6 +211,12 @@ showSpaceCurryQualName = Qual () (ModuleName () "B") (Ident () "showSpaceCurry")
 
 showsFreePrecCurryQualName :: QName ()
 showsFreePrecCurryQualName = Qual () (ModuleName () "B") (Ident () "showsFreePrecCurry")
+
+showsFreePrecQualName :: QName ()
+showsFreePrecQualName = Qual () (ModuleName () "B") (Ident () "showsFreePrec")
+
+asTypeOfQualName :: QName ()
+asTypeOfQualName = Qual () (ModuleName () "P") (Ident () "asTypeOf")
 
 getVarIdQualName :: QName ()
 getVarIdQualName = Qual () (ModuleName () "B") (Ident () "getVarId")
