@@ -32,6 +32,7 @@ import Tree (Tree, dfs, bfs, fs)
 import Data.SBV (SBV, (.===), sNot)
 
 type family HsEquivalent (a :: k) = (b :: k) | b -> a
+type instance HsEquivalent (a b) = HsEquivalent a (HsEquivalent b)
 
 class ToHs a where
   to :: a -> Curry (HsEquivalent a)
@@ -195,7 +196,6 @@ instance ShowFree Char where
 instance Curryable Char
 
 type instance HsEquivalent IO = IO
-type instance HsEquivalent (IO a) = IO (HsEquivalent a)
 
 instance ToHs (IO a) where
   to = error "FFI Error: 'To' Conversion on IO"
@@ -230,8 +230,6 @@ instance Exception Failed
 type LiftedFunc = (:->)
 
 type instance HsEquivalent LiftedFunc = (->)
-type instance HsEquivalent (LiftedFunc a) = (->) (HsEquivalent a)
-type instance HsEquivalent (LiftedFunc a b) = (->) (HsEquivalent a) (HsEquivalent b)
 
 instance ToHs (LiftedFunc a b) where
   to _ = error "FFI Error: 'To' Conversion on functions"
@@ -597,7 +595,6 @@ type IgnoreKind :: k -> Type
 data IgnoreKind a
 
 type instance HsEquivalent IgnoreKind = IgnoreKind
-type instance HsEquivalent (IgnoreKind a) = IgnoreKind (HsEquivalent a)
 
 instance ToHs (IgnoreKind a) where
   to = error "FFI Error: 'To' Conversion on ambigouous type variable"
