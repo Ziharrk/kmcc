@@ -611,13 +611,14 @@ convertExprToMonadicHs _ ex@(ATyped (_, Det) _ _) = mkFromHaskell <$> convertToH
 convertExprToMonadicHs vset (ATyped _ e ty) = ExpTypeSig () <$> convertExprToMonadicHs vset e <*> convertQualType ty
 
 convertBindingToMonadic :: Set.Set Int -> AExpr a
-                        -> ((Int, (b, NDInfo)), AExpr (TypeExpr, NDInfo))
+                        -> ((Int, (TypeExpr, NDInfo)), AExpr (TypeExpr, NDInfo))
                         -> CM (Name (), Exp (), VarUse, Maybe (Name (), Exp ()))
-convertBindingToMonadic _ _ ((a, (_, Det)), b) =
+convertBindingToMonadic _ _ ((a, (ty, Det)), b) = do
+  ty' <- convertToMonadicHs ty
+  let nd = Just (appendName "_nd" $ indexToName a
+                , ExpTypeSig () (mkFromHaskell (Hs.Var () (UnQual () (indexToName a)))) (mkCurry ty'))
   (indexToName a, , One, nd)
           <$> convertToHs b
-  where nd = Just (appendName "_nd" $ indexToName a
-                  , mkFromHaskell (Hs.Var () (UnQual () (indexToName a))))
 convertBindingToMonadic vset ex ((a, (_, NonDet)), b) =
   (indexToName a, , countVarUse ex a, Nothing)
           <$> convertExprToMonadicHs vset b
