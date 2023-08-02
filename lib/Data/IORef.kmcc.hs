@@ -9,19 +9,18 @@ import BasicDefinitions
 
 -- Curryable instance for S.Handle
 type instance HsEquivalent D.IORef = D.IORef
-type instance HsEquivalent (D.IORef a) = (D.IORef a)
 
 instance ToHs (D.IORef a) where
-  to = P.return
+  to = P.error "FFI Error: 'To' Conversion on IORef"
 
 instance FromHs (D.IORef a) where
-  from = P.id
+  from x  = P.error "FFI Error: 'From' Conversion on IORef"
   
 instance ShowFree (D.IORef a) where
   showsFreePrec _ _ = showsStringCurry "<<IORef>>"
 
 instance NormalForm (D.IORef a) where
-  nfWith _ !x = P.return (P.Right x)
+  nfWith _ !x = P.return (P.Left (Val x))
   
 instance Narrowable (D.IORef a) where
   narrow = P.error "narrowing an IORef is not possible"
@@ -45,7 +44,7 @@ type IORef_ND# = D.IORef
 iORefdotnewIORef_Det# = D.newIORef
 iORefdotnewIORef_ND# = P.return P.$ Func P.$ \x -> do
   x' <- x
-  P.return (P.fmap from (D.newIORef x'))
+  P.return (D.newIORef x')
 
 iORefdotprimuscorereadIORef_Det# = D.readIORef
 iORefdotprimuscorereadIORef_ND# = P.return P.$ Func P.$ \x -> do
