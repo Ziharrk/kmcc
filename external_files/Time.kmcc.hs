@@ -5,9 +5,10 @@ import qualified Data.Time.Clock.POSIX as D
 import qualified Data.Time.Clock as D
 import qualified Data.Time.LocalTime as D
 import qualified Data.Time.Calendar as D
+import BasicDefinitions
 
 timedotgetClockTime_Det# = D.getPOSIXTime P.>>= \x -> P.return (CTime_Det (P.floor x))
-timedotgetClockTime_ND# = P.error ""
+timedotgetClockTime_ND# = P.return (P.fmap from timedotgetClockTime_Det#)
 
 timedotprimuscoretoCalendarTime_Det# (CTime_Det t) = do 
   let utcTime = D.posixSecondsToUTCTime (P.fromInteger t)
@@ -17,7 +18,7 @@ timedotprimuscoretoCalendarTime_Det# (CTime_Det t) = do
   let (yr, mnth, day) = D.toGregorian (D.localDay locTime)
   let tod = D.localTimeOfDay locTime
   P.return (CalendarTime_Det yr (P.toInteger mnth) (P.toInteger day) (P.toInteger (D.todHour tod)) (P.toInteger (D.todMin tod)) (P.toInteger (P.floor (D.todSec tod))) (timeZone P.* 60))
-timedotprimuscoretoCalendarTime_ND# = P.error ""
+timedotprimuscoretoCalendarTime_ND# = liftConvertIO1 timedotprimuscoretoCalendarTime_Det#
 
 timedotprimuscoretoUTCTime_Det# (CTime_Det t) =
   CalendarTime_Det yr (P.toInteger mnth) (P.toInteger day) (P.toInteger (D.todHour tod)) (P.toInteger (D.todMin tod)) (P.toInteger (P.floor (D.todSec tod))) timeZone
@@ -27,7 +28,7 @@ timedotprimuscoretoUTCTime_Det# (CTime_Det t) =
   timeZone = P.toInteger (D.timeZoneMinutes D.utc)
   tod = D.localTimeOfDay locTime
   (yr, mnth, day) = D.toGregorian (D.localDay locTime)
-timedotprimuscoretoUTCTime_ND# = P.error ""
+timedotprimuscoretoUTCTime_ND# = liftConvert1 timedotprimuscoretoUTCTime_Det#
 
 timedotprimuscoretoClockTime_Det# (CalendarTime_Det yr mnth day hr min sec zone) =
   CTime_Det time
@@ -39,4 +40,4 @@ timedotprimuscoretoClockTime_Det# (CalendarTime_Det yr mnth day hr min sec zone)
   utcTime = D.localTimeToUTC timeZone locTime
   posixTime = D.utcTimeToPOSIXSeconds utcTime
   time = P.floor posixTime
-timedotprimuscoretoClockTime_ND# = P.error ""
+timedotprimuscoretoClockTime_ND# = liftConvert1 timedotprimuscoretoClockTime_Det#
