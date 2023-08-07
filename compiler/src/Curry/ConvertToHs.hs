@@ -18,7 +18,7 @@ import Control.Monad.State (StateT, MonadState (..), evalStateT, modify)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Coerce (coerce)
 import Data.Char (toLower, toUpper)
-import Data.List (isPrefixOf, find, (\\), intercalate, unfoldr)
+import Data.List (isPrefixOf, find, (\\), intercalate, unfoldr, partition)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Maybe (mapMaybe)
@@ -575,14 +575,19 @@ convertExprToMonadicHs _ ex@(ALet (_, Det) _ _) = mkFromHaskell <$> convertToHs 
 convertExprToMonadicHs vset ex@(ALet _ bs e) = do
   let detIdx ((i, (_, Det)), _) = Just i
       detIdx _ = Nothing
+      isDet ((_, (_, Det)), _) = True
+      isDet _ = False
       vset' = Set.union vset (Set.fromList (mapMaybe detIdx bs))
-  res <- mapM (convertBindingToMonadic vset' ex) bs
+      (d, nd) = partition isDet bs
+  ndres <- mapM (convertBindingToMonadic vset' ex) nd
+  dres <- mapM (convertBindingToMonadic vset' ex) d
   -- bool = was deterministic
   let collect (a, b, c, Just (x, y)) = [(a, b, c, True), (x, y, c, False)]
       collect (a, b, c, Nothing) = [(a, b, c, False)]
-      bs' = concatMap collect res
+      bsd = concatMap collect dres
+      bsnd = concatMap collect ndres
   e' <- convertExprToMonadicHs vset' e
-  return $ mkShareLet e' bs'
+  return $ mkShareLet (mkShareLet e' bsnd) bsd
 convertExprToMonadicHs vset (AFree _ vs e) = do
   e' <- convertExprToMonadicHs vset e
   return $ foldr (mkShareBind . (,mkFree) . indexToName . fst) e' vs
