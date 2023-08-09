@@ -558,8 +558,10 @@ convertExprToMonadicHs vset (AVar _ idx) = if idx `elem` vset
   then return $ Hs.Var () (UnQual () (appendName "_nd" (indexToName idx)))
   else return $ Hs.Var () (UnQual () (indexToName idx))
 convertExprToMonadicHs _ (ALit _ lit) = return $ mkReturn $ convertLit (Paren ()) (Hs.Lit ()) lit
-convertExprToMonadicHs _ ex@(AComb (_, Det) FuncCall _ _)  = mkFromHaskell <$> convertToHs ex
-convertExprToMonadicHs _ ex@(AComb (_, Det) ConsCall  _ _) = mkFromHaskell <$> convertToHs ex
+convertExprToMonadicHs _ ex@(AComb (ty, Det) FuncCall _ _)  =
+  mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
+convertExprToMonadicHs _ ex@(AComb (ty, Det) ConsCall  _ _) =
+  mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
 convertExprToMonadicHs vset (AComb _ ConsCall (qname, _) args) = do
   args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
   applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) args'
@@ -571,7 +573,8 @@ convertExprToMonadicHs vset (AComb _ (ConsPartCall missing) (qname, _) args) = d
 convertExprToMonadicHs vset (AComb _ _ (qname, _) args) = do -- (Partial) FuncCall
   args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
   applyToArgs mkMonadicApp id (Hs.Var () (convertFuncNameToMonadicHs qname)) args'
-convertExprToMonadicHs _ ex@(ALet (_, Det) _ _) = mkFromHaskell <$> convertToHs ex
+convertExprToMonadicHs _ ex@(ALet (ty, Det) _ _) =
+  mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
 convertExprToMonadicHs vset ex@(ALet _ bs e) = do
   let detIdx ((i, (_, Det)), _) = Just i
       detIdx _ = Nothing
@@ -602,7 +605,8 @@ convertExprToMonadicHs vset (ACase _ Flex e bs)
     return $ mkLiteralCase e' (Hs.Lambda () [Hs.PVar () i] bs1) bs2
   where isLitPat (ABranch (ALPattern _ _) _) = True
         isLitPat _ = False
-convertExprToMonadicHs _ ex@(ACase (_, Det) _ _ _) = mkFromHaskell <$> convertToHs ex
+convertExprToMonadicHs _ ex@(ACase (ty, Det) _ _ _) =
+  mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
 convertExprToMonadicHs vset (ACase _ _ e bs)
   | (_, Det) <- exprAnn e = do
       e' <- convertToHs e
@@ -612,7 +616,8 @@ convertExprToMonadicHs vset (ACase _ _ e bs)
       e' <- convertExprToMonadicHs vset e
       bs' <- concat <$> mapM (convertBranchToMonadicHs vset) bs
       return $ mkBind e' $ Hs.LCase () (bs' ++ [failedMonadicBranch])
-convertExprToMonadicHs _ ex@(ATyped (_, Det) _ _) = mkFromHaskell <$> convertToHs ex
+convertExprToMonadicHs _ ex@(ATyped (ty, Det) _ _) =
+  mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
 convertExprToMonadicHs vset (ATyped _ e ty) = ExpTypeSig () <$> convertExprToMonadicHs vset e <*> convertQualType ty
 
 convertBindingToMonadic :: Set.Set Int -> AExpr a
@@ -621,7 +626,7 @@ convertBindingToMonadic :: Set.Set Int -> AExpr a
 convertBindingToMonadic _ _ ((a, (ty, Det)), b) = do
   ty' <- convertToMonadicHs ty
   let nd = Just (appendName "_nd" $ indexToName a
-                , ExpTypeSig () (mkFromHaskell (Hs.Var () (UnQual () (indexToName a)))) (mkCurry ty'))
+                , mkFromHaskellTyped (Hs.Var () (UnQual () (indexToName a))) ty')
   (indexToName a, , One, nd)
           <$> convertToHs b
 convertBindingToMonadic vset ex ((a, (_, NonDet)), b) =
@@ -664,10 +669,11 @@ instance ToHs (ABranchExpr (TypeExpr, NDInfo)) where
 
 convertDetBranchToMonadic :: Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM (Alt ())
 convertDetBranchToMonadic vSet (ABranch pat e)
-  | (_, Det) <- exprAnn e = do
+  | (ty, Det) <- exprAnn e = do
+      mty <- convertToMonadicHs ty
       e' <- convertToHs e
       pat' <- convertToHs pat
-      return (Alt () pat' (UnGuardedRhs () (mkFromHaskell e')) Nothing)
+      return (Alt () pat' (UnGuardedRhs () (mkFromHaskellTyped e' mty)) Nothing)
   | otherwise = do
       pat' <- convertToHs pat
       vsNames <- case pat of
@@ -681,9 +687,10 @@ convertDetBranchToMonadic vSet (ABranch pat e)
 
 convertBranchToMonadicHs :: Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM [Alt ()]
 convertBranchToMonadicHs vSet (ABranch pat e)
-  | (_, Det) <- exprAnn e = do
+  | (ty, Det) <- exprAnn e = do
       e' <- convertToHs e
-      let transE = mkFromHaskell e'
+      mty <- convertToMonadicHs ty
+      let transE = mkFromHaskellTyped e' mty
       pat1 <- convertToMonadicHs pat
       let alt2 = case pat of
                    APattern _ (qname, (ty', _)) args ->

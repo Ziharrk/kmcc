@@ -29,6 +29,9 @@ mkApplicativeChain e xs = InfixApp () e (QVarOp () dollarApplicativeQualName)
 mkFromHaskell :: Exp () -> Exp ()
 mkFromHaskell = App () (Var () fromHaskellQualName)
 
+mkFromHaskellTyped :: Exp () -> Type () -> Exp ()
+mkFromHaskellTyped e = ExpTypeSig () (mkFromHaskell e) . mkCurry
+
 mkToHaskell :: Exp () -> Exp ()
 mkToHaskell = App () (Var () toHaskellQualName)
 
