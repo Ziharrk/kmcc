@@ -238,11 +238,21 @@ patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do
   let mainExport = EVar () (Qual () nm (Ident () "main##"))
 
   (mainExpr, ds') <- case ty of
-      TCons ("Prelude","IO") _
-        | hasDetMain -> return (App () (Hs.Var () mainWrapperDetQualName) (Hs.Var () (Qual () nm (Ident () "main_Det"))), ds)
-        | otherwise  -> return (App () (Hs.Var () mainWrapperNDetQualName) (Hs.Var () (Qual () nm (Ident () "main_ND"))), ds)
+      TCons ("Prelude","IO") [aty]
+        | hasDetMain -> do
+          resTy <- convertToMonadicHs aty
+          return (App () (App () (Hs.Var () mainWrapperDetQualName) (TypeApp () (TyParen () resTy)))
+                    (Hs.Var () (Qual () nm (Ident () "main_Det"))), ds)
+        | otherwise  ->  do
+          resTy <- convertToMonadicHs aty
+          return (App () (App () (Hs.Var () mainWrapperNDetQualName) (TypeApp () (TyParen () resTy)))
+                    (Hs.Var () (Qual () nm (Ident () "main_ND"))), ds)
       _
-        | hasDetMain -> return (App () (App () (Hs.Var () exprWrapperDetQualName) (Hs.Var () (searchStratQualName (optSearchStrategy opts))) ) (Hs.Var () (Qual () nm (Ident () "main_Det"))), ds)
+        | hasDetMain -> do
+          resTy <- convertToMonadicHs ty
+          return (App () (App () (App () (Hs.Var () exprWrapperDetQualName) (TypeApp () (TyParen () resTy)))
+                    (Hs.Var () (searchStratQualName (optSearchStrategy opts))) )
+                    (Hs.Var () (Qual () nm (Ident () "main_Det"))), ds)
         | otherwise  -> do
           let findMainDecl [] = throwError $ return @[] $ Message NoSpanInfo $ text "Main function not found"
               findMainDecl ((FunBind _ [Match _ (Ident () "main_ND") [] (UnGuardedRhs () e) Nothing]):bs) = return (e, bs)

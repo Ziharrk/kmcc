@@ -336,11 +336,11 @@ instance UnitDispatchable () where
 instance {-# INCOHERENT #-} UnitDispatchable a where
   unitDispatch = NotUnit
 
-mainWrapperDet :: forall a b. (ShowFree b, HsEquivalent b ~ a, FromHs b, UnitDispatchable a) => IO a -> IO ()
+mainWrapperDet :: forall a. (ShowFree a, FromHs a, UnitDispatchable (HsEquivalent a)) => IO (HsEquivalent a) -> IO ()
 mainWrapperDet mx = do
   x <- mx
   case evalCurry (showFreeCurry (return (from x)) []) of
-    Single x' -> case unitDispatch @a of
+    Single x' -> case unitDispatch @(HsEquivalent a) of
                   IsUnit  -> return ()
                   NotUnit -> putStrLn x'
     _         -> error "mainWrapper: not a single result"
@@ -357,13 +357,18 @@ unSingle :: MemoizedCurry.Tree n f l -> l
 unSingle (Single x) = x
 unSingle _ = error "mainWrapper: not a single result"
 
-exprWrapperDet :: (ShowFree b, HsEquivalent b ~ a, FromHs b) => (Tree.Tree String -> [String]) -> a -> IO ()
+exprWrapperDet :: forall a. (ShowFree a, FromHs a)
+               => (Tree.Tree String -> [String])
+               -> HsEquivalent a -> IO ()
 exprWrapperDet search a = case search $ evalCurryTree (showFreeCurry (fromHaskell a) []) of
   []  -> fail "**No value found"
   [s] -> putStrLn s
   _   -> error "internalError: More than on result from deterministic expression"
 
-exprWrapperNDet :: ShowFree a => (Tree.Tree String -> [String]) -> Bool -> [(String, Integer)] -> Bool -> Curry (CurryVal a, [VarInfo]) -> IO ()
+exprWrapperNDet :: forall a. ShowFree a
+                => (Tree.Tree String -> [String])
+                -> Bool -> [(String, Integer)] -> Bool
+                -> Curry (CurryVal a, [VarInfo]) -> IO ()
 exprWrapperNDet search optInt fvs b ca = printRes (search $ evalCurryTree extract) optInt
   where
     sortedFvs = map fst $ sortOn snd fvs
@@ -394,7 +399,7 @@ exprWrapperNDet search optInt fvs b ca = printRes (search $ evalCurryTree extrac
       (va, ids) <- ca
       let swapped = map (\(x, y) -> (y, x)) fvs
       str <- showFreeCurry (Curry (return va)) swapped
-      vs <- mapM (\(VarInfo @a i) -> showFreeCurry (Curry $ deref $ Curry $ return $ Var @a 0 i) swapped) ids
+      vs <- mapM (\(VarInfo @v i) -> showFreeCurry (Curry $ deref $ Curry $ return $ Var @v 0 i) swapped) ids
       let vs' = zipWith (\s n -> n ++ " = " ++ s) vs sortedFvs
       let str' = if null vs || not b then str else "{ " ++ intercalate "\n, " vs' ++ " } " ++ str
       return str'
