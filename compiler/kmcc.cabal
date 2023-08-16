@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               kmcc
-version:            0.1.0
+version:            0.2.0
 synopsis:
 -- description:
 homepage:
@@ -31,7 +31,7 @@ executable kmcc_c
     ghc-options:     -Wall
     -- other-extensions:
     build-depends:    base                 ^>= 4.16,
-                      curry-frontend       ^>= 2.0,
+                      curry-frontend       ^>= 2.1,
                       filepath             ^>= 1.4,
                       binary               ^>= 0.8,
                       containers           ^>= 0.6,
