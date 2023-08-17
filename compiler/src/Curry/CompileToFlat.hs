@@ -19,11 +19,11 @@ import Curry.Files.Filenames
 import qualified Curry.Syntax.ShowModule as CS
 import CurryBuilder ( findCurry, processPragmas, adjustOptions, smake, compMessage)
 import CurryDeps ( flatDeps, Source(..) )
-import CompilerOpts ( Options(..), TargetType(..), DumpLevel (..) )
+import CompilerOpts ( Options(..), TargetType(..), DumpLevel (..), DebugOpts (..) )
 import Modules hiding ( compileModule )
 import Transformations ( qual )
 import Checks ( expandExports )
-import Generators ( genTypedFlatCurry, genAnnotatedFlatCurry )
+import Generators ( genTypedFlatCurry, genAnnotatedFlatCurry, genFlatCurry )
 
 import Curry.FrontendUtils ( runCurryFrontendAction )
 import Options ( KMCCOpts (..), dumpMessage )
@@ -168,8 +168,11 @@ compileModule opts m fn = do
   let intf = uncurry exportInterface qmdl'
   writeInterface opts (fst mdl') intf
   ((env, il), mdl'') <- transModule opts qmdl'
-  writeFlat opts env (snd mdl'') il
-  return $ genTypedFlatCurry $ genAnnotatedFlatCurry env (snd mdl'') il
+  -- never dump anything when writing the flat curry files.
+  -- We do this manually in the next step.
+  writeFlat (opts { optDebugOpts = (optDebugOpts opts) { dbDumpLevels = [] } }) env (snd mdl'') il
+  let afcy = genAnnotatedFlatCurry env (snd mdl'') il
+  genTypedFlatCurry . snd <$> dumpWith opts show (pPrint . genFlatCurry) DumpFlatCurry (env, afcy)
 
 checkForMain :: [TProg] -> Maybe TypeExpr
 checkForMain [] = Nothing
