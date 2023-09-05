@@ -1,49 +1,64 @@
 {-# LANGUAGE MagicHash    #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BangPatterns #-}
+
+module System.Curry_IO (CurryHandle (..)) where
+
 import qualified Prelude as P
 import qualified Control.Concurrent as C
 import qualified Control.Monad as C (zipWithM)
 import qualified System.IO as S
 import BasicDefinitions
 
--- Curryable instance for S.Handle
-type instance HsEquivalent S.Handle = S.Handle
+data CurryHandle = SingleHandle S.Handle        -- single handle for read/write
+                 | DualHandle S.Handle S.Handle -- separate handles for read/write
+  deriving (P.Eq)
+                 
+readHandle :: CurryHandle -> S.Handle
+readHandle (SingleHandle h) = h
+readHandle (DualHandle h _) = h
 
-instance ToHs S.Handle where
+writeHandle :: CurryHandle -> S.Handle
+writeHandle (SingleHandle h) = h
+writeHandle (DualHandle _ h) = h
+
+
+-- Curryable instance for S.Handle
+type instance HsEquivalent CurryHandle = CurryHandle
+
+instance ToHs CurryHandle where
   to = P.return
 
-instance FromHs S.Handle where
+instance FromHs CurryHandle where
   from = P.id
   
-instance ShowFree S.Handle where
+instance ShowFree CurryHandle where
   showsFreePrec _ _ = showsStringCurry "<<Handle>>"
 
-instance NormalForm S.Handle where
+instance NormalForm CurryHandle where
   nfWith _ !x = P.return (P.Right x)
   
-instance Narrowable S.Handle where
+instance Narrowable CurryHandle where
   narrow = P.error "narrowing a Handle is not possible"
   narrowConstr = P.error "narrowing a Handle is not possible"
   
-instance HasPrimitiveInfo S.Handle where
+instance HasPrimitiveInfo CurryHandle where
   primitiveInfo = NoPrimitive
 
-instance Unifiable S.Handle where
+instance Unifiable CurryHandle where
   unifyWith _ _ _ = P.error "unifying a Handle is not possible"
 
   lazyUnifyVar _ _ = P.error "unifying a Handle is not possible"
   
-instance Curryable S.Handle
+instance Curryable CurryHandle
   
 
 -- type declarations for handles  
-type Handle_Det# = S.Handle
-type Handle_ND# = S.Handle
+type Handle_Det# = CurryHandle
+type Handle_ND# = CurryHandle
 
--- foreign instance for Handle
-instance ForeignType Handle_Det where
-  type Foreign Handle_Det = S.Handle
+instance ForeignType CurryHandle where
+  type Foreign CurryHandle = CurryHandle
   toForeign = P.id
   fromForeign = P.id
 
@@ -74,34 +89,35 @@ instance ForeignType SeekMode_Det where
 iOdothandleuscoreeq_Det# = liftForeign2 (P.==)
 iOdothandleuscoreeq_ND# = liftConvert2 iOdothandleuscoreeq_Det#
 
-iOdotstdin_Det# = S.stdin
+iOdotstdin_Det# = SingleHandle S.stdin
 iOdotstdin_ND# = P.return iOdotstdin_Det#
 
-iOdotstdout_Det# = S.stdout
+iOdotstdout_Det# = SingleHandle S.stdout
 iOdotstdout_ND# = P.return iOdotstdout_Det#
 
-iOdotstderr_Det# = S.stderr
+iOdotstderr_Det# = SingleHandle S.stderr
 iOdotstderr_ND# = P.return iOdotstderr_Det#
 
-iOdotprimuscoreopenFile_Det# = liftForeign2 S.openFile
+iOdotprimuscoreopenFile_Det# s m = S.openFile (toForeign s) (toForeign m) P.>>= P.return P.. SingleHandle
 iOdotprimuscoreopenFile_ND# = liftConvertIO2 iOdotprimuscoreopenFile_Det#
 
-iOdotprimuscorehClose_Det# = liftForeign1 S.hClose
+iOdotprimuscorehClose_Det# (SingleHandle h)   = fromForeign P.$ S.hClose h
+iOdotprimuscorehClose_Det# (DualHandle h1 h2) = fromForeign P.$ S.hClose h1 P.>> S.hClose h2
 iOdotprimuscorehClose_ND# = liftConvertIO1 iOdotprimuscorehClose_Det#
 
-iOdotprimuscorehFlush_Det# = liftForeign1 S.hFlush
+iOdotprimuscorehFlush_Det# h = fromForeign P.$ S.hFlush (writeHandle h)
 iOdotprimuscorehFlush_ND# = liftConvertIO1 iOdotprimuscorehFlush_Det#
 
-iOdotprimuscorehIsEOF_Det# = liftForeign1 S.hIsEOF
+iOdotprimuscorehIsEOF_Det# h = fromForeign P.$ S.hIsEOF (readHandle h)
 iOdotprimuscorehIsEOF_ND# = liftConvertIO1 iOdotprimuscorehIsEOF_Det#
 
-iOdotprimuscorehSeek_Det# x y z = fromForeign P.$ S.hSeek (toForeign x) (toForeign y) (toForeign z)
+iOdotprimuscorehSeek_Det# x y z = fromForeign P.$ S.hSeek (readHandle x) (toForeign y) (toForeign z)
 iOdotprimuscorehSeek_ND# = P.return P.$ from iOdotprimuscorehSeek_Det#
 
-iOdotprimuscorehWaitForInput_Det# x y = fromForeign P.$ S.hWaitForInput x (P.fromInteger y)
+iOdotprimuscorehWaitForInput_Det# x y = fromForeign P.$ S.hWaitForInput (readHandle x) (P.fromInteger y)
 iOdotprimuscorehWaitForInput_ND# = liftConvertIO2 iOdotprimuscorehWaitForInput_Det#
 
-iOdotprimuscorehWaitForInputs_Det# handles timeout = fromForeign P.$ (selectHandle (toForeign handles) (P.fromInteger timeout) P.>>= P.return P.. P.toInteger)
+iOdotprimuscorehWaitForInputs_Det# handles timeout = fromForeign P.$ (selectHandle (P.map readHandle (toForeign handles)) (P.fromInteger timeout) P.>>= P.return P.. P.toInteger)
 iOdotprimuscorehWaitForInputs_ND# = liftConvertIO2 iOdotprimuscorehWaitForInputs_Det#
 
 -- run every handle in its own thread
@@ -128,17 +144,17 @@ inspectRes n mvar threads = do
     P.Nothing -> inspectRes (n P.- 1) mvar threads
     P.Just v  -> P.mapM_ C.killThread threads P.>> P.return v
 
-iOdotprimuscorehGetChar_Det# = liftForeign1 S.hGetChar
+iOdotprimuscorehGetChar_Det# h = fromForeign P.$ S.hGetChar (readHandle h)
 iOdotprimuscorehGetChar_ND# = liftConvertIO1 iOdotprimuscorehGetChar_Det#
 
-iOdotprimuscorehPutChar_Det# = liftForeign2 S.hPutChar
+iOdotprimuscorehPutChar_Det# h c = fromForeign P.$ S.hPutChar (writeHandle h) (toForeign c)
 iOdotprimuscorehPutChar_ND# = liftConvertIO2 iOdotprimuscorehPutChar_Det#
 
-iOdotprimuscorehIsReadable_Det# = liftForeign1 S.hIsReadable
+iOdotprimuscorehIsReadable_Det# h = fromForeign P.$ S.hIsReadable (readHandle h)
 iOdotprimuscorehIsReadable_ND# = liftConvertIO1 iOdotprimuscorehIsReadable_Det#
 
-iOdotprimuscorehIsWritable_Det# = liftForeign1 S.hIsWritable
+iOdotprimuscorehIsWritable_Det# h = fromForeign P.$ S.hIsWritable (writeHandle h)
 iOdotprimuscorehIsWritable_ND# = liftConvertIO1 iOdotprimuscorehIsWritable_Det#
 
-iOdotprimuscorehIsTerminalDevice_Det# = liftForeign1 S.hIsTerminalDevice
+iOdotprimuscorehIsTerminalDevice_Det# h = fromForeign P.$ S.hIsTerminalDevice (writeHandle h)
 iOdotprimuscorehIsTerminalDevice_ND# = liftConvertIO1 iOdotprimuscorehIsTerminalDevice_Det#
