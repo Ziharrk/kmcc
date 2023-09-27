@@ -8,6 +8,7 @@ import qualified Network.Socket as N
 import qualified System.IO as S
 import qualified System.Timeout as S
 import BasicDefinitions
+import System.Curry_IO
 
 type instance HsEquivalent N.Socket = N.Socket
 
@@ -63,7 +64,7 @@ socketdotlistenOnFresh_ND# = P.return (P.fmap from socketdotlistenOnFresh_Det#)
 socketdotprimuscoresocketAccept_Det# sock = do
   (conn, addr) <- N.accept sock
   handle <- N.socketToHandle conn S.ReadWriteMode
-  P.return P.$ CTuple2_Det (fromForeign (P.show addr)) handle
+  P.return P.$ CTuple2_Det (fromForeign (P.show addr)) (SingleHandle handle)
 socketdotprimuscoresocketAccept_ND# = liftConvertIO1 socketdotprimuscoresocketAccept_Det#
 
 socketdotprimuscorewaitForSocketAccept_Det# sock timeout = do
@@ -84,5 +85,5 @@ socketdotprimuscoreconnectToSocket_Det# host port = do
   sock <- N.openSocket addr
   N.connect sock (N.addrAddress addr)
   handle <- N.socketToHandle sock S.ReadWriteMode
-  P.return handle
+  P.return (SingleHandle handle)
 socketdotprimuscoreconnectToSocket_ND# = liftConvertIO2 socketdotprimuscoreconnectToSocket_Det#
