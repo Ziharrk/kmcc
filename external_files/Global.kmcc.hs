@@ -15,16 +15,29 @@ globaldotprimuscoreglobalT_Det# s v = S.unsafePerformIO P.$ do
   store <- D.readIORef globals
   D.writeIORef globals (D.insert (toForeign s) (untyped v) store)
   P.return (GlobalT_Det s)
-globaldotprimuscoreglobalT_ND# = P.error "No implementation of globalT_ND"
-
+globaldotprimuscoreglobalT_ND# = P.return P.$ Func P.$ \x -> P.return P.$ Func P.$ \y -> do
+  x1 <- toHaskell x
+  y1 <- y
+  let GlobalT_Det s = globaldotprimuscoreglobalT_Det# x1 y1
+  P.return P.$ GlobalT_ND (fromHaskell s)
+    
 globaldotprimuscorereadGlobalT_Det# (GlobalT_Det s) = do
   store <- D.readIORef globals
   case D.lookup (toForeign s) store of
     P.Nothing -> P.error ("Invalid global: " P.++ (toForeign s))
     P.Just v  -> P.return (typed v)
-globaldotprimuscorereadGlobalT_ND# = P.error "No implementation of readGlobalT_ND"
+globaldotprimuscorereadGlobalT_ND# = P.return P.$ Func P.$ \x -> do
+  x1 <- x
+  let GlobalT_ND s = x1
+  s1 <- toHaskell s
+  P.return (globaldotprimuscorereadGlobalT_Det# (GlobalT_Det s1))
 
 globaldotprimuscorewriteGlobalT_Det# (GlobalT_Det s) v = fromForeign P.$ do
   store <- D.readIORef globals
   D.writeIORef globals (D.insert (toForeign s) (untyped v) store)
-globaldotprimuscorewriteGlobalT_ND# = P.error "No implementation of writeGlobalT_ND"
+globaldotprimuscorewriteGlobalT_ND# = P.return P.$ Func P.$ \x -> P.return P.$ Func P.$ \y -> do
+  x1 <- x
+  let GlobalT_ND s = x1
+  s1 <- toHaskell s
+  y1 <- y
+  P.return P.$ P.fmap from (globaldotprimuscorewriteGlobalT_Det# (GlobalT_Det s1) (y1))
