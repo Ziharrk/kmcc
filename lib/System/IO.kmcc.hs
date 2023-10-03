@@ -2,7 +2,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BangPatterns #-}
 
-module System.Curry_IO (CurryHandle (..)) where
+module System.Curry_IO (CurryHandle (..), readHandle, writeHandle) where
 
 import qualified Prelude as P
 import qualified Control.Concurrent as C
