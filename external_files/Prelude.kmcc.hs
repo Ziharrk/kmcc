@@ -23,9 +23,9 @@ import Prelude ((.), ($), ($!), (+), (-), (*), (/), (==), (<=),(>>=))
 -- higher-order representation
 -- -----------------------------------------------------------------------------
 
-type Apply_Det (a :: k1 -> k2) = (a :: k1 -> k2)
+type Apply_Det (a :: k1 -> k2) (b :: k1) = (a b)
 
-type Apply_ND (a :: k1 -> k2) = (a :: k1 -> k2)
+type Apply_ND (a :: k1 -> k2) (b :: k1) = (a b)
 
 apply_Det# :: (a -> b) -> a -> b
 apply_Det# = ($)
