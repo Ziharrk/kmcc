@@ -93,17 +93,18 @@ infixr 2 ||
 infixl 1 >>, >>=
 infixr 0 ?, $, $!, $!!, $#, $##, `seq`, &, &>
 
+-- externally defined types for numbers and characters
 external data Char
 
 external data Int
 
 external data Float
 
+--- The type of Boolean values.
 data Bool = False | True
 
+--- Ordering type. Useful as a result of comparison functions.
 data Ordering = LT | EQ | GT
-
-data Void
 
 ------------------------------------------------------------------------------
 --++ data () = ()
@@ -410,6 +411,9 @@ prim_ltEqFloat :: Float -> Float -> Bool
 prim_ltEqFloat external
 #endif
 
+--- The type synonym `ShowS` represent strings as difference lists.
+--- Composing functions of this type allows concatenation of lists
+--- in constant time.
 type ShowS = String -> String
 
 class Show a where
@@ -529,6 +533,12 @@ showFloatLiteral x = prim_showFloatLiteral $## x
 prim_showFloatLiteral :: Float -> String
 prim_showFloatLiteral external
 
+
+--- The type synonym `ReadS` represent a parser for values of type a.
+--- Such a parser is a function that takes a String and
+--- returns a list of possible parses as `(a,String)` pairs.
+--- Thus, if the result is the empty list, there is no parse, i.e.,
+--- the input string is not valid.
 type ReadS a = String -> [(a, String)]
 
 class Read a where
@@ -638,6 +648,9 @@ instance Read Ordering where
       readParen False (\s -> [(EQ, t) | ("EQ", t) <- lex s]) r ++
       readParen False (\s -> [(GT, t) | ("GT", t) <- lex s]) r
 
+--- A parser to read data from a string.
+--- For instance, `reads "42" :: [(Int,String)]` returns `[(42,[])]`, and
+--- `reads "hello" :: [(Int,String)]` returns `[]`.
 reads :: Read a => ReadS a
 reads = readsPrec 0
 
@@ -649,6 +662,9 @@ readListDefault = readParen False (\r -> [pr | ("[",s) <- lex r, pr <- readl s])
                    [ (x : xs, v) | (",", t)  <- lex s, (x, u) <- reads t
                                  , (xs,v) <- readl' u ]
 
+--- `readParen True p` parses what `p` parses, but surrounded with parentheses.
+--- `readParen False p` parses what `p` parses, but the string to be parsed
+--- can be optionally with parentheses.
 readParen :: Bool -> ReadS a -> ReadS a
 readParen b g = if b then mandatory else optional
  where optional r = g r ++ mandatory r
@@ -660,10 +676,20 @@ readSigned p = readParen False read'
  where read' r = read'' r ++ [(-x, t) | ("-", s) <- lex r, (x, t) <- read'' s]
        read'' r = [(n, s) | (str, s) <- lex r, (n, "") <- p str]
 
+--- Reads data of the given type from a string.
+--- The operations fails if the data cannot be parsed.
+--- For instance `read "42" :: Int` evaluates to `42`,
+--- and `read "hello" :: Int` fails.
 read :: Read a => String -> a
 read s =  case [x | (x, t) <- reads s, ("", "") <- lex t] of
   [x] -> x
 
+--- Reads a single lexeme from the given string.
+--- Initial white space is discarded and the characters of the lexeme
+--- are returned. If the input string contains only white space,
+--- `lex` returns the empty string as lexeme.
+--- If there is no legal lexeme at the beginning of the input string,
+--- the operation fails, i.e., `[]` is returned.
 lex :: ReadS String
 lex xs = case xs of
   ""                  -> [("", "")]
@@ -1361,6 +1387,7 @@ prim_atanhFloat :: Float -> Float
 prim_atanhFloat external
 #endif
 
+--- Raises a number to a non-negative integer power.
 (^) :: (Num a, Integral b) => a -> b -> a
 x0 ^ y0 | y0 < 0    = error "Negative exponent"
         | y0 == 0   = 1
@@ -1523,6 +1550,10 @@ ap m1 m2 = do
   x2 <- m2
   return (x1 x2)
 
+--- Promotes a function to a monad. The function arguments are scanned
+--- from left to right.
+--- For instance, `liftM2 (+) [1,2] [3,4]` evaluates to `[4,5,5,6]`, and
+--- `liftM2 (,) [1,2] [3,4]` evaluates to `[(1,3),(1,4),(2,3),(2,4)]`.
 liftM2 :: Monad m => (a1 -> a2 -> r) -> m a1 -> m a2 -> m r
 liftM2 f m1 m2 = do
   x1 <- m1
@@ -1607,6 +1638,8 @@ chr n | n < 0       = prim_chr 0
 prim_chr :: Int -> Char
 prim_chr external
 
+--- The type `String` is a type synonym for list of characters so that
+--- all list operations can be used on strings.
 type String = [Char]
 
 --- Breaks a string into a list of lines where a line is terminated at a
@@ -1633,8 +1666,8 @@ words s = let s1 = dropWhile isSpace s
 
 --- Concatenates a list of strings with a blank between two strings.
 unwords :: [String] -> String
-unwords ws = if ws == [] then []
-                         else foldr1 (\w s -> w ++ ' ' : s) ws
+unwords ws = if null ws then []
+                        else foldr1 (\w s -> w ++ ' ' : s) ws
 
 
 --- Right-associative application.
@@ -1956,6 +1989,7 @@ lookup _ []          = Nothing
 lookup k ((x,y):xys) | k == x    = Just y
                      | otherwise = lookup k xys
 
+--- The `Maybe` type can be used for values which could also be absent.
 data Maybe a = Nothing | Just a
  deriving (Eq, Ord, Show, Read)
 
@@ -1992,10 +2026,15 @@ instance Monad Maybe where
 instance MonadFail Maybe where
   fail _ = Nothing
 
+--- The `maybe` function takes a default value, a function, and a `Maybe` value.
+--- If the `Maybe` value is `Nothing`, the default value is returned.
+--- Otherwise, the function is applied to the value inside the `Just`
+--- and the result is returned.
 maybe :: b -> (a -> b) -> Maybe a -> b
 maybe n _ Nothing  = n
 maybe _ f (Just x) = f x
 
+--- The `Either` type can be used to combine values of two different types.
 data Either a b = Left a
                 | Right b
   deriving (Eq, Ord, Show, Read)
@@ -2013,10 +2052,14 @@ instance Monad (Either a) where
   (Left e)  >>= _ = Left e
   (Right x) >>= f = f x
 
+--- Apply a case analysis to a value of the Either type.
+--- If the value is `Left x`, the first function is applied to `x`.
+--- If the value is `Right y`, the second function is applied to `y`.
 either :: (a -> c) -> (b -> c) -> Either a b -> c
 either left _     (Left  a) = left a
 either _    right (Right b) = right b
 
+--- The externally defined type of IO actions.
 external data IO _
 
 instance Monoid a => Monoid (IO a) where
@@ -2082,6 +2125,8 @@ putStrLn cs = putStr cs >> putChar '\n'
 print :: Show a => a -> IO ()
 print = putStrLn . show
 
+--- The `FilePath` is j type synonym for strings.
+--- It is useful to mark in type signatures if a file path is required.
 type FilePath = String
 
 --- An action that (lazily) reads a file and returns its contents.
@@ -2155,10 +2200,12 @@ ioError err = error (show err)
 catch :: IO a -> (IOError -> IO a) -> IO a
 catch external
 
-
+--- The type synonym for constraints. It is included for backward
+--- compatibility and should be no longer used.
 type Success = Bool
 
---- The always satisfiable constraint.
+--- The always satisfiable constraint. It is included for backward
+--- compatibility and should be no longer used.
 success :: Success
 success = True
 
