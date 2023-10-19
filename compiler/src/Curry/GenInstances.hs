@@ -109,9 +109,6 @@ genInstances (Type qname _ vs cs) =
       [Match () (Ident () "lazyUnifyVar")
       [mkFlatPattern qname2 (TCons qname []) [1..ar], PVar () (Ident () "_i")]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkLazyUnifyDetImpl qname2 ar]]
-    mkNfWithMatch (Cons qname2 0  _ _) = [Match () (Ident () "nfWith")
-      [PVar () (Ident () "_f"), PApp () (convertTypeNameToMonadicHs qname2) []]
-      (UnGuardedRhs () $ mkReturn $ mkRight $ Hs.Var () (convertTypeNameToHs qname2)) Nothing]
     mkNfWithMatch (Cons qname2 ar _ _) = [Match () (Ident () "nfWith")
       [PVar () (Ident () "_f"), PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkNfWithImpl qname2 ar]] ++
