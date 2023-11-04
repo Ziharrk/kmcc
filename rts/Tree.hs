@@ -5,12 +5,13 @@ module Tree where
 import           Control.Applicative ( Alternative(empty, (<|>)) )
 import           Control.Concurrent.Chan ( getChanContents, newChan, writeChan )
 import           Control.Concurrent.MVar ( newEmptyMVar, putMVar, takeMVar )
+import           Control.Concurrent (forkFinally)
 import           Control.DeepSeq ( NFData )
 import           Control.Monad ( MonadPlus )
 import           Data.Maybe ( catMaybes, isJust )
 import qualified Data.Sequence as Seq
 import           GHC.Generics ( Generic )
-import           GHC.Conc ( forkIO, killThread )
+import           GHC.Conc ( killThread )
 import           System.IO.Unsafe ( unsafePerformIO )
 import           System.Mem.Weak ( addFinalizer )
 
@@ -61,22 +62,28 @@ bfs t' = bfs' (Seq.singleton t')
 
 {-# NOINLINE fs #-}
 fs :: Tree a -> [a]
-fs t' = unsafePerformIO $ do
+fs t = unsafePerformIO $ do
   ch <- newChan
-  let fsIO t = case t of
-        Empty -> return ()
-        Leaf x -> writeChan ch (Just x)
+  mvarTids <- newEmptyMVar
+  putMVar mvarTids []
+  let go t' = case t' of
+        Empty    -> return ()
+        Leaf x   -> writeChan ch (Just x)
         Node l r -> do
           mvarL <- newEmptyMVar
           mvarR <- newEmptyMVar
-          _ <- forkIO $ fsIO l >> putMVar mvarL ()
-          _ <- forkIO $ fsIO r >> putMVar mvarR ()
+          tids <- takeMVar mvarTids
+          tidL <- forkFinally (go l) $ \_ -> putMVar mvarL ()
+          tidR <- forkFinally (go r) $ \_ -> putMVar mvarR ()
+          putMVar mvarTids $ [tidL, tidR] ++ tids
           takeMVar mvarL
           takeMVar mvarR
-  tid <- forkIO $ fsIO t' >> writeChan ch Nothing
-  res <- catMaybes . takeWhile isJust <$> getChanContents ch
-  addFinalizer res $ killThread tid
-  return res
+  tid <- forkFinally (go t) $ \_ -> writeChan ch Nothing
+  result <- catMaybes . takeWhile isJust <$> getChanContents ch
+  addFinalizer result $ do
+    tids <- takeMVar mvarTids
+    mapM_ killThread (tid : tids)
+  return result
 
 {-
 fs :: Tree a -> [a]
