@@ -18,6 +18,8 @@ import Control.Monad.State (StateT, MonadState (..), evalStateT, modify)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Coerce (coerce)
 import Data.Char (toLower, toUpper)
+import Data.Generics.Schemes (everything)
+import Data.Generics.Aliases (mkQ)
 import Data.List (isPrefixOf, find, (\\), intercalate, unfoldr, partition)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -178,7 +180,11 @@ instance ToHs TProgWithFilePath where
               , "Aborting compilation ..." ]
       False -> return ([], [], [], [])
     let ps' = defaultPragmas ++ extPragmas
-    let im' = defaultImports ++ extImports ++ curryImports
+    let qualNameImports = map (\n -> ImportDecl () (ModuleName () n) True False False Nothing Nothing Nothing)
+          $ Set.toList $ Set.delete (convertModName nm) -- do not import self
+          $ Set.delete "M" $ Set.delete "B" $ Set.delete "P" -- do not import these module aliases
+          $ everything Set.union (mkQ Set.empty (\(ModuleName () n) -> Set.singleton n)) curryDs
+    let im' = defaultImports ++ extImports ++ curryImports ++ qualNameImports
     let ds' = extDs ++ curryDs
     (header', ds'') <- case mi of
           Just ty -> patchMainPost ty opts header ds'

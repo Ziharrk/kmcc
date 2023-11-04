@@ -42,5 +42,6 @@ executable kmcc_c
                       optparse-applicative ^>= 0.17,
                       process              ^>= 1.6,
                       time                 ^>= 1.11,
+                      syb                  ^>= 0.7,
     hs-source-dirs:   src
     default-language: GHC2021
