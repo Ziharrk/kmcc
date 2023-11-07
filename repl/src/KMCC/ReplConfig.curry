@@ -54,12 +54,14 @@ kmcc = CCDescription
   Nothing                        -- compile program with load command
   False                          -- use CURRYPATH variable
   (\s -> "-v" ++ s)              -- option to pass verbosity
-  (\s -> "--parse-options" ++ s) -- option to pass parser options
+  (\s -> "--parse-options \"" ++ s ++ "\"") -- option to pass parser options
   (\s -> "--compile " ++ s)      -- option to compile only
   (\s -> s)                      -- option to create an executable
   cleanCmd                       -- command to clean module
   (CommandLineFreeMode (\vs -> unwords $ map (\(v,i) -> "-V" ++ v ++ "=" ++ show i) vs))
-  [stratOpt, profilingOpt, intOpt] -- [firstOpt, resultsOpt, errDepthtOpt]
+  [ stratOpt, profilingOpt, intOpt, forceOpt
+  , ghcOpt -- [firstOpt, resultsOpt, errDepthtOpt]
+  ]
  where
   cleanCmd m = unwords
     [ "/bin/rm -f ", quote (kmccSubDir </> m) ++ ".*"
@@ -79,6 +81,24 @@ kmccBanner = unlines [bannerLine, bannerText, bannerLine]
   bannerText = "KMCC Interactive Environment (Version " ++
                I.compilerVersion ++ " of " ++ I.compilerDate ++ ")"
   bannerLine = take (length bannerText) (repeat '-')
+
+forceOpt :: CCOption
+forceOpt = CCOption
+  "+/-force       "
+  "turn on/off forcing of compilation"
+  [ ConstOpt "-force" ""
+  , ConstOpt "+force" "--force"
+  ]
+
+ghcOpt :: CCOption
+ghcOpt = CCOption
+  "ghc-opts       "
+  "pass options to the GHC compiler"
+  [ ArgOpt "ghc-opts" "" showOpt ]
+  where
+    showOpt s = case reads s :: [(String,String)] of
+      [(n,"")] -> Just ("--ghc-options \"" ++ s ++ "\"")
+      _        -> Nothing
 
 stratOpt :: CCOption
 stratOpt = CCOption
@@ -118,17 +138,17 @@ resultsOpt = CCOption
   "results <n>   "
   "set maximum number of results to be computed\n(default: 0 = infinite)"
   [ ArgOpt "results" "0" showOpt ]
- where
-  showOpt s = case reads s :: [(Int,String)] of
-    [(n,"")] | n >= 0 -> Just ("--results=" ++ s)
-    _                 -> Nothing
+  where
+    showOpt s = case reads s :: [(Int,String)] of
+      [(n,"")] | n >= 0 -> Just ("--results=" ++ s)
+      _                 -> Nothing
 
 errDepthtOpt :: CCOption
 errDepthtOpt = CCOption
   "errdepth <n>   "
   "set print depth of expressions in error messages:\nn>0: last n nodes from error point\nn=0: do not print expressions (default)\nn<0: print complete expression"
   [ ArgOpt "errdepth" "0" showOpt ]
- where
-  showOpt s = case reads s :: [(Int,String)] of
-    [(_,"")] -> Just ("--errdepth=" ++ s)
-    _        -> Nothing
+  where
+    showOpt s = case reads s :: [(Int,String)] of
+      [(_,"")] -> Just ("--errdepth=" ++ s)
+      _        -> Nothing
