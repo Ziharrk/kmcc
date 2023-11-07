@@ -499,28 +499,28 @@ primitive2 :: forall a b c
            => (SBV a -> SBV b -> SBV c)
            -> (Foreign a -> Foreign b -> Foreign c)
            -> Curry (a :-> b :-> c)
-primitive2 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b, primitiveInfo @c #) of
-  (# Primitive, Primitive, Primitive #) -> return . Func $ \ca -> return . Func $ \cb -> Curry $ do
-    a <- deref ca
-    b <- deref cb
+primitive2 sbvF hsF =
+  return . Func $ \ca -> Curry $ deref ca >>= \a ->
+  return . Val . Func $ \cb -> Curry $ deref cb >>= \b ->
     case (# a, b #) of
       (# Val x, Val y #) -> return $ Val $ fromForeign $ hsF (toForeign x) (toForeign y)
-      _ -> do
-          k <- freshID
-          s@NDState { .. } <- get
-          let c = sbvF (toSBV a) (toSBV b) .=== toSBV (Var 0 k)
-          let csv' = foldr Set.insert constrainedVars (k : allVars a ++ allVars b)
-          let cst' = insertConstraint c constraintStore
-          put (s { constraintStore = cst', constrainedVars = csv' })
-          -- Checking consistency is unnecessary, because "j" is fresh.
-          -- However, it is important to enter x and y in the set of constrained vars, because
-          -- they might get constrained indirectly via "j". Example:
-          -- j <- x + y
-          -- j <- 1
-          -- matchFL 9 x
-          -- matchFL 0 y
-          return (Var 0 k)
-  _ -> error "internalError: primitive2: non-primitive type"
+      _ -> case (# primitiveInfo @a, primitiveInfo @b, primitiveInfo @c #) of
+            (# Primitive, Primitive, Primitive #) -> do
+              k <- freshID
+              s@NDState { .. } <- get
+              let c = sbvF (toSBV a) (toSBV b) .=== toSBV (Var 0 k)
+              let csv' = foldr Set.insert constrainedVars (k : allVars a ++ allVars b)
+              let cst' = insertConstraint c constraintStore
+              put (s { constraintStore = cst', constrainedVars = csv' })
+              -- Checking consistency is unnecessary, because "j" is fresh.
+              -- However, it is important to enter x and y in the set of constrained vars, because
+              -- they might get constrained indirectly via "j". Example:
+              -- j <- x + y
+              -- j <- 1
+              -- matchFL 9 x
+              -- matchFL 0 y
+              return (Var 0 k)
+            _ -> error "internalError: primitive2: non-primitive type"
 
 {-# INLINABLE primitive2Bool #-}
 primitive2Bool :: forall a b c c'
