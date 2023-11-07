@@ -539,7 +539,10 @@ failedBranch = Alt () (PWildCard ())
 instance ToMonadicHs (AExpr (TypeExpr, NDInfo)) where
   convertToMonadicHs = convertExprToMonadicHs Set.empty
 
-applyToArgs :: (Exp () -> Exp () -> Exp ()) -> (Exp () -> Exp ()) -> Exp () -> [(Maybe (AExpr (TypeExpr, NDInfo)), Exp ())] -> CM (Exp ())
+applyToArgs :: (Exp () -> Exp () -> Exp ())
+            -> (Exp () -> Exp ()) -> Exp ()
+            -> [(Maybe (AExpr (TypeExpr, NDInfo)), Exp ())]
+            -> CM (Exp ())
 applyToArgs apply ret funE args = do
   vs <- replicateM (length args) freshVarName
   let combineForSharing [] = ([], [])
@@ -565,7 +568,9 @@ applyToArgs apply ret funE args = do
     isTransparent _ = False
     isDeterministic (AVar _ _) = True
     isDeterministic (ALit _ _) = True
-    isDeterministic (AComb _ _ (_, (_, d)) _) = d == Det
+    isDeterministic (AComb _ (FuncPartCall _) _ _) = True
+    isDeterministic (AComb _ (ConsPartCall _) _ _) = True
+    isDeterministic (AComb _ _ ((_, nm), _) _) = "_impl" `isPrefixOf` nm || "_dict" `isPrefixOf` nm
     isDeterministic (ATyped _ e _) = isDeterministic e
     isDeterministic _ = False
 
