@@ -39,6 +39,7 @@ bin/kmcc_c:
 .PHONY: frontend
 frontend: bin/kmcc-frontend
 
+.PHONY: bin/kmcc-frontend
 bin/kmcc-frontend:
 	stack build curry-frontend:exe:curry-frontend --copy-bins
 	mv bin/curry-frontend bin/kmcc-frontend
