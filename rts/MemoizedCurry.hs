@@ -17,7 +17,7 @@
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeFamilyDependencies     #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans            #-}
 -- Common subexpression elinimation is disallowed due to unsafePerformIO stuff.
@@ -50,7 +50,8 @@ import           Control.Monad.Fix                  (MonadFix(..), fix)
 import           Control.Monad.Codensity            (Codensity(..), lowerCodensity)
 import           Control.Monad.State                (StateT(..), MonadState(..), evalStateT, gets, modify)
 import           Control.Monad.Trans                (MonadTrans(..))
-import           GHC.Generics                       ( Generic(..),
+import qualified GHC.Generics as GHC                (to, from)
+import           GHC.Generics                       ( Generic(Rep),
                                                       V1,
                                                       U1(..),
                                                       K1(K1),
@@ -60,8 +61,7 @@ import           GHC.Generics                       ( Generic(..),
 import           GHC.Magic                          (noinline)
 import           GHC.IO                             (unsafePerformIO)
 import           Unsafe.Coerce                      (unsafeCoerce)
-import           Classes                            ( MonadShare(..),
-                                                      MonadFree(..) )
+import           Classes                            (MonadShare(..), MonadFree(..))
 import qualified Tree
 
 import Narrowable
@@ -574,15 +574,15 @@ class Unifiable a where
 defaultLazyUnifyVar :: forall a. (HasPrimitiveInfo a, Generic a, UnifiableGen (Rep a))
                       => a -> ID -> Curry Bool
 defaultLazyUnifyVar x i = do
-  (x', xs) <- lazyUnifyVarGen (from x)
-  modify (addToVarHeap i (return (to x' :: a)))
+  (x', xs) <- lazyUnifyVarGen (GHC.from x)
+  modify (addToVarHeap i (return (GHC.to x' :: a)))
   and <$> sequence xs
 
 defaultUnifyWith :: forall a. (HasPrimitiveInfo a, Generic a, UnifiableGen (Rep a))
                  => (forall x. (HasPrimitiveInfo x, Unifiable x)
                             => Curry x -> Curry x -> Curry Bool)
                  -> a -> a -> Curry Bool
-defaultUnifyWith f x y = unifyWithGen f (from x) (from y)
+defaultUnifyWith f x y = unifyWithGen f (GHC.from x) (GHC.from y)
 
 --------------------------------------------------------------------------------
 -- Unify itself is implemented as shown in the paper.
@@ -682,7 +682,7 @@ type Level = Integer
 class Levelable a where
   setLevel :: Level -> a -> a
   default setLevel :: (Generic a, LevelableGen (Rep a)) => Level -> a -> a
-  setLevel lvl = to . setLevelGen lvl . from
+  setLevel lvl = GHC.to . setLevelGen lvl . GHC.from
 
 -- The set function operators are then defined by
 -- 1. getting the current level
@@ -918,3 +918,120 @@ instance ( Unifiable a, Unifiable b
   => Unifiable (Tuple2C a b) where
   unifyWith = defaultUnifyWith
   lazyUnifyVar = defaultLazyUnifyVar
+
+type family HsEquivalent (a :: k) = (b :: k) | b -> a
+type instance HsEquivalent (a b) = HsEquivalent a (HsEquivalent b)
+class ToHs a where
+  to :: a -> Curry (HsEquivalent a)
+
+class FromHs a where
+  from :: HsEquivalent a -> a
+
+class ShowFree a where
+  showsFreePrec :: Int -> a -> ShowSFree
+  showFree :: a -> [(Integer, String)] -> Curry String
+  showFree x fm = snd $ showsFreePrec 0 x (fm, return "")
+
+showsStringCurry :: String -> ShowSFree
+showsStringCurry s (fm, x) = (fm, fmap (++s) x)
+
+type ShowSFree = ([(Integer, String)], Curry String) -> ([(Integer, String)], Curry String)
+
+-- Class to pull all non-determinisim to the top
+class NormalForm a where
+  nfWith :: (forall x. NormalForm x => Curry x -> ND (Either (CurryVal x) (HsEquivalent x)))
+         -> a -> ND (Either (CurryVal a) (HsEquivalent a))
+
+class ( ToHs a, FromHs a, Unifiable a
+      , NormalForm a, HasPrimitiveInfo a, ShowFree a) => Curryable a
+
+type instance HsEquivalent Integer = Integer
+
+instance ToHs Integer where
+  to = return
+
+instance FromHs Integer where
+  from = id
+
+instance ShowFree Integer where
+  showsFreePrec _ x = showsStringCurry (show x)
+
+instance NormalForm Integer where
+  nfWith _ !x = return (Right x)
+
+instance Curryable Integer
+
+type instance HsEquivalent Double = Double
+
+instance ToHs Double where
+  to = return
+
+instance FromHs Double where
+  from = id
+
+instance HasPrimitiveInfo Double where
+  primitiveInfo = Primitive
+
+instance Unifiable Double where
+  unifyWith _ x y = if x == y then return True else mzero
+
+  lazyUnifyVar n i = modify (addToVarHeap i (return n)) >> return True
+
+instance NormalForm Double where
+  nfWith _ !x = return (Right x)
+
+instance ShowFree Double where
+  showsFreePrec _ x = showsStringCurry (show x)
+
+instance Curryable Double
+
+type instance HsEquivalent Char = Char
+
+instance ToHs Char where
+  to = return
+
+instance FromHs Char where
+  from = id
+
+instance HasPrimitiveInfo Char where
+  primitiveInfo = Primitive
+
+instance Unifiable Char where
+  unifyWith _ x y = if x == y then return True else mzero
+
+  lazyUnifyVar n i = modify (addToVarHeap i (return n)) >> return True
+
+instance NormalForm Char where
+  nfWith _ !x = return (Right x)
+
+instance ShowFree Char where
+  showsFreePrec _ x = showsStringCurry (show x)
+
+instance Curryable Char
+
+type instance HsEquivalent IO = IO
+
+instance ToHs (IO a) where
+  to = error "FFI Error: 'To' Conversion on IO"
+
+instance FromHs a => FromHs (IO a) where
+  from x = from <$> x
+
+instance HasPrimitiveInfo (IO a) where
+  primitiveInfo = NoPrimitive
+
+instance Narrowable (IO a) where
+  narrow = error "narrowing an IO action is not possible"
+  narrowConstr _ = error "narrowing an IO action is not possible"
+
+instance Unifiable (IO a) where
+  unifyWith _ _ _ = error "unifying an IO action is not possible"
+  lazyUnifyVar _ _ = error "lazily unifying an IO action is not possible"
+
+instance NormalForm (IO a) where
+  nfWith _ !x = return (Left (Val x))
+
+instance ShowFree (IO a) where
+  showsFreePrec _ _ = showsStringCurry "<<IO>>"
+
+instance Curryable a => Curryable (IO a)

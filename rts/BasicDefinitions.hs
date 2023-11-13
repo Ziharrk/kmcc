@@ -28,32 +28,16 @@ import System.IO.Unsafe (unsafeInterleaveIO, unsafePerformIO)
 import MemoizedCurry
 import Narrowable
 import Classes
+import Any
 import Tree (Tree, dfs, bfs, fs)
-import Data.SBV (SBV, (.===), sNot)
-
-type family HsEquivalent (a :: k) = (b :: k) | b -> a
-type instance HsEquivalent (a b) = HsEquivalent a (HsEquivalent b)
-
-class ToHs a where
-  to :: a -> Curry (HsEquivalent a)
 
 toHaskell :: ToHs a => Curry a -> Curry (HsEquivalent a)
 toHaskell = (>>= to)
-
-class FromHs a where
-  from :: HsEquivalent a -> a
 
 {-# NOINLINE fromHaskell #-}
 fromHaskell :: FromHs a => HsEquivalent a -> Curry a
 fromHaskell x = unsafePerformIO $ catch (evaluate (from x) >>= \x' -> return (return x'))
                                 $ \Failed -> return mzero
-
-class ShowFree a where
-  showsFreePrec :: Int -> a -> ShowSFree
-  showFree :: a -> [(Integer, String)] -> Curry String
-  showFree x fm = snd $ showsFreePrec 0 x (fm, return "")
-
-type ShowSFree = ([(Integer, String)], Curry String) -> ([(Integer, String)], Curry String)
 
 showsFreePrecCurry :: forall a. ShowFree a => Int -> Curry a -> ([(Integer, String)], Curry String)
                    -> ([(Integer, String)], Curry String)
@@ -76,9 +60,6 @@ showsBracketsCurry _ s = showsStringCurry ")" . s . showsStringCurry "("
 showSpaceCurry :: ShowSFree -> ShowSFree -> ShowSFree
 showSpaceCurry f g = g . showsStringCurry " " . f
 
-showsStringCurry :: String -> ShowSFree
-showsStringCurry s (fm, x) = (fm, fmap (++s) x)
-
 showsVar :: Integer -> [(Integer, String)] -> Curry String -> Curry String
 showsVar i fm = case lookup i fm of
   Nothing -> fmap (++ ("_" ++ show i))
@@ -93,11 +74,6 @@ literalCase x f g = Curry $ do
 
 bindVar :: Curryable a => ID -> Curry a -> Curry Bool
 bindVar i = unify (freeWith 0 i)
-
--- Class to pull all non-determinisim to the top
-class NormalForm a where
-  nfWith :: (forall x. NormalForm x => Curry x -> ND (Either (CurryVal x) (HsEquivalent x)))
-         -> a -> ND (Either (CurryVal a) (HsEquivalent a))
 
 normalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent a))
 normalForm' a = do
@@ -128,99 +104,6 @@ dollarBangBangNDImpl = returnFunc (\f -> returnFunc (\a -> f `app` normalForm a)
 
 dollarHashHashNDImpl :: (NormalForm a, FromHs a) => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
 dollarHashHashNDImpl = returnFunc (\f -> returnFunc (\a -> f `app` groundNormalForm a))
-
-class (ToHs a, FromHs a, ShowFree a, Unifiable a, NormalForm a, HasPrimitiveInfo a) => Curryable a
-
-type instance HsEquivalent Integer = Integer
-
-instance ToHs Integer where
-  to = return
-
-instance FromHs Integer where
-  from = id
-
-instance ShowFree Integer where
-  showsFreePrec _ x = showsStringCurry (show x)
-
-instance NormalForm Integer where
-  nfWith _ !x = return (Right x)
-
-instance Curryable Integer
-
-type instance HsEquivalent Double = Double
-
-instance ToHs Double where
-  to = return
-
-instance FromHs Double where
-  from = id
-
-instance HasPrimitiveInfo Double where
-  primitiveInfo = Primitive
-
-instance Unifiable Double where
-  unifyWith _ x y = if x == y then return True else mzero
-
-  lazyUnifyVar n i = modify (addToVarHeap i (return n)) >> return True
-
-instance NormalForm Double where
-  nfWith _ !x = return (Right x)
-
-instance ShowFree Double where
-  showsFreePrec _ x = showsStringCurry (show x)
-
-instance Curryable Double
-
-type instance HsEquivalent Char = Char
-
-instance ToHs Char where
-  to = return
-
-instance FromHs Char where
-  from = id
-
-instance HasPrimitiveInfo Char where
-  primitiveInfo = Primitive
-
-instance Unifiable Char where
-  unifyWith _ x y = if x == y then return True else mzero
-
-  lazyUnifyVar n i = modify (addToVarHeap i (return n)) >> return True
-
-instance NormalForm Char where
-  nfWith _ !x = return (Right x)
-
-instance ShowFree Char where
-  showsFreePrec _ x = showsStringCurry (show x)
-
-instance Curryable Char
-
-type instance HsEquivalent IO = IO
-
-instance ToHs (IO a) where
-  to = error "FFI Error: 'To' Conversion on IO"
-
-instance FromHs a => FromHs (IO a) where
-  from x = from <$> x
-
-instance HasPrimitiveInfo (IO a) where
-  primitiveInfo = NoPrimitive
-
-instance Narrowable (IO a) where
-  narrow = error "narrowing an IO action is not possible"
-  narrowConstr _ = error "narrowing an IO action is not possible"
-
-instance Unifiable (IO a) where
-  unifyWith _ _ _ = error "unifying an IO action is not possible"
-  lazyUnifyVar _ _ = error "lazily unifying an IO action is not possible"
-
-instance NormalForm (IO a) where
-  nfWith _ !x = return (Left (Val x))
-
-instance ShowFree (IO a) where
-  showsFreePrec _ _ = showsStringCurry "<<IO>>"
-
-instance Curryable a => Curryable (IO a)
 
 data Failed = Failed
   deriving Show
@@ -559,72 +442,8 @@ allVars :: CurryVal a -> [Integer]
 allVars (Var _ i) = [i]
 allVars _         = []
 
--- A type variable of any kind can be defaulted to `Any`.
--- Every required instance is provided for `Any`.
-type Any :: forall k. k
-type family Any where
-  Any @Type = None
-  Any @(a -> Type) = IgnoreKind
-
-type None :: Type
-data None
-
-type instance HsEquivalent None = None
-
-instance ToHs None where
-  to = error "FFI Error: 'To' Conversion on ambigouous type variable"
-
-instance FromHs None where
-  from = error "FFI Error: 'From' Conversion on ambigouous type variable"
-
-instance HasPrimitiveInfo None where
-  primitiveInfo = NoPrimitive
-
-instance Narrowable None where
-  narrow = error "narrowing an ambigouous type variable is not possible"
-  narrowConstr _ = error "narrowing an ambigouous type variable is not possible"
-
-instance NormalForm None where
-  nfWith _ _ = error "normalizing an ambigouous type variable is not possible"
-
-instance Unifiable None where
-  unifyWith _ _ _ = error "unifying an ambigouous type variable is not possible"
-  lazyUnifyVar _ _ = error "lazily unifying an ambigouous type variable is not possible"
-
-instance ShowFree None where
-  showsFreePrec _ _ = error "showing an ambigouous type variable is not possible"
-
-instance Curryable None
-
-type IgnoreKind :: k -> Type
-data IgnoreKind a
-
-type instance HsEquivalent IgnoreKind = IgnoreKind
-
-instance ToHs (IgnoreKind a) where
-  to = error "FFI Error: 'To' Conversion on ambigouous type variable"
-
-instance FromHs (IgnoreKind a) where
-  from = error "FFI Error: 'From' Conversion on ambigouous type variable"
-
-instance HasPrimitiveInfo (IgnoreKind a) where
-  primitiveInfo = NoPrimitive
-
-instance Narrowable (IgnoreKind a) where
-  narrow = error "narrowing an ambigouous type variable is not possible"
-  narrowConstr _ = error "narrowing an ambigouous type variable is not possible"
-
-instance NormalForm (IgnoreKind a) where
-  nfWith _ _ = error "normalizing an ambigouous type variable is not possible"
-
-instance Unifiable (IgnoreKind a) where
-  unifyWith _ _ _ = error "unifying an ambigouous type variable is not possible"
-  lazyUnifyVar _ _ = error "lazily unifying an ambigouous type variable is not possible"
-
-instance ShowFree (IgnoreKind a) where
-  showsFreePrec _ _ = error "showing an ambigouous type variable is not possible"
-
-instance Curryable (IgnoreKind a)
+-- allow defaulting of type variables with a kind that has a maximum of 10 arguments.
+mkAllAnyDefinitions 10
 
 {-
 -- Testing Code:
@@ -635,15 +454,15 @@ instance Curryable (IgnoreKind a)
 
 type Test = Any (Int -> Int -> Int)
 
-test :: Curry Int
-test = lengthC (nilC :: Curry (L Any Any))
+-- test :: Curry Int
+-- test = lengthC (nilC :: Curry (L Any Any))
 
-data L f a = N | C (Curry (f a)) (Curry (L f a))
+data L f a = N | C (Curry (f a a)) (Curry (L f a))
 
 nilC :: Curry (L f a)
 nilC = return N
 
-lengthC :: forall f a. (forall x. Curryable x => Curryable (f x), Curryable a)
+lengthC :: forall f a. (forall x y. (Curryable x, Curryable y) => Curryable (f x y), Curryable a)
         => Curry (L f a) -> Curry Int
 lengthC l = l >>= \case
   N -> return 0
@@ -652,7 +471,6 @@ lengthC l = l >>= \case
 data Ln a = L (Curry (Ln a))
 data LD a = LD (LD a)
 type instance HsEquivalent Ln = LD
-type instance HsEquivalent (Ln a) = LD (HsEquivalent a)
 data Flat a = Flat (HsEquivalent a)
 
 instance FromHs (Ln a) where
@@ -660,6 +478,6 @@ instance FromHs (Ln a) where
 
 test2 :: forall a. Curryable a => Curry (Flat (Ln a) :-> Int)
 test2 = returnFunc (\x' -> x' >>= \(Flat (LD x)) ->
-  let x_nd = fromHaskell x
+  let x_nd = fromHaskell x :: Curry (Ln a) -- needs type annotation
   in return 1)
 -}

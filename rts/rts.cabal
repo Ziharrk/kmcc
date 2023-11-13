@@ -53,9 +53,6 @@ common deps
     DefaultSignatures,
     MultiParamTypeClasses,
     TemplateHaskell
-  other-modules:
-    Narrowable
-    Solver
 
 library
   import: deps
@@ -64,3 +61,6 @@ library
     Tree
     MemoizedCurry
     BasicDefinitions
+    Narrowable
+    Solver
+    Any

@@ -9,9 +9,14 @@ bin/curry
 
 *.lock
 *.hi
+*.dyn_hi
 *.hi-boot
+*.dyn_hi-boot
 *.o
+*.dyn_o
+*.p_o
 *.o-boot
+*.p_o-boot
 
 repl/src/KMCC/PkgConfig.curry
 repl/src/Installation.curry
