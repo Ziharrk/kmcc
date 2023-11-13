@@ -59,7 +59,11 @@ import           GHC.Generics                       ( Generic(Rep),
                                                       type (:+:)(..),
                                                       type (:*:)(..) )
 import           GHC.Magic                          (noinline)
+import           GHC.Read                           (expectP)
+import           GHC.Show                           (showLitString)
 import           GHC.IO                             (unsafePerformIO)
+import           Text.Read.Lex as L
+import           Text.Read                          (ReadPrec, readPrec, reset, pfail, lexP, (+++), parens)
 import           Unsafe.Coerce                      (unsafeCoerce)
 import           Classes                            (MonadShare(..), MonadFree(..))
 import qualified Tree
@@ -942,6 +946,44 @@ class NormalForm a where
   nfWith :: (forall x. NormalForm x => Curry x -> ND (Either (CurryVal x) (HsEquivalent x)))
          -> a -> ND (Either (CurryVal a) (HsEquivalent a))
 
+class ShowTerm a where
+  showTerm :: Int -> HsEquivalent a -> ShowS
+  showTermList :: [HsEquivalent a] -> ShowS
+  showTermList ls   s = showList__ (showTerm 0) ls s
+    where
+      showList__ _     []     s = "[]" ++ s
+      showList__ showx (x:xs) s = '[' : showx x (showl xs)
+        where
+          showl []     = ']' : s
+          showl (y:ys) = ',' : showx y (showl ys)
+
+
+class ReadTerm a where
+  readTerm :: ReadPrec (HsEquivalent a)
+  readTermList :: ReadPrec [HsEquivalent a]
+  readTermList = readTermListDefault
+
+
+readTermListDefault :: ReadTerm a => ReadPrec [HsEquivalent a]
+readTermListDefault = list readTerm
+  where
+    list readx =
+      parens
+      ( do expectP (L.Punc "[")
+           (listRest False +++ listNext)
+      )
+      where
+        listRest started =
+          do L.Punc c <- lexP
+             case c of
+                "]"           -> return []
+                "," | started -> listNext
+                _             -> pfail
+        listNext =
+          do x  <- reset readx
+             xs <- listRest True
+             return (x:xs)
+
 class ( ToHs a, FromHs a, Unifiable a
       , NormalForm a, HasPrimitiveInfo a, ShowFree a) => Curryable a
 
@@ -958,6 +1000,12 @@ instance ShowFree Integer where
 
 instance NormalForm Integer where
   nfWith _ !x = return (Right x)
+
+instance ShowTerm Integer where
+  showTerm = showsPrec
+
+instance ReadTerm Integer where
+  readTerm = readPrec
 
 instance Curryable Integer
 
@@ -983,6 +1031,12 @@ instance NormalForm Double where
 instance ShowFree Double where
   showsFreePrec _ x = showsStringCurry (show x)
 
+instance ShowTerm Double where
+  showTerm = showsPrec
+
+instance ReadTerm Double where
+  readTerm = readPrec
+
 instance Curryable Double
 
 type instance HsEquivalent Char = Char
@@ -1006,6 +1060,20 @@ instance NormalForm Char where
 
 instance ShowFree Char where
   showsFreePrec _ x = showsStringCurry (show x)
+
+instance ShowTerm Char where
+  showTerm = showsPrec
+  showTermList cs = showChar '"' . showLitString cs . showChar '"'
+
+instance ReadTerm Char where
+  readTerm = readPrec
+  readTermList =
+    parens
+    ( do L.String s <- lexP
+         return s
+     +++
+      readTermListDefault
+    )
 
 instance Curryable Char
 
@@ -1033,5 +1101,11 @@ instance NormalForm (IO a) where
 
 instance ShowFree (IO a) where
   showsFreePrec _ _ = showsStringCurry "<<IO>>"
+
+instance ShowTerm (IO a) where
+  showTerm _ _ = showString "<<IO>>"
+
+instance ReadTerm (IO a) where
+  readTerm = pfail
 
 instance Curryable a => Curryable (IO a)

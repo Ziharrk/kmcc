@@ -10,6 +10,8 @@ import Curry.ConvertUtils ( HsEquivalent, UnqualName )
 
 mkCurryCtxt :: [TVarWithKind] -> Maybe (Context ())
 
+mkQuantifiedCtxt :: (Hs.Type () -> Hs.Type ()) -> [TVarWithKind] -> Maybe (Context ())
+
 mkFlatPattern :: QName -> TypeExpr -> [Int] -> Hs.Pat ()
 
 class ToHsName a where
@@ -30,3 +32,5 @@ instance ToMonadicHsName QName where
 
 convertQualNameToFlatName :: QName -> Name ()
 convertQualNameToFlatQualName :: QName -> Hs.QName ()
+
+convertTypeToMonadicHs :: TypeExpr -> Hs.Type ()

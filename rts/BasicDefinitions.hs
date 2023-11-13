@@ -3,7 +3,9 @@
 {-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE QuantifiedConstraints  #-}
 {-# LANGUAGE RecordWildCards        #-}
+{-# LANGUAGE TemplateHaskell        #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
+{-# LANGUAGE TypeOperators          #-}
 {-# LANGUAGE UnboxedTuples          #-}
 {-# LANGUAGE UndecidableInstances   #-}
 {-# OPTIONS_GHC -Wno-orphans        #-}
@@ -19,11 +21,12 @@ import Control.Exception (throw, catch, evaluate, Exception)
 import Control.Monad (MonadPlus(..), (>=>))
 import Control.Monad.Codensity (lowerCodensity)
 import Control.Monad.State (modify, MonadState(put, get), StateT(runStateT))
-import Data.Kind
 import Data.List (intercalate, sortOn)
+import Data.SBV (SBV, (.===), sNot)
 import qualified Data.Set as Set
 import GHC.IO.Exception (IOException(..), IOErrorType(..))
 import System.IO.Unsafe (unsafeInterleaveIO, unsafePerformIO)
+import Text.Read (pfail)
 
 import MemoizedCurry
 import Narrowable
@@ -136,6 +139,12 @@ instance NormalForm (LiftedFunc a b) where
 
 instance ShowFree (LiftedFunc a b) where
   showsFreePrec _ _ = showsStringCurry "<<Function>>"
+
+instance ShowTerm (LiftedFunc a b) where
+  showTerm _ _ = showString "<<Function>>"
+
+instance ReadTerm (LiftedFunc a b) where
+  readTerm = pfail
 
 instance Curryable (LiftedFunc a b)
 
@@ -374,6 +383,12 @@ primitive1 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
         return (Var lvl j)
   _ -> error "internalError: primitive1: non-primitive type"
 
+{-# SPECIALISE primitive2 :: (SBV Integer -> SBV Integer -> SBV Integer)
+                          -> (Integer -> Integer -> Integer)
+                          -> Curry (Integer :-> Integer :-> Integer) #-}
+{-# SPECIALISE primitive2 :: (SBV Char -> SBV Char -> SBV Char)
+                          -> (Char -> Char -> Char)
+                          -> Curry (Char :-> Char :-> Char) #-}
 {-# INLINABLE primitive2 #-}
 primitive2 :: forall a b c
             . ( HasPrimitiveInfo a, ForeignType a

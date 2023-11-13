@@ -4,10 +4,11 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Curry.ConvertToHs
   ( compileToHs, haskellName
-  , mkCurryCtxt, mkFlatPattern
+  , mkCurryCtxt, mkQuantifiedCtxt, mkFlatPattern
   , HsEquivalent
   , ToHsName(..), ToMonadicHsName(..), UnqualName(..)
   , convertQualNameToFlatName, convertQualNameToFlatQualName
+  , convertTypeToMonadicHs
   ) where
 
 import Control.Arrow (first, second)
@@ -127,7 +128,7 @@ process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
 hsPrettyPrintMode :: PPHsMode
-hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPNoLayout False
+hsPrettyPrintMode = PPHsMode 2 2 2 2 2 2 2 False PPOffsideRule False
 
 hsPrettyPrintStyle :: Style
 hsPrettyPrintStyle = Style PageMode 500 2
@@ -393,7 +394,7 @@ instance ToHs ConsDecl where
 
 instance ToMonadicHs ConsDecl where
   convertToMonadicHs (Cons cname _ _ texprs) = do
-    tys <- mapM convertQualType texprs
+    let tys = map convertQualType texprs
     return $ QualConDecl () Nothing Nothing (ConDecl () (convertTypeNameToMonadicHs (Unqual cname)) tys)
 
 type instance HsEquivalent TypeExpr = Type ()
@@ -404,17 +405,20 @@ instance ToHs TypeExpr where
   convertToHs (ForallType vs t) = TyForall () (Just $ map toTyVarBndr vs) Nothing <$> convertToHs t
 
 instance ToMonadicHs TypeExpr where
-  convertToMonadicHs (TVar idx) = return $ TyVar () (indexToName idx)
-  convertToMonadicHs (FuncType t1 t2) = mkLiftedFunc <$> convertToMonadicHs t1 <*> convertToMonadicHs t2
-  convertToMonadicHs (TCons qn tys) = foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qn)) <$> mapM convertToMonadicHs tys
-  convertToMonadicHs (ForallType vs t) = TyForall () (Just (map toTyVarBndr vs)) (mkCurryCtxt vs) <$> convertQualType t
+  convertToMonadicHs = return . convertTypeToMonadicHs
 
-convertQualType :: TypeExpr -> CM (Type ())
+convertTypeToMonadicHs :: TypeExpr -> Type ()
+convertTypeToMonadicHs (TVar idx) = TyVar () (indexToName idx)
+convertTypeToMonadicHs (FuncType t1 t2) = mkLiftedFunc (convertTypeToMonadicHs t1) (convertTypeToMonadicHs t2)
+convertTypeToMonadicHs (TCons qn tys) = foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qn)) $ map convertTypeToMonadicHs tys
+convertTypeToMonadicHs (ForallType vs t) = TyForall () (Just (map toTyVarBndr vs)) (mkCurryCtxt vs) (convertQualType t)
+
+convertQualType :: TypeExpr -> Type ()
 convertQualType ty
   | ForallType _ _ <- ty = ty'
-  | otherwise            = mkCurry <$> ty'
+  | otherwise            = mkCurry ty'
   where
-    ty' = convertToMonadicHs ty
+    ty' = convertTypeToMonadicHs ty
 
 mkCurryCtxt :: [TVarWithKind] -> Maybe (Context ())
 mkCurryCtxt = mkQuantifiedCtxt mkCurryClassType
@@ -450,7 +454,7 @@ instance ToHs TFuncDecl where
 
 instance ToMonadicHs TFuncDecl where
   convertToMonadicHs (TFunc qname _ _ texpr rule) = do
-    ty <- convertQualType (normalizeCurryType texpr)
+    let ty = convertQualType (normalizeCurryType texpr)
     let tsig = TypeSig () [convertFuncNameToMonadicHs (Unqual qname)] ty
     match <- convertToMonadicHs (RI (qname, rule))
     let f = FunBind () [match]
@@ -639,7 +643,8 @@ convertExprToMonadicHs vset (ACase _ _ e bs)
       return $ mkBind e' $ Hs.LCase () (bs' ++ [failedMonadicBranch])
 convertExprToMonadicHs _ ex@(ATyped (ty, Det) _ _) =
   mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
-convertExprToMonadicHs vset (ATyped _ e ty) = ExpTypeSig () <$> convertExprToMonadicHs vset e <*> convertQualType ty
+convertExprToMonadicHs vset (ATyped _ e ty) =
+  ExpTypeSig () <$> convertExprToMonadicHs vset e <*> pure (convertQualType ty)
 
 convertBindingToMonadic :: Set.Set Int -> AExpr a
                         -> ((Int, (TypeExpr, NDInfo)), AExpr (TypeExpr, NDInfo))
@@ -842,6 +847,9 @@ defaultImports =
   , ImportDecl () (ModuleName () "Control.Monad") True False False Nothing (Just (ModuleName () "M")) Nothing
   , ImportDecl () (ModuleName () "Control.Monad.Fix") True False False Nothing (Just (ModuleName () "M")) Nothing
   , ImportDecl () (ModuleName () "Prelude") True False False Nothing (Just (ModuleName () "P")) Nothing
+  , ImportDecl () (ModuleName () "Text.Read") True False False Nothing (Just (ModuleName () "P")) Nothing
+  , ImportDecl () (ModuleName () "Text.Read.Lex") True False False Nothing (Just (ModuleName () "P")) Nothing
+  , ImportDecl () (ModuleName () "Text.ParserCombinators.ReadPrec") True False False Nothing (Just (ModuleName () "P")) Nothing
   ]
 
 -- |Compute the filename of the Haskell file for a source file
