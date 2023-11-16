@@ -17,13 +17,13 @@ read major minor revision <<< "$version"
 IFS="$oIFS"
 
 # get base version
-baseVersion=$(cat lib/VERSION)
+baseVersion=$(cat libs/VERSION)
 
 ### update distribution file ###
 
 # paths to distribution files
-defaultFile="lib/Curry/Compiler/Distribution.default.hs"
-distributionFile="lib/Curry/Compiler/Distribution.kmcc.hs"
+defaultFile="libs/src/Curry/Compiler/Distribution.default.hs"
+distributionFile="libs/src/Curry/Compiler/Distribution.kmcc.hs"
 
 # compiler name
 compilerOld="P.error \"No implementation of curryCompiler\""

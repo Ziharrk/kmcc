@@ -21,7 +21,7 @@ import Paths_kmcc ( version )
 main :: IO ()
 main = do
   execDir <- takeDirectory <$> getExecutablePath
-  let libDir = joinPath (init (splitPath execDir)) </> "lib/"
+  let libDir = joinPath (init (splitPath execDir)) </> "libs/src"
   let includeLibDir opt = opt
         { frontendOpts = (frontendOpts opt)
           { optLibraryPaths = libDir : optLibraryPaths (frontendOpts opt)
@@ -31,7 +31,7 @@ main = do
       printVersionOpt CompilerName   = putStrLn "kmcc"
       printVersionOpt NumericVersion = putStrLn (showVersion version)
       printVersionOpt BaseVersion    = do
-        readFile (libDir </> "VERSION") >>= putStrLn . reverse . dropWhile isSpace . reverse
+        readFile (libDir </> ".." </> "VERSION") >>= putStrLn . reverse . dropWhile isSpace . reverse
   kmccopts <- includeLibDir <$> getCmdOpts
   case optInfo kmccopts of
     [] -> do

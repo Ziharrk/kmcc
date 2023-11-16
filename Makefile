@@ -62,14 +62,14 @@ clean:
 	rm -rf bin/kmcc_repl
 	rm -rf bin/kmcc_c
 	rm -rf repl/src/.curry
-	rm -rf lib/.curry
+	rm -rf libs/src/.curry
 	rm -f $(INSTALLCURRY)
 	stack clean
 
 .PHONY: prebuild_prelude
 prebuild_prelude: bin/kmcc_c
 	$(info "Pre-Compiling Prelude")
-	bin/kmcc_c lib/Prelude.curry
+	bin/kmcc_c libs/src/Prelude.curry
 
 .PHONY: generate_distribution
 generate_distribution:
