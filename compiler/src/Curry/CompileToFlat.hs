@@ -19,7 +19,7 @@ import Curry.Files.Filenames
 import qualified Curry.Syntax.ShowModule as CS
 import CurryBuilder ( findCurry, processPragmas, adjustOptions, smake, compMessage)
 import CurryDeps ( flatDeps, Source(..) )
-import CompilerOpts ( Options(..), TargetType(..), DumpLevel (..), DebugOpts (..) )
+import CompilerOpts ( Options(..), TargetType(..), DumpLevel (..), DebugOpts (..), OptimizationOpts (..) )
 import Modules hiding ( compileModule )
 import Transformations ( qual )
 import Checks ( expandExports )
@@ -171,7 +171,8 @@ compileModule opts m fn = do
   -- never dump anything when writing the flat curry files.
   -- We do this manually in the next step.
   writeFlat (opts { optDebugOpts = (optDebugOpts opts) { dbDumpLevels = [] } }) env (snd mdl'') il
-  let afcy = genAnnotatedFlatCurry env (snd mdl'') il
+  let remIm = optRemoveUnusedImports (optOptimizations opts)
+      afcy = genAnnotatedFlatCurry remIm env (snd mdl'') il
   genTypedFlatCurry . snd <$> dumpWith opts show (pPrint . genFlatCurry) DumpFlatCurry (env, afcy)
 
 checkForMain :: [TProg] -> Maybe TypeExpr

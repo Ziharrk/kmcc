@@ -225,11 +225,11 @@ genInstances (Type qname _ vs cs) =
     mkShowsPrecImpl tys qname2 ar = mkShowParen $
       chainShows (
         mkShowString (snd qname2) :
-        map (\(ty, i) -> mkShowsPrecHigh ty $ Hs.Var () $ UnQual () $ indexToName i) (zip tys [1..ar]))
+        zipWith (\ty i -> mkShowsPrecHigh ty $ Hs.Var () $ UnQual () $ indexToName i) tys [1..ar])
 
     mkReadPrecImpl cs' = mkReadParen $ Hs.Paren () $ chainReads $ map mkReadDo cs'
     mkReadDo (Cons qname2 ar _ tys) = Hs.Paren () $ Hs.Do ()
-      (mkIdentSymP qname2 : map (\(ty, i) -> mkBindP ty $ PVar () $ indexToName i) (zip tys [1..ar])
+      (mkIdentSymP qname2 : zipWith (\ty i -> mkBindP ty $ PVar () $ indexToName i) tys [1..ar]
       ++ [Qualifier () $ mkReturnP qname2 ar])
     mkIdentSymP q@(_, nm) =
         Generator () (PApp () f
