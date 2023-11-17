@@ -50,7 +50,7 @@ kmcc = CCDescription
   "info@curry-lang.org"          -- contact email
   (kmccHome </> "bin" </> "kmcc-frontend") -- executable of the Curry front end
   (kmccHome </> "bin" </> "kmcc_c") -- compiler executable
-  (kmccHome </> "lib")           -- base library path
+  (kmccHome </> "libs" </> "src")-- base library path
   Nothing                        -- compile program with load command
   False                          -- use CURRYPATH variable
   (\s -> "-v" ++ s)              -- option to pass verbosity
