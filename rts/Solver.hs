@@ -1,7 +1,7 @@
 module Solver(startSolver, evalSymbolic, SolverState) where
 
 import Control.Concurrent (MVar, newMVar, takeMVar, putMVar)
-import Control.Exception (Exception, throwIO, catch)
+import Control.Exception (Exception, throwIO, catches, ErrorCall(..), Handler(..))
 import Control.Monad.Except (MonadError, MonadTrans)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader (ReaderT(runReaderT))
@@ -12,7 +12,9 @@ import Data.SBV (SMTConfig (verbose), runSMTWith)
 import Unsafe.Coerce (unsafeCoerce)
 import Data.SBV.Dynamic (defaultSMTCfg)
 
-type SolverState = (State, MVar ())
+import Data.Typeable
+
+type SolverState = (Either String State, MVar ())
 
 -- | A hack to get the state of the solver context.
 newtype StateHackException = SHE State
@@ -33,7 +35,8 @@ symbolicToMySymbolic :: Query a -> MySymbolicT IO a
 symbolicToMySymbolic = unsafeCoerce
 
 evalSymbolic :: SolverState -> Query a -> IO a
-evalSymbolic (st, sem) act = do
+evalSymbolic (Left err, _) _ = putStrLn err >> putStrLn z3Msg >> error ""
+evalSymbolic (Right st, sem) act = do
   takeMVar sem
   r <- runReaderT (runMySymbolicT (symbolicToMySymbolic act)) st
   putMVar sem ()
@@ -42,7 +45,25 @@ evalSymbolic (st, sem) act = do
 startSolver :: IO SolverState
 startSolver = do
   sem <- newMVar ()
-  catch (runSMTWith (defaultSMTCfg { verbose = False }) $ query $ do
+  catches (runSMTWith (defaultSMTCfg { verbose = False }) $ query $ do
     st <- contextState
     _ <- liftIO $ throwIO $ SHE st
-    return (st, sem)) $ \(SHE st) -> return (st, sem)
+    return (Right st, sem)) $ [
+    Handler (\ (ex :: StateHackException) -> handleSHE     sem ex),
+    Handler (\ (ex :: ErrorCall)          -> handleErrCall sem ex)
+    ]
+
+--- handler for StateHackExceptions
+handleSHE :: MVar () -> StateHackException -> IO SolverState
+handleSHE sem (SHE st) = return (Right st, sem)
+
+--- handler for ErrorCall exceptions
+handleErrCall :: MVar () -> ErrorCall -> IO SolverState
+handleErrCall sem e = return (Left (show e), sem)
+
+z3Msg :: String
+z3Msg = unlines [
+  "",
+  "Please install z3 and add it to your PATH",
+  "Consider installing it from https://github.com/Z3Prover/z3/releases"
+  ]
