@@ -587,6 +587,11 @@ convertExprToMonadicHs _ ex@(AComb (ty, Det) FuncCall _ _)  =
   mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
 convertExprToMonadicHs _ ex@(AComb (ty, Det) ConsCall  _ _) =
   mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
+convertExprToMonadicHs vset (AComb (_, _) _ (("Prelude", "apply"), _) [f, a]) = do
+  args' <- mapM (convertExprToMonadicHs vset) [f, a]
+  case args' of
+    [f', a'] -> applyToArgs mkMonadicApp id f' [(Just a, a')]
+    _ -> throwError [message "Internal error: Prelude.apply called with wrong number of arguments"]
 convertExprToMonadicHs vset (AComb _ ConsCall (qname, _) args) = do
   args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
   applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) args'

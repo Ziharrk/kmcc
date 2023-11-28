@@ -164,31 +164,31 @@ returnFunc f = return (Func f)
 addToVarHeapM :: ID -> Curry a -> Curry ()
 addToVarHeapM i x = modify (addToVarHeap i x)
 
-liftConvert1 :: (ToHs a, FromHs b)
+liftConvert1 :: (Curryable a, Curryable b)
              => (HsEquivalent a -> HsEquivalent b)
              -> Curry (LiftedFunc a b)
-liftConvert1 f = return $ Func $ toHaskell >=> \x' ->
+liftConvert1 f = return $ Func $ share >=> toHaskell >=> \x' ->
   return (from (f x'))
 
-liftConvert2 :: (ToHs a, ToHs b, FromHs c)
+liftConvert2 :: (Curryable a, Curryable b, Curryable c)
              => (HsEquivalent a -> HsEquivalent b -> HsEquivalent c)
              -> Curry (LiftedFunc a (LiftedFunc b c))
-liftConvert2 f = return $ Func $ toHaskell >=> \x' -> return $ Func $ toHaskell >=> \y' ->
+liftConvert2 f = return $ Func $ share >=> toHaskell >=> \x' -> return $ Func $ toHaskell >=> \y' ->
   return (from (f x' y'))
 
-liftConvertIO1 :: (ToHs a, FromHs b)
+liftConvertIO1 :: (Curryable a, Curryable b)
                => (HsEquivalent a -> IO (HsEquivalent b))
                -> Curry (LiftedFunc a (IO b))
 liftConvertIO1 f = return $ Func $ \x -> do
-  x' <- toHaskell x
+  x' <- share x >>= toHaskell
   return (fmap from (f x'))
 
-liftConvertIO2 :: (ToHs a, ToHs b, FromHs c)
+liftConvertIO2 :: (Curryable a, Curryable b, Curryable c)
                => (HsEquivalent a -> HsEquivalent b -> IO (HsEquivalent c))
                -> Curry (LiftedFunc a (LiftedFunc b (IO c)))
 liftConvertIO2 f = return $ Func $ \x -> return $ Func $ \y -> do
-  x' <- toHaskell x
-  y' <- toHaskell y
+  x' <- share x >>= toHaskell
+  y' <- share y >>= toHaskell
   return (fmap from (f x' y'))
 
 ensureOneResult :: Curry a -> Curry a
@@ -398,8 +398,8 @@ primitive2 :: forall a b c
            -> (Foreign a -> Foreign b -> Foreign c)
            -> Curry (a :-> b :-> c)
 primitive2 sbvF hsF =
-  return . Func $ \ca -> Curry $ deref ca >>= \a ->
-  return . Val . Func $ \cb -> Curry $ deref cb >>= \b ->
+  return . Func $ share >=> \ca -> Curry (deref ca >>= \a ->
+  return . Val . Func $ share >=> \cb -> Curry (deref cb >>= \b ->
     case (# a, b #) of
       (# Val x, Val y #) -> return $ Val $ fromForeign $ hsF (toForeign x) (toForeign y)
       _ -> case (# primitiveInfo @a, primitiveInfo @b, primitiveInfo @c #) of
@@ -418,8 +418,14 @@ primitive2 sbvF hsF =
               -- matchFL 9 x
               -- matchFL 0 y
               return (Var 0 k)
-            _ -> error "internalError: primitive2: non-primitive type"
+            _ -> error "internalError: primitive2: non-primitive type"))
 
+{-# SPECIALISE primitive2 :: (SBV Integer -> SBV Integer -> SBV Integer)
+                          -> (Integer -> Integer -> Integer)
+                          -> Curry (Integer :-> Integer :-> Integer) #-}
+{-# SPECIALISE primitive2 :: (SBV Char -> SBV Char -> SBV Char)
+                          -> (Char -> Char -> Char)
+                          -> Curry (Char :-> Char :-> Char) #-}
 {-# INLINABLE primitive2Bool #-}
 primitive2Bool :: forall a b c c'
             . ( HasPrimitiveInfo a, ForeignType a
@@ -430,28 +436,28 @@ primitive2Bool :: forall a b c c'
            => (SBV a -> SBV b -> SBV Bool)
            -> (Foreign a -> Foreign b -> Bool)
            -> Curry (a :-> b :-> c')
-primitive2Bool sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
-  (# Primitive, Primitive #) -> return . Func $ \ca -> return . Func $ \cb -> Curry $ do
-    a <- deref ca
-    b <- deref cb
+primitive2Bool sbvF hsF =
+  return . Func $ share >=> \ca -> Curry (deref ca >>= \a ->
+  return . Val . Func $ share >=> \cb -> Curry (deref cb >>= \b ->
     case (# a, b #) of
       (# Val x, Val y #) -> return $ Val $ from $ fromForeign $ hsF (toForeign x) (toForeign y)
-      _ -> do
-          NDState { .. } <- get
-          let c = sbvF (toSBV a) (toSBV b)
-          let csv' = foldr Set.insert constrainedVars (allVars a ++ allVars b)
-          let cst1 = insertConstraint c constraintStore
-          let cst2 = insertConstraint (sNot c) constraintStore
-          mplusLevel currentLevel
-            (do s' <- get
-                put (s' { constraintStore = cst1, constrainedVars = csv' })
-                checkConsistency
-                return (Val (from $ fromForeign True)))
-            (do s' <- get
-                put (s' { constraintStore = cst2, constrainedVars = csv' })
-                checkConsistency
-                return (Val (from $ fromForeign False)))
-  _ -> error "internalError: primitive2: non-primitive type"
+      _ ->  case (# primitiveInfo @a, primitiveInfo @b #) of
+              (# Primitive, Primitive #) -> do
+                  NDState { .. } <- get
+                  let c = sbvF (toSBV a) (toSBV b)
+                  let csv' = foldr Set.insert constrainedVars (allVars a ++ allVars b)
+                  let cst1 = insertConstraint c constraintStore
+                  let cst2 = insertConstraint (sNot c) constraintStore
+                  mplusLevel currentLevel
+                    (do s' <- get
+                        put (s' { constraintStore = cst1, constrainedVars = csv' })
+                        checkConsistency
+                        return (Val (from $ fromForeign True)))
+                    (do s' <- get
+                        put (s' { constraintStore = cst2, constrainedVars = csv' })
+                        checkConsistency
+                        return (Val (from $ fromForeign False)))
+              _ -> error "internalError: primitive2: non-primitive type"))
 
 allVars :: CurryVal a -> [Integer]
 allVars (Var _ i) = [i]
