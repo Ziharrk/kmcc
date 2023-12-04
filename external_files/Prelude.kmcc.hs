@@ -135,6 +135,8 @@ instance {-# OVERLAPS #-} ShowFree (CList_ND Char_ND) where
       FreeElem -> P.snd $ BasicDefinitions.showsStringCurry ("["  P.++ P.intercalate "," ys P.++ "]" ) s
       FreeList -> P.snd $ BasicDefinitions.showsStringCurry (          P.intercalate ":" ys          ) s
 
+instance {-# INCOHERENT #-} Curryable (CList_ND Char_ND)
+
 instance ShowTerm a => ShowTerm (CList_ND a) where
   showTerm _ = showTermList . toList
     where
