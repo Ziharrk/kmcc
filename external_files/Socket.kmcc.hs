@@ -17,17 +17,24 @@ instance ToHs N.Socket where
 
 instance FromHs N.Socket where
   from = P.id
-  
+  elimFlat = P.id
+
+instance ShowTerm N.Socket where
+  showTerm _ _ = P.showsString "<<Socket>>"
+
+instance ReadTerm N.Socket where
+  readTerm = P.error "reading a Socket is not possible"
+
 instance ShowFree N.Socket where
   showsFreePrec _ _ = showsStringCurry "<<Socket>>"
 
 instance NormalForm N.Socket where
   nfWith _ !x = P.return (P.Right x)
-  
+
 instance Narrowable N.Socket where
   narrow = P.error "narrowing a Socket is not possible"
   narrowConstr = P.error "narrowing a Socket is not possible"
-  
+
 instance HasPrimitiveInfo N.Socket where
   primitiveInfo = NoPrimitive
 
@@ -35,7 +42,7 @@ instance Unifiable N.Socket where
   unifyWith _ _ _ = P.error "unifying a Socket is not possible"
 
   lazyUnifyVar _ _ = P.error "unifying a Socket is not possible"
-  
+
 instance Curryable N.Socket
 
 type Socket_Det# = N.Socket
@@ -51,7 +58,7 @@ listenOn port = do
   N.bind sock (N.addrAddress addr)
   N.listen sock N.maxListenQueue
   P.return sock
-  
+
 socketdotprimuscorelistenOn_Det# = listenOn
 socketdotprimuscorelistenOn_ND# = liftConvertIO1 socketdotprimuscorelistenOn_Det#
 

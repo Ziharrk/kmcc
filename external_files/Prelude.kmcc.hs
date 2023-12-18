@@ -1147,14 +1147,16 @@ cond_ND# = returnFunc (\a -> a >>= \case
   BoolFlat# False_Det -> failed_ND
   False_ND -> failed_ND)
 
-dollarbang_Det# :: (a -> b) -> a -> b
-dollarbang_Det# = ($!)
+dollarbang_Det# :: -- (HsEquivalent a' ~ a, BasicDefinitions.Curryable a')
+                (a -> b) -> a -> b
+dollarbang_Det# f a = a `P.seq` f a-- deepseq a `P.seq` (f a)
 
 dollarbang_ND# :: Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
 dollarbang_ND# = BasicDefinitions.dollarBangNDImpl
 
-dollarbangbang_Det# :: (a -> b) -> a -> b
-dollarbangbang_Det# = ($!)
+dollarbangbang_Det# :: -- (HsEquivalent a' ~ a, BasicDefinitions.Curryable a')
+                    (a -> b) -> a -> b
+dollarbangbang_Det# f a = a `P.seq` (f a) -- deepseq a `P.seq` (f a)
 
 dollarbangbang_ND# :: BasicDefinitions.Curryable a => Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
 dollarbangbang_ND# = BasicDefinitions.dollarBangBangNDImpl
