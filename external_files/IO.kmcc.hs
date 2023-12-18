@@ -34,7 +34,7 @@ instance FromHs CurryHandle where
   elimFlat = P.id
 
 instance ShowTerm CurryHandle where
-  showTerm _ _ = P.showsString "<<Handle>>"
+  showTerm _ _ = P.showString "<<Handle>>"
 
 instance ReadTerm CurryHandle where
   readTerm = P.error "reading a Handle is not possible"

@@ -18,7 +18,7 @@ instance FromHs (D.IORef a) where
   elimFlat = P.id
 
 instance ShowTerm (D.IORef a) where
-  showTerm _ _ = P.showsString "<<IORef>>"
+  showTerm _ _ = P.showString "<<IORef>>"
 
 instance ReadTerm (D.IORef a) where
   readTerm = P.error "reading an IORef is not possible"

@@ -20,7 +20,7 @@ instance FromHs N.Socket where
   elimFlat = P.id
 
 instance ShowTerm N.Socket where
-  showTerm _ _ = P.showsString "<<Socket>>"
+  showTerm _ _ = P.showString "<<Socket>>"
 
 instance ReadTerm N.Socket where
   readTerm = P.error "reading a Socket is not possible"
