@@ -930,6 +930,7 @@ class ToHs a where
 
 class FromHs a where
   from :: HsEquivalent a -> a
+  elimFlat :: a -> a
 
 class ShowFree a where
   showsFreePrec :: Int -> a -> ShowSFree
@@ -949,7 +950,7 @@ class NormalForm a where
 class ShowTerm a where
   showTerm :: Int -> HsEquivalent a -> ShowS
   showTermList :: [HsEquivalent a] -> ShowS
-  showTermList ls   s = showList__ (showTerm 0) ls s
+  showTermList ls = showList__ (showTerm 0) ls
     where
       showList__ _     []     s = "[]" ++ s
       showList__ showx (x:xs) s = '[' : showx x (showl xs)
@@ -994,6 +995,8 @@ instance ToHs Integer where
 
 instance FromHs Integer where
   from = id
+  {-# INLINE elimFlat #-}
+  elimFlat = id
 
 instance ShowFree Integer where
   showsFreePrec _ x = showsStringCurry (show x)
@@ -1016,6 +1019,7 @@ instance ToHs Double where
 
 instance FromHs Double where
   from = id
+  elimFlat = id
 
 instance HasPrimitiveInfo Double where
   primitiveInfo = Primitive
@@ -1046,6 +1050,7 @@ instance ToHs Char where
 
 instance FromHs Char where
   from = id
+  elimFlat = id
 
 instance HasPrimitiveInfo Char where
   primitiveInfo = Primitive
@@ -1084,6 +1089,7 @@ instance ToHs (IO a) where
 
 instance FromHs a => FromHs (IO a) where
   from x = from <$> x
+  elimFlat = id
 
 instance HasPrimitiveInfo (IO a) where
   primitiveInfo = NoPrimitive

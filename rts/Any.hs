@@ -92,6 +92,7 @@ dummyInstances = [d|
 
   instance FromHs None where
     from = error "FFI Error: 'From' Conversion on ambigouous type variable"
+    elimFlat = error "FFI Error: 'From' Conversion on ambigouous type variable"
 
   instance HasPrimitiveInfo None where
     primitiveInfo = NoPrimitive

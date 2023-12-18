@@ -37,7 +37,7 @@ genInstances (Type qname _ vs cs) =
       (IRule () Nothing (mkCurryCtxt vs)
         (IHApp () (IHCon () hsFromQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
           (map (TyVar () . indexToName . fst) vs))))
-      (Just [InsDecl () (FunBind () (concatMap mkFromMatch cs))])
+      (Just [InsDecl () (FunBind () (concatMap mkFromMatch cs)), InsDecl () (FunBind () (concatMap mkElimFlatMatch cs))])
     hsNarrowableDecl = InstDecl () Nothing
       (IRule () Nothing (mkCurryCtxt vs)
         (IHApp () (IHCon () narrowableQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
@@ -89,6 +89,9 @@ genInstances (Type qname _ vs cs) =
     mkFromMatch (Cons qname2 ar _ _) = [Match () (Ident () "from")
       [PApp () (convertTypeNameToHs qname2) (map (PVar () . indexToName) [1..ar])]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkFromImpl qname2 ar]]
+    mkElimFlatMatch (Cons qname2 ar _ _) = [Match () (Ident () "elimFlat")
+      [mkFlatPattern qname2 (TCons qname []) [1..ar]]
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkElimFlatImpl qname2 ar]]
     mkNarrowMatch = Match () (Ident () "narrow") [] (UnGuardedRhs () (List () (mapMaybe mkNarrowExp cs))) Nothing
     mkNarrowExp (Cons qname2 ar _ _) = preventDict mkNarrowImpl qname2 ar
     mkSameConstrMatch (Cons qname2 ar _ _) = [Match () (Ident () "narrowConstr")
@@ -155,6 +158,8 @@ genInstances (Type qname _ vs cs) =
     mkFromImpl qname2 ar = App () (Hs.Var () (convertQualNameToFlatQualName qname)) $
       foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
         (map (Hs.Var () . UnQual () . indexToName) [1..ar])
+    mkElimFlatImpl qname2 ar = foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
+        (map (mkFromHaskell . Hs.Var () . UnQual () . indexToName) [1..ar])
     mkNarrowImpl qname2 ar =
       mkApplicativeChain (Hs.Var () (convertTypeNameToMonadicHs qname2))
         (map (const (mkShare mkFree)) [1..ar])
