@@ -11,10 +11,10 @@ import BasicDefinitions
 type instance HsEquivalent D.IORef = D.IORef
 
 instance ToHs (D.IORef a) where
-  to = P.error "FFI Error: 'To' Conversion on IORef"
+  to = P.id
 
 instance FromHs (D.IORef a) where
-  from x  = P.error "FFI Error: 'From' Conversion on IORef"
+  from     = P.id
   elimFlat = P.id
 
 instance ShowTerm (D.IORef a) where
