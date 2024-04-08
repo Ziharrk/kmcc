@@ -269,6 +269,9 @@ hsToQualName = Qual () (ModuleName () "B") (Ident () "ToHs")
 hsFromQualName :: QName ()
 hsFromQualName = Qual () (ModuleName () "B") (Ident () "FromHs")
 
+levelableQualName :: QName ()
+levelableQualName = Qual () (ModuleName () "B") (Ident () "Levelable")
+
 appQualName :: QName ()
 appQualName = Qual () (ModuleName () "B") (Ident () "app")
 

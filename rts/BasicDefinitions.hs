@@ -151,7 +151,10 @@ instance ShowTerm (LiftedFunc a b) where
 instance ReadTerm (LiftedFunc a b) where
   readTerm = pfail
 
-instance Curryable (LiftedFunc a b)
+instance (Levelable a, Levelable b) => Levelable (LiftedFunc a b) where
+  setLevel l (Func f) = Func $ \a -> setLevelC l (f (setLevelC l a))
+
+instance (Levelable a, Levelable b) => Curryable (LiftedFunc a b)
 
 {-# INLINE [1] app #-}
 app :: Curry (LiftedFunc a b) -> Curry a -> Curry b

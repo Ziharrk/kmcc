@@ -3,29 +3,8 @@
 module Any where
 
 import Language.Haskell.TH
-    ( mkName,
-      Q,
-      Type(VarT, AppKindT, ConT, AppT, ArrowT, StarT, ForallT),
-      Dec(..),
-      TySynEqn(TySynEqn),
-      FamilyResultSig(NoSig),
-      Specificity(SpecifiedSpec),
-      TyVarBndr(PlainTV),
-      TypeFamilyHead(TypeFamilyHead) )
 import MemoizedCurry
-    ( Unifiable(..),
-      ToHs(..),
-      FromHs(..),
-      ShowFree(..),
-      ShowTerm(..),
-      ReadTerm(..),
-      NormalForm(..),
-      HsEquivalent,
-      Curryable )
 import Narrowable
-    ( HasPrimitiveInfo(..),
-      Narrowable(..),
-      PrimitiveInfo(..) )
 
 mkAllAnyDefinitions :: Int -> Q [Dec]
 mkAllAnyDefinitions ar = (\a b c -> a ++ b ++ c) <$>
@@ -116,5 +95,8 @@ dummyInstances = [d|
 
   instance ReadTerm None where
     readTerm = error "reading an ambigouous type variable is not possible"
+
+  instance Levelable None where
+    setLevel _ x = x
 
   instance Curryable None |]

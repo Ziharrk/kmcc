@@ -685,8 +685,6 @@ type Level = Integer
 
 class Levelable a where
   setLevel :: Level -> a -> a
-  default setLevel :: (Generic a, LevelableGen (Rep a)) => Level -> a -> a
-  setLevel lvl = GHC.to . setLevelGen lvl . GHC.from
 
 -- The set function operators are then defined by
 -- 1. getting the current level
@@ -732,11 +730,11 @@ setLevelC lvl (Curry a) = Curry $ do
 -- When we encounter a choice, that needs to be captured,
 -- we capture the left and right tree and combine the results.
 
-captureWithLvl :: Level -> Curry a -> Curry (ListC a)
+captureWithLvl :: Level -> Curry a -> Curry (ListTree a)
 captureWithLvl lvl (Curry ma) = Curry $ ND $
   StateT $ \ndState ->
     let list = captureTree (runND ma ndState)
-    in lift list >>= \(s, v) -> return (Val $ transListTree v, s)
+    in lift list >>= \(s, v) -> return (Val v, s)
   where
     captureTree :: Tree Level (NDState, Level) (NDState, CurryVal a)
                 -> Tree Level (NDState, Level) (NDState, ListTree a)
@@ -777,12 +775,6 @@ getValues :: Tree Level (NDState, Level) (NDState, ListTree a)
 getValues (Single (s, v))   = Single (s, v)
 getValues (Fail   (s, _))   = Single (s, NilTree)
 getValues (Choice lvl' l r) = Choice lvl' (getValues l) (getValues r)
-
--- Convert a tree list to a curry list.
-transListTree :: ListTree a -> ListC a
-transListTree NilTree         = NilC
-transListTree (ConsTree x xs) =
-  ConsC (treeToCurry x) (treeToCurry (fmap transListTree xs))
 
 -- Lift a tree computation to a Curry computation
 treeToCurry :: Tree Level (NDState, Level) a -> Curry a
@@ -858,43 +850,10 @@ instance Unifiable Integer where
   lazyUnifyVar n i = modify (addToVarHeap i (return n)) >> return True
 
 --------------------------------------------------------------------------------
--- Instances for the Generic implementation of Levelable
-
-class LevelableGen f where
-  setLevelGen :: Level -> f x -> f x
-
-instance LevelableGen V1 where
-  setLevelGen _ = id
-
-instance LevelableGen U1 where
-  setLevelGen _ = id
-
-instance (LevelableGen f, LevelableGen g) => LevelableGen (f :+: g) where
-  setLevelGen lvl (L1 x) = L1 (setLevelGen lvl x)
-  setLevelGen lvl (R1 x) = R1 (setLevelGen lvl x)
-
-instance (LevelableGen f, LevelableGen g) => LevelableGen (f :*: g) where
-  setLevelGen lvl (f :*: g) = setLevelGen lvl f :*: setLevelGen lvl g
-
-instance LevelableGen f => LevelableGen (M1 j h f) where
-  setLevelGen lvl (M1 x) = M1 (setLevelGen lvl x)
-
-instance (Levelable a) => LevelableGen (K1 i (Curry a)) where
-  setLevelGen lvl (K1 x) = K1 (setLevelC lvl x)
-
-instance Levelable Bool
-
-instance Levelable Int where
-  setLevel _ x = x
-
-instance Levelable Integer where
-  setLevel _ x = x
-
---------------------------------------------------------------------------------
 -- Some example data types.
 
 data ListC a = NilC | ConsC (Curry a) (Curry (ListC a))
-  deriving (Generic, Levelable)
+  deriving Generic
 
 instance HasPrimitiveInfo a => HasPrimitiveInfo (ListC a)
 
@@ -907,7 +866,10 @@ instance (Unifiable a, HasPrimitiveInfo a) => Unifiable (ListC a) where
   lazyUnifyVar = defaultLazyUnifyVar
 
 data Tuple2C a b = Tuple2C (Curry a) (Curry b)
-  deriving (Generic, Levelable)
+  deriving Generic
+
+instance (Curryable a, Curryable b) => Levelable (Tuple2C a b) where
+  setLevel lvl (Tuple2C x y) = Tuple2C (setLevelC lvl x) (setLevelC lvl y)
 
 instance (HasPrimitiveInfo a, HasPrimitiveInfo b)
   => HasPrimitiveInfo (Tuple2C a b)
@@ -985,7 +947,7 @@ readTermListDefault = list readTerm
              xs <- listRest True
              return (x:xs)
 
-class ( ToHs a, FromHs a, Unifiable a
+class ( ToHs a, FromHs a, Unifiable a, Levelable a
       , NormalForm a, HasPrimitiveInfo a, ShowFree a) => Curryable a
 
 type instance HsEquivalent Integer = Integer
@@ -1009,6 +971,9 @@ instance ShowTerm Integer where
 
 instance ReadTerm Integer where
   readTerm = readPrec
+
+instance Levelable Integer where
+  setLevel _ x = x
 
 instance Curryable Integer
 
@@ -1040,6 +1005,9 @@ instance ShowTerm Double where
 
 instance ReadTerm Double where
   readTerm = readPrec
+
+instance Levelable Double where
+  setLevel _ x = x
 
 instance Curryable Double
 
@@ -1080,6 +1048,9 @@ instance ReadTerm Char where
       readTermListDefault
     )
 
+instance Levelable Char where
+  setLevel _ x = x
+
 instance Curryable Char
 
 type instance HsEquivalent IO = IO
@@ -1113,5 +1084,8 @@ instance ShowTerm (IO a) where
 
 instance ReadTerm (IO a) where
   readTerm = pfail
+
+instance Levelable a => Levelable (IO a) where
+  setLevel l io = fmap (setLevel l) io
 
 instance Curryable a => Curryable (IO a)
