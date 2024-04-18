@@ -59,7 +59,7 @@ kmcc = CCDescription
   (\s -> s)                      -- option to create an executable
   cleanCmd                       -- command to clean module
   (CommandLineFreeMode (\vs -> unwords $ map (\(v,i) -> "-V" ++ v ++ "=" ++ show i) vs))
-  [ stratOpt, profilingOpt, intOpt, forceOpt
+  [ stratOpt, profilingOpt, intOpt, forceOpt, compOpt
   , ghcOpt -- [firstOpt, resultsOpt, errDepthtOpt]
   ]
  where
@@ -89,6 +89,16 @@ forceOpt = CCOption
   [ ConstOpt "-force" ""
   , ConstOpt "+force" "--force"
   ]
+
+compOpt :: CCOption
+compOpt = CCOption
+  "kmcc-opts      "
+  "pass options to the backend compiler"
+  [ArgOpt "kmcc-opts" "" showOpt]
+  where
+    showOpt s = case reads s :: [(String,String)] of
+      [(n,"")] -> Just s
+      _        -> Nothing
 
 ghcOpt :: CCOption
 ghcOpt = CCOption
