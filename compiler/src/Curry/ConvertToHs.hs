@@ -558,7 +558,7 @@ instance ToHs (AExpr (TypeExpr, NDInfo)) where
 failedBranch :: Alt ()
 failedBranch = Alt () (PWildCard ())
   (UnGuardedRhs ()
-    (Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "failed_Det")))) Nothing
+    (Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "failed_Det#")))) Nothing
 
 instance ToMonadicHs (AExpr (TypeExpr, NDInfo)) where
   convertToMonadicHs = convertExprToMonadicHs Set.empty
