@@ -35,7 +35,7 @@ import Any
 import Tree (Tree, dfs, bfs, fs)
 
 failed :: a
-failed = P.throw Failed
+failed = throw Failed
 
 toHaskell :: ToHs a => Curry a -> Curry (HsEquivalent a)
 toHaskell = (>>= to)
