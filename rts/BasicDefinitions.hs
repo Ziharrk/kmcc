@@ -34,6 +34,9 @@ import Classes
 import Any
 import Tree (Tree, dfs, bfs, fs)
 
+failed :: a
+failed = P.throw Failed
+
 toHaskell :: ToHs a => Curry a -> Curry (HsEquivalent a)
 toHaskell = (>>= to)
 
