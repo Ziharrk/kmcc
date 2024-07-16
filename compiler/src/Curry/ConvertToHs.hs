@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Curry.ConvertToHs
   ( compileToHs, haskellName
-  , mkCurryCtxt, mkQuantifiedCtxt, mkFlatPattern
+  , mkCurryCtxt, mkQuantifiedCtxt, mkQuantifiedFor, mkFlatPattern
   , HsEquivalent
   , ToHsName(..), ToMonadicHsName(..), UnqualName(..)
   , convertQualNameToFlatName, convertQualNameToFlatQualName
@@ -422,7 +422,14 @@ instance ToHs TypeExpr where
   convertToHs (TVar idx) = return $ TyVar () (indexToName idx)
   convertToHs (FuncType t1 t2) = TyFun () <$> convertToHs t1 <*> convertToHs t2
   convertToHs (TCons qn tys) = foldl (TyApp ()) (TyCon () (convertTypeNameToHs qn)) <$> mapM convertToHs tys
-  convertToHs (ForallType vs t) = TyForall () (Just $ map toTyVarBndr vs) Nothing <$> convertToHs t
+  convertToHs (ForallType vs t) = TyForall () (Just $ map mkOther vs ++ map toTyVarBndr vs)
+                                    (Just $ CxTuple () $ concatMap mkCtxt vs)
+                                    <$> convertToHs t
+    where mkOther (i, k) = KindedVar () (appendName "c" (indexToName i)) (kindToHsType k)
+          mkCtxt (i, k) = [ TypeA () $ TyEquals () (TyApp () (TyCon () hsEquivQualName) n')(TyVar () n)
+                          , mkQuantifiedForWithNaming mkCurryClassType (appendName "c" . indexToName) (i, k)]
+            where n = indexToName i
+                  n' = TyVar () $ appendName "c" n
 
 instance ToMonadicHs TypeExpr where
   convertToMonadicHs = return . convertTypeToMonadicHs
@@ -448,15 +455,19 @@ mkQuantifiedCtxt _      [] = Nothing
 mkQuantifiedCtxt mkType vs = Just $ CxTuple () $ map (mkQuantifiedFor mkType) vs
 
 mkQuantifiedFor :: (Type () -> Type ()) -> TVarWithKind -> Asst ()
-mkQuantifiedFor mkType (i, KStar) = TypeA () $ mkType (TyVar () (indexToName i))
-mkQuantifiedFor mkType (i, k) = construct $ map (mkQuantifiedFor mkType) argsWithTVar
+mkQuantifiedFor mtype = mkQuantifiedForWithNaming mtype indexToName
+
+mkQuantifiedForWithNaming :: (Type () -> Type ()) -> (Int -> Name ()) -> TVarWithKind -> Asst ()
+mkQuantifiedForWithNaming mkType naming (i, KStar) = TypeA () $ mkType (TyVar () (naming i))
+mkQuantifiedForWithNaming mkType naming (i, k) = construct $ map (mkQuantifiedForWithNaming mkType naming) argsWithTVar
   where
     (args, _) = splitKindArrow k
     argTVars = take (length args) [i+1..]
     argsWithTVar = zip argTVars args
-    construct args' = TypeA () $ TyForall () (Just (map toTyVarBndr argsWithTVar))
+    construct args' = TypeA () $ TyForall ()
+      (Just (map (\(i', k') -> KindedVar () (naming i') (kindToHsType k')) argsWithTVar))
       (Just (CxTuple () args'))
-      (mkType (foldl (TyApp ()) (TyVar () (indexToName i)) (map (TyVar () . indexToName) argTVars)))
+      (mkType (foldl (TyApp ()) (TyVar () (naming i)) (map (TyVar () . naming) argTVars)))
 
 newtype HsFuncDecl = HFD (Maybe (Decl (), Decl ()))
 type instance HsEquivalent TFuncDecl = HsFuncDecl
@@ -533,6 +544,8 @@ type instance HsEquivalent (AExpr (TypeExpr, NDInfo)) = Exp ()
 instance ToHs (AExpr (TypeExpr, NDInfo)) where
   convertToHs (AVar _ idx) = return $ Hs.Var () (UnQual () (indexToName idx))
   convertToHs (ALit _ lit) = return $ convertLit (Paren ()) (Hs.Lit ()) lit
+  convertToHs (AComb _ FuncCall (("Prelude", "apply"), _) [arg1, arg2]) =
+    App () <$> convertToHs arg1 <*> convertToHs arg2
   convertToHs (AComb _ ct (qname, _) args) = do
     args' <- mapM convertToHs args
     let convertNameToHs = case ct of
@@ -880,6 +893,7 @@ defaultImports =
   , ImportDecl () (ModuleName () "Text.Read") True False False Nothing (Just (ModuleName () "P")) Nothing
   , ImportDecl () (ModuleName () "Text.Read.Lex") True False False Nothing (Just (ModuleName () "P")) Nothing
   , ImportDecl () (ModuleName () "Text.ParserCombinators.ReadPrec") True False False Nothing (Just (ModuleName () "P")) Nothing
+  , ImportDecl () (ModuleName () "Control.DeepSeq") True False False Nothing (Just (ModuleName () "P"))  Nothing
   ]
 
 -- |Compute the filename of the Haskell file for a source file

@@ -54,6 +54,12 @@ mkShareableType = TyApp () (TyApp () (TyCon () shareableQualName) (TyCon () curr
 mkCurryClassType :: Type () -> Type ()
 mkCurryClassType = TyApp () (TyCon () curryClassQualName)
 
+mkNFDataClassType :: Type () -> Type ()
+mkNFDataClassType = TyApp () (TyCon () nfDataQualName)
+
+mkRealNFDataClassType :: Type () -> Type ()
+mkRealNFDataClassType = TyApp () (TyCon () realNFDataQualName)
+
 mkLiftedFunc :: Type () -> Type () -> Type ()
 mkLiftedFunc t1 = TyApp () (TyApp () (TyCon () liftedFuncQualName) t1)
 
@@ -262,6 +268,18 @@ toHaskellQualName = Qual () (ModuleName () "B") (Ident () "toHaskell")
 
 hsEquivQualName :: QName ()
 hsEquivQualName = Qual () (ModuleName () "B") (Ident () "HsEquivalent")
+
+nfDataQualName :: QName ()
+nfDataQualName = Qual () (ModuleName () "B") (Ident () "NFDataC")
+
+realNFDataQualName :: QName ()
+realNFDataQualName = Qual () (ModuleName () "P") (Ident () "NFData")
+
+seqQualName :: QName ()
+seqQualName = Qual () (ModuleName () "P") (Ident () "seq")
+
+rnfQualName :: QName ()
+rnfQualName = Qual () (ModuleName () "B") (Ident () "rnfC")
 
 hsToQualName :: QName ()
 hsToQualName = Qual () (ModuleName () "B") (Ident () "ToHs")

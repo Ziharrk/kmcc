@@ -12,6 +12,8 @@ mkCurryCtxt :: [TVarWithKind] -> Maybe (Context ())
 
 mkQuantifiedCtxt :: (Hs.Type () -> Hs.Type ()) -> [TVarWithKind] -> Maybe (Context ())
 
+mkQuantifiedFor :: (Hs.Type () -> Hs.Type ()) -> TVarWithKind -> Hs.Asst ()
+
 mkFlatPattern :: QName -> TypeExpr -> [Int] -> Hs.Pat ()
 
 class ToHsName a where

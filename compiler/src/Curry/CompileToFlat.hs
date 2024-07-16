@@ -165,7 +165,7 @@ compileModule opts m fn = do
   writeShortAST opts (second void qmdl)
   qmdl' <- dumpWith opts CS.showModule pPrint DumpQualified $ qual mdl'
   -- generate interface file
-  let intf = uncurry exportInterface qmdl'
+  intf <- uncurry (exportInterface opts) qmdl'
   writeInterface opts (fst mdl') intf
   ((env, il), mdl'') <- transModule opts qmdl'
   -- never dump anything when writing the flat curry files.

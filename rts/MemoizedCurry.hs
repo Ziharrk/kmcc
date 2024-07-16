@@ -6,10 +6,11 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -38,7 +39,7 @@ import           Data.SBV                           ( SBool,
                                                       SBV,
                                                       constrain,
                                                       EqSymbolic((.===), (./==)),
-                                                      Uninterpreted(sym), (.=>) )
+                                                      sym, (.=>) )
 import           Data.SBV.Control                   ( checkSatAssuming,
                                                       getValue,
                                                       CheckSatResult(..),
@@ -50,6 +51,7 @@ import           Control.Monad.Fix                  (MonadFix(..), fix)
 import           Control.Monad.Codensity            (Codensity(..), lowerCodensity)
 import           Control.Monad.State                (StateT(..), MonadState(..), evalStateT, gets, modify)
 import           Control.Monad.Trans                (MonadTrans(..))
+import           Control.DeepSeq                    (NFData(..))
 import qualified GHC.Generics as GHC                (to, from)
 import           GHC.Generics                       ( Generic(Rep),
                                                       V1,
@@ -887,6 +889,7 @@ instance ( Unifiable a, Unifiable b
 
 type family HsEquivalent (a :: k) = (b :: k) | b -> a
 type instance HsEquivalent (a b) = HsEquivalent a (HsEquivalent b)
+
 class ToHs a where
   to :: a -> Curry (HsEquivalent a)
 
@@ -912,7 +915,7 @@ class NormalForm a where
 class ShowTerm a where
   showTerm :: Int -> HsEquivalent a -> ShowS
   showTermList :: [HsEquivalent a] -> ShowS
-  showTermList ls = showList__ (showTerm 0) ls
+  showTermList = showList__ (showTerm 0)
     where
       showList__ _     []     s = "[]" ++ s
       showList__ showx (x:xs) s = '[' : showx x (showl xs)
@@ -933,7 +936,7 @@ readTermListDefault = list readTerm
     list readx =
       parens
       ( do expectP (L.Punc "[")
-           (listRest False +++ listNext)
+           listRest False +++ listNext
       )
       where
         listRest started =
@@ -947,8 +950,11 @@ readTermListDefault = list readTerm
              xs <- listRest True
              return (x:xs)
 
+class NFDataC a where
+  rnfC :: (HsEquivalent a ~ a') => a' -> ()
+
 class ( ToHs a, FromHs a, Unifiable a, Levelable a
-      , NormalForm a, HasPrimitiveInfo a, ShowFree a) => Curryable a
+      , NormalForm a, HasPrimitiveInfo a, ShowFree a, NFDataC a) => Curryable a
 
 type instance HsEquivalent Integer = Integer
 
@@ -974,6 +980,9 @@ instance ReadTerm Integer where
 
 instance Levelable Integer where
   setLevel _ x = x
+
+instance NFDataC Integer where
+  rnfC = rnf
 
 instance Curryable Integer
 
@@ -1008,6 +1017,9 @@ instance ReadTerm Double where
 
 instance Levelable Double where
   setLevel _ x = x
+
+instance NFDataC Double where
+  rnfC = rnf
 
 instance Curryable Double
 
@@ -1051,6 +1063,9 @@ instance ReadTerm Char where
 instance Levelable Char where
   setLevel _ x = x
 
+instance NFDataC Char where
+  rnfC = rnf
+
 instance Curryable Char
 
 type instance HsEquivalent IO = IO
@@ -1086,6 +1101,9 @@ instance ReadTerm (IO a) where
   readTerm = pfail
 
 instance Levelable a => Levelable (IO a) where
-  setLevel l io = fmap (setLevel l) io
+  setLevel l = fmap (setLevel l)
+
+instance NFDataC a => NFDataC (IO a) where
+  rnfC a = a `seq` ()
 
 instance Curryable a => Curryable (IO a)

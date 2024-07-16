@@ -2,7 +2,9 @@
 {-# LANGUAGE PolyKinds             #-}
 module Any where
 
+import Control.DeepSeq
 import Language.Haskell.TH
+
 import MemoizedCurry
 import Narrowable
 
@@ -98,5 +100,8 @@ dummyInstances = [d|
 
   instance Levelable None where
     setLevel _ x = x
+
+  instance NFDataC None where
+    rnfC x = x `seq` ()
 
   instance Curryable None |]

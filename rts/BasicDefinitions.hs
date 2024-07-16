@@ -21,6 +21,7 @@ import Control.Exception (throw, catch, evaluate, Exception)
 import Control.Monad (MonadPlus(..), (>=>))
 import Control.Monad.Codensity (lowerCodensity)
 import Control.Monad.State (modify, MonadState(put, get), StateT(runStateT))
+import Control.DeepSeq (deepseq, NFData)
 import Data.List (intercalate, sortOn)
 import Data.SBV (SBV, (.===), sNot)
 import qualified Data.Set as Set
@@ -156,6 +157,9 @@ instance ReadTerm (LiftedFunc a b) where
 
 instance (Levelable a, Levelable b) => Levelable (LiftedFunc a b) where
   setLevel l (Func f) = Func $ \a -> setLevelC l (f (setLevelC l a))
+
+instance NFDataC (LiftedFunc a b) where
+  rnfC x = x `seq` ()
 
 instance (Levelable a, Levelable b) => Curryable (LiftedFunc a b)
 
@@ -473,6 +477,7 @@ primitive2Bool sbvF hsF =
 allVars :: CurryVal a -> [Integer]
 allVars (Var _ i) = [i]
 allVars _         = []
+
 
 -- allow defaulting of type variables with a kind that has a maximum of 10 arguments.
 mkAllAnyDefinitions 10

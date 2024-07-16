@@ -21,8 +21,25 @@ genInstances (Type qname _ vs cs) =
   [hsShowFreeDecl | not (isListOrTuple qname)]
   ++
   [ hsEquivDecl 0, hsToDecl, hsFromDecl, hsNarrowableDecl, hsLevelableDecl
-  , hsUnifiableDecl, hsPrimitiveDecl, hsNormalFormDecl, hsCurryDecl ]
+  , hsUnifiableDecl, hsPrimitiveDecl, hsNormalFormDecl, hsCurryDecl, hsNFDataDecl ]
   where
+    hsNFDataDecl = InstDecl () Nothing
+      (IRule () Nothing (mkCurryCtxt vs)
+        (IHApp () (IHCon () nfDataQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
+          (map (TyVar () . indexToName . fst) vs)))
+      )
+      (Just [InsDecl () (FunBind () (map mkNFDataMatch cs))])
+    mkNFDataMatch (Cons qname2 ar _ _) =
+      case preventDict mkNFDataImpl qname2 ar of
+        Nothing -> Match () (Ident () "rnfC") [PVar () (Ident () "x")]
+          (UnGuardedRhs () (InfixApp () (Var () (UnQual () (Ident () "x"))) (QVarOp () seqQualName) (unit_con ()))) Nothing
+        Just e  -> Match () (Ident () "rnfC")
+          [PApp () (convertTypeNameToHs qname2) (map (PVar () . indexToName) [1..ar])]
+          (UnGuardedRhs () e) Nothing
+    mkNFDataImpl _ ar =
+      foldr (flip (InfixApp ()) (QVarOp () seqQualName) . (App () (Hs.Var () rnfQualName) . Var () .  UnQual () . indexToName))
+        (unit_con ()) [1..ar]
+
     hsEquivDecl arity = TypeInsDecl () (TyApp () (TyCon () hsEquivQualName)
       (foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
         (map (TyVar () . indexToName . fst) (take arity vs))))

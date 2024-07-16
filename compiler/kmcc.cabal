@@ -30,18 +30,18 @@ executable kmcc_c
     autogen-modules:  Paths_kmcc
     ghc-options:     -Wall
     -- other-extensions:
-    build-depends:    base                 ^>= 4.16,
+    build-depends:    base                 ^>= 4.18,
                       curry-frontend       ^>= 2.1,
                       filepath             ^>= 1.4,
                       binary               ^>= 0.8,
                       containers           ^>= 0.6,
-                      mtl                  ^>= 2.2,
+                      mtl                  ^>= 2.3,
                       haskell-src-exts     ^>= 1.23,
                       deepseq              ^>= 1.4,
                       directory            ^>= 1.3,
-                      optparse-applicative ^>= 0.17,
+                      optparse-applicative ^>= 0.18,
                       process              ^>= 1.6,
-                      time                 ^>= 1.11,
+                      time                 ^>= 1.12,
                       syb                  ^>= 0.7,
     hs-source-dirs:   src
     default-language: GHC2021

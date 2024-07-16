@@ -2,7 +2,8 @@ module Solver(startSolver, evalSymbolic, SolverState) where
 
 import Control.Concurrent (MVar, newMVar, takeMVar, putMVar)
 import Control.Exception (Exception, throwIO, catches, ErrorCall(..), Handler(..))
-import Control.Monad.Except (MonadError, MonadTrans)
+import Control.Monad.Except (MonadError)
+import Control.Monad.Trans (MonadTrans)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Reader (ReaderT(runReaderT))
 import Control.Monad.RWS (MonadState(..), MonadWriter)
