@@ -760,6 +760,8 @@ captureWithLvl lvl (Curry ma) = Curry $ ND $
 combine :: Tree Level (NDState, Level) (NDState, ListTree a)
         -> Tree Level (NDState, Level) (NDState, ListTree a)
         -> Tree Level (NDState, Level) (NDState, ListTree a)
+combine (Choice lvl1 l1 r1) (Choice lvl2 l2 r2)
+ | lvl1 == lvl2 = Choice lvl1 (combine l1 l2) (combine r1 r2)
 combine (Single (_, NilTree))       ys      = ys
 combine (Single (s, ConsTree x xs)) ys      =
   Single (s, ConsTree x (snd <$> combine (fmap (s,) xs) (getValues ys)))

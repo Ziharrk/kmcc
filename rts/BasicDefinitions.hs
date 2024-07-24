@@ -413,8 +413,9 @@ primitive2 :: forall a b c
            -> (Foreign a -> Foreign b -> Foreign c)
            -> Curry (a :-> b :-> c)
 primitive2 sbvF hsF =
-  return . Func $ share >=> \ca -> Curry (deref ca >>= \a ->
-  return . Val . Func $ share >=> \cb -> Curry (deref cb >>= \b ->
+  return . Func $ share >=> \ca -> Curry (
+  return . Val . Func $ share >=> \cb -> Curry (
+    deref ca >>= \a -> deref cb >>= \b ->
     case (# a, b #) of
       (# Val x, Val y #) -> return $ Val $ fromForeign $ hsF (toForeign x) (toForeign y)
       _ -> case (# primitiveInfo @a, primitiveInfo @b, primitiveInfo @c #) of
@@ -422,7 +423,11 @@ primitive2 sbvF hsF =
               k <- freshID
               s@NDState { .. } <- get
               let c = sbvF (toSBV a) (toSBV b) .=== toSBV (Var 0 k)
-              let csv' = foldr Set.insert constrainedVars (k : allVars a ++ allVars b)
+              let (vs, lvl) = case (# a, b #) of
+                                (# Var l1 i, Var l2 j #) -> ([i, j], max l1 l2)
+                                (# Var l1 i, _ #) -> ([i], l1)
+                                (# _, Var l2 j #) -> ([j], l2)
+              let csv' = foldr Set.insert constrainedVars (k : vs)
               let cst' = insertConstraint c constraintStore
               put (s { constraintStore = cst', constrainedVars = csv' })
               -- Checking consistency is unnecessary, because "j" is fresh.
@@ -432,7 +437,7 @@ primitive2 sbvF hsF =
               -- j <- 1
               -- matchFL 9 x
               -- matchFL 0 y
-              return (Var 0 k)
+              return (Var lvl k)
             _ -> error "internalError: primitive2: non-primitive type"))
 
 {-# SPECIALISE primitive2 :: (SBV Integer -> SBV Integer -> SBV Integer)
