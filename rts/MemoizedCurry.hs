@@ -300,15 +300,15 @@ mzeroLevel lvl = get >>= \s -> ND $ lift $ lift $ Fail (s, lvl)
 mplusLevel :: forall a. Level -> ND a -> ND a -> ND a
 mplusLevel lvl (ND ma1) (ND ma2) = ND $ StateT $ \ndState1 ->
   Codensity $ \sc ->
-    if setComputation ndState1
+    let i1 = freshIDFromState ndState1
+        ps = Set.insert (branchID ndState1) (parentIDs ndState1)
+        s1 = ndState1 { branchID = i1, parentIDs = ps }
+    in if setComputation ndState1
       then do
-        let thisLvl = currentLevel ndState1
-        (ndState2, a) <- augment thisLvl (runND (ND ma1) ndState1)
+        let thisLvl = currentLevel s1
+        (ndState2, a) <- augment thisLvl (runND (ND ma1) s1)
         sc (a, ndState2)
-      else let i1 = freshIDFromState ndState1
-               i2 = noinline const (freshIDFromState ndState1) i1
-               ps = Set.insert (branchID ndState1) (parentIDs ndState1)
-               s1 = ndState1 { branchID = i1, parentIDs = ps }
+      else let i2 = noinline const (freshIDFromState ndState1) i1
                s2 = ndState1 { branchID = i2, parentIDs = ps }
                t1 = runStateT ma1 s1
                t2 = runStateT ma2 s2
@@ -318,10 +318,14 @@ mplusLevel lvl (ND ma1) (ND ma2) = ND $ StateT $ \ndState1 ->
             -> Tree Level (NDState, Level) (NDState, a)
     augment thisLvl (Single (ndState, a))    =
       Choice lvl (Single (ndState, a))
-                  (runND (ND ma2) (ndState { currentLevel = thisLvl }))
+                  (runND (ND ma2) (ndState { currentLevel = thisLvl,
+                                             branchID = freshIDFromState ndState,
+                                             parentIDs = Set.insert (branchID ndState) (parentIDs ndState) }))
     augment thisLvl (Fail   (ndState, lvl')) =
       Choice lvl (Fail   (ndState, lvl'))
-                  (runND (ND ma2) (ndState { currentLevel = thisLvl }))
+                  (runND (ND ma2) (ndState { currentLevel = thisLvl,
+                                             branchID = freshIDFromState ndState,
+                                             parentIDs = Set.insert (branchID ndState) (parentIDs ndState) }))
     augment thisLvl (Choice lvl' l r)
       | lvl == lvl' =
         Choice lvl' l (augment thisLvl r)
