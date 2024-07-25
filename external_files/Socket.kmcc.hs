@@ -43,6 +43,12 @@ instance Unifiable N.Socket where
 
   lazyUnifyVar _ _ = P.error "unifying a Socket is not possible"
 
+instance Levelable N.Socket where
+  setLevel _ x = x
+
+instance NFDataC N.Socket where
+  rnfC !_ = ()
+
 instance Curryable N.Socket
 
 type Socket_Det# = N.Socket
