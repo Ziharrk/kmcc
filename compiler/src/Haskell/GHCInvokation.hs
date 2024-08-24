@@ -77,6 +77,7 @@ getGHCOptsFor topDir hasMain deps targetFile
   (if hasMain then ["-main-is", mainId] else []) ++
   ["-i " ++ topDir </> "rts"] ++
   ["-O " ++ show optOptimizationBaseLevel] ++
+  ["-O 0"] ++
   concat [["-with-rtsopts=-pa", "-prof", "-osuf p_o", "-fprof-auto"] | optProfiling ] ++
   getGHCSrcDirOpts deps frontendOpts ++
   ghcOpts ++

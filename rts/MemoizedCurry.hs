@@ -19,6 +19,7 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE TypeFamilyDependencies     #-}
+{-# LANGUAGE UnboxedTuples              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans            #-}
 -- Common subexpression elinimation is disallowed due to unsafePerformIO stuff.
@@ -29,6 +30,7 @@ module MemoizedCurry
   , MonadShare(..)
   ) where
 
+import           Data.Maybe                         (isNothing)
 import qualified Data.Map                           as Map
 import           Data.Map                           (Map)
 import qualified Data.Set                           as Set
@@ -72,6 +74,8 @@ import qualified Tree
 
 import Narrowable
 import Solver
+
+import Debug.Trace
 
 -- Changes to the paper:
 -- - The performance optimization that was teasered
@@ -221,7 +225,7 @@ data NDState = NDState {
     constrainedVars :: Set ID,
     branchID        :: ID,           -- (Branch) ID
     parentIDs       :: Set ID,
-    setComputation  :: Bool,
+    captureLevel    :: Maybe Level,
     solverState     :: SolverState
   }
 
@@ -236,7 +240,7 @@ data NDState = NDState {
 initialNDState :: () -> NDState
 initialNDState x = unsafePerformIO $ do
   r <- newIORef (toInteger (fromEnum x + 1))
-  NDState r 0 emptyHeap mempty Set.empty 0 Set.empty False <$> startSolver
+  NDState r 0 emptyHeap mempty Set.empty 0 Set.empty Nothing <$> startSolver
 
 {-# NOINLINE freshIDFromState #-}
 freshIDFromState :: NDState -> ID
@@ -299,38 +303,35 @@ mzeroLevel lvl = get >>= \s -> ND $ lift $ lift $ Fail (s, lvl)
 -- We update the parents and branch IDs an create a choice with the given level.
 mplusLevel :: forall a. Level -> ND a -> ND a -> ND a
 mplusLevel lvl (ND ma1) (ND ma2) = ND $ StateT $ \ndState1 ->
-  Codensity $ \sc ->
     let i1 = freshIDFromState ndState1
         ps = Set.insert (branchID ndState1) (parentIDs ndState1)
         s1 = ndState1 { branchID = i1, parentIDs = ps }
-    in if setComputation ndState1
-      then do
-        let thisLvl = currentLevel s1
-        (ndState2, a) <- augment thisLvl (runND (ND ma1) s1)
-        sc (a, ndState2)
-      else let i2 = noinline const (freshIDFromState ndState1) i1
-               s2 = ndState1 { branchID = i2, parentIDs = ps }
-               t1 = runStateT ma1 s1
-               t2 = runStateT ma2 s2
-          in Choice lvl (runCodensity t1 sc) (runCodensity t2 sc)
-  where
-    augment :: Level -> Tree Level (NDState, Level) (NDState, a)
-            -> Tree Level (NDState, Level) (NDState, a)
-    augment thisLvl (Single (ndState, a))    =
-      Choice lvl (Single (ndState, a))
-                  (runND (ND ma2) (ndState { currentLevel = thisLvl,
-                                             branchID = freshIDFromState ndState,
-                                             parentIDs = Set.insert (branchID ndState) (parentIDs ndState) }))
-    augment thisLvl (Fail   (ndState, lvl')) =
-      Choice lvl (Fail   (ndState, lvl'))
-                  (runND (ND ma2) (ndState { currentLevel = thisLvl,
-                                             branchID = freshIDFromState ndState,
-                                             parentIDs = Set.insert (branchID ndState) (parentIDs ndState) }))
-    augment thisLvl (Choice lvl' l r)
-      | lvl == lvl' =
-        Choice lvl' l (augment thisLvl r)
-      | otherwise   =
-        Choice lvl' (augment thisLvl l) (augment thisLvl r)
+        i2 = noinline const (freshIDFromState ndState1) i1
+        s2 = ndState1 { branchID = i2, parentIDs = ps }
+    in if Just lvl /= captureLevel ndState1
+      then trace (show lvl ++ " " ++ show (captureLevel ndState1)) $ Codensity $ \sc ->
+              let t1 = runStateT ma1 s1
+                  t2 = runStateT ma2 s2
+              in Choice lvl (runCodensity t1 sc) (runCodensity t2 sc)
+      else trace (show lvl ++ "!") $ Codensity $ \sc -> do
+        let augment t@(Single (ndState, a)) = do
+                let i = freshIDFromState ndState
+                Choice lvl t $ runND (ND ma2)
+                  (ndState { branchID = i
+                           , parentIDs = ps })
+            augment t@(Fail (ndState, _)) = do
+                let i = freshIDFromState ndState
+                Choice lvl t $ runND (ND ma2)
+                  (ndState { branchID = i
+                           , parentIDs = ps })
+            augment (Choice lvl t1 t2)
+              | Just lvl == captureLevel ndState1 = do
+                v1 <- t1
+                v2 <- augment t2
+                Choice lvl (Single v1) (Single v2)
+              | otherwise = Choice lvl (augment t1) (augment t2)
+        (s,a) <- augment (runND (ND ma1) s1)
+        sc (a, s)
 
 msumLevel :: Level -> [ND a] -> ND a
 msumLevel lvl [] = mzeroLevel lvl
@@ -549,7 +550,7 @@ memo (Curry m) = Curry $ do
                           then branchID ndState3
                           else branchID ndState1
             insertH = insertHeap insertID (y, wasND)
-        unsafePerformIO (atomicModifyIORef' taskMap (\x -> (insertH x, return y)))
+        trace ("added at " ++ show insertID ) $ unsafePerformIO (atomicModifyIORef' taskMap (\x -> (insertH x, return y)))
 
 --------------------------------------------------------------------------------
 -- We could define lookupTaskResult exactly as in the paper,
@@ -561,9 +562,10 @@ memo (Curry m) = Curry $ do
 
 {-# NOINLINE lookupTaskResult #-}
 lookupTaskResult :: IORef (Heap a) -> ID -> Set ID -> Maybe a
-lookupTaskResult ref i s =
+lookupTaskResult ref i s = do
   -- msum $ map (`Map.lookup` trMap) $ Set.toList allIDs
-  snd <$> Map.lookupMax trMap
+  (k, v) <- Map.lookupMax trMap
+  trace ("found at " ++ show k) $ return v
   where
     allIDs = Set.insert i s
     trMap = Map.restrictKeys (unsafePerformIO (readIORef ref)) allIDs
@@ -603,19 +605,19 @@ ma1 `unify` ma2 = Curry $ do
   a1 <- deref ma1
   a2 <- deref ma2
   unCurry $ case (a1, a2) of
-    (Var l1 i1, y@(Var _ i2))
+    (Var l1 i1, Var _ i2)
       | i1 == i2 -> return True
       | Primitive <- primitiveInfo @a
         -> Curry $ do
-          let cs = toSBV (Var l1 i1) .=== toSBV y
-          modify (\s@NDState { .. } -> addToVarHeap i1 (Curry (return y)) s
+          let cs = toSBV (Var l1 i1) .=== toSBV a2
+          modify (\s@NDState { .. } -> addToVarHeap i1 (Curry (return a2)) s
                     { constraintStore = insertConstraint cs constraintStore
                     , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
                     })
           _ <- checkConsistency
           return (Val True)
       | otherwise -> do
-        modify (addToVarHeap i1 (Curry (return y)))
+        modify (addToVarHeap i1 (Curry (return a2)))
         return True
     (Val x, Val y)    -> unifyWith unify x y
     (Var l i1, Val y) -> unifyVar i1 l y
@@ -624,17 +626,34 @@ ma1 `unify` ma2 = Curry $ do
     unifyVar :: ID -> Level -> a -> Curry Bool
     unifyVar i l v = case primitiveInfo @a of
       NoPrimitive -> do
-        let x = narrowConstr v
-        sX <- x
-        modify (addToVarHeap i (return sX))
-        unify (return sX) (return v)
-      Primitive   -> do
-        let cs = toSBV (Var l i) .=== toSBV (Val v)
-        modify (\s@NDState { .. } -> addToVarHeap i (return v) s
-                   { constraintStore = insertConstraint cs constraintStore
-                   , constrainedVars = Set.insert i constrainedVars
-                   })
-        return True
+        s <- get
+        let (# x, others #) = narrowConstr v
+            p1 = do sX <- x
+                    put (addToVarHeap i (return sX) s)
+                    unifyWith unify sX v
+                    return True
+            ps o = do sO <- o
+                      put (addToVarHeap i (return sO) s)
+                      return False
+        if isNothing (captureLevel s)
+          then p1
+          else Curry $ msumLevel l (unCurry p1 : map (unCurry . ps) others)
+      Primitive   -> Curry $ do
+        s <- get
+        let cs1 = toSBV (Var l i) .=== toSBV (Val v)
+            cs2 = toSBV (Var l i) ./== toSBV (Val v)
+            s1 = addToVarHeap i (return v) s
+                      { constraintStore = insertConstraint cs1 (constraintStore s)
+                      , constrainedVars = Set.insert i (constrainedVars s)
+                      }
+            s2 = s    { constraintStore = insertConstraint cs2 (constraintStore s)
+                      , constrainedVars = Set.insert i (constrainedVars s)
+                      }
+            p1 = put s1 >> checkConsistency >> return (Val True)
+            p2 = put s2 >> ND (lift (lift (Fail (s2, l))))
+        if isNothing (captureLevel s)
+          then p1
+          else mplusLevel l p1 p2
 
 (=:=) :: (HasPrimitiveInfo a, Unifiable a) => Curry (a :-> a :-> Bool)
 (=:=) = return . Func $ \a -> return . Func $ \b -> unify a b
@@ -647,14 +666,34 @@ ma1 `unify` ma2 = Curry $ do
 -- but fails in the "normal" stricter unification.
 
 -- TODO: primitives
-unifyL :: (HasPrimitiveInfo a, Unifiable a) => Curry a -> Curry a -> Curry Bool
+unifyL :: forall a. (HasPrimitiveInfo a, Unifiable a) => Curry a -> Curry a -> Curry Bool
 ma1 `unifyL` ma2 = Curry $ do
   a1 <- deref ma1
   case a1 of
-    Var _ i1 -> unCurry $ do
-      ma2' <- share ma2
-      modify (addToVarHeap i1 ma2')
-      return True
+    Var l1 i1
+      | Primitive <- primitiveInfo @a -> do
+        a2 <- deref ma2
+        case a2 of
+          Var l2 i2 | i1 == i2  -> return (Val True)
+                    | otherwise -> do
+            let cs = toSBV (Var @a l1 i1) .=== toSBV a2
+            modify (\s@NDState { .. } -> addToVarHeap i1 (Curry (return a2)) s
+                      { constraintStore = insertConstraint cs constraintStore
+                      , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
+                      })
+            _ <- checkConsistency
+            return (Val True)
+          Val y -> do
+            let cs = toSBV (Var l1 i1) .=== toSBV a2
+            modify (\s@NDState { .. } -> addToVarHeap i1 (Curry (return a2)) s
+                      { constraintStore = insertConstraint cs constraintStore
+                      , constrainedVars = Set.insert i1 constrainedVars
+                      })
+            return (Val True)
+      | otherwise -> unCurry $ do
+        ma2' <- share ma2
+        modify (addToVarHeap i1 ma2')
+        return True
     Val x -> do
       a2 <- deref ma2
       unCurry $ case a2 of
@@ -706,7 +745,7 @@ class Levelable a where
 -- Every choice in a set function will be encapsulated and returned in the SAME non-deterministic branch.
 -- And all choices for values that were not captured by the set function need to be consistent across all these captured values.
 -- Thus, some information has to flow from one branch of the coice to the other one.
--- In consequence, we have to sequentialize the coputation of choices under a set function.
+-- In consequence, we have to sequentialize the computation of choices under a set function.
 
 -- KiCS2 can avoid this sequenzialization due to the fingerprinting of choices, but we cannot.
 -- Note that we are still not more strict than KiCS2, because to compute the element at an index `i` for a list,
@@ -721,27 +760,40 @@ class Levelable a where
 setLevelC :: Levelable a => Level -> Curry a -> Curry a
 setLevelC lvl (Curry a) = Curry $ do
   ndState1 <- get
-  put (ndState1 { currentLevel = lvl, setComputation = False })
+  put (ndState1 { currentLevel = lvl })
   res <- fmap setLevelCurryVal a
   ndState2 <- get
-  put (ndState2 { currentLevel = currentLevel ndState1
-                , setComputation = setComputation ndState1 })
+  put (ndState2 { currentLevel = currentLevel ndState1 })
   return res
   where
     setLevelCurryVal (Val x) = Val (setLevel lvl x)
     setLevelCurryVal (Var lvl' i) = Var lvl' i
 
+showShape :: Tree Level (x, Level) y -> String
+showShape (Single _) = "Single"
+showShape (Fail (_, l)) = "Fail " ++ show l
+showShape (Choice i l r) = "Choice " ++ show i ++ " (" ++ showShape l ++ ") (" ++ showShape r ++ ")"
+
 -- Capturing proceeds by traversing the tree structure
--- and collection the results into a list of trees.
+-- and collecting the results into a list of trees.
 -- When we encounter a choice, that needs to be captured,
 -- we capture the left and right tree and combine the results.
 
 captureWithLvl :: Level -> Curry a -> Curry (ListTree a)
 captureWithLvl lvl (Curry ma) = Curry $ ND $
   StateT $ \ndState ->
-    let list = captureTree (runND ma ndState)
-    in lift list >>= \(s, v) -> return (Val v, s)
+    let x = (runND ma ndState)
+        list = captureTree x
+    in trace (show lvl ++ "\n" ++ showShape x ++ "\n" ++ showListShape list) $ lift list >>= \(s, v) -> return (Val v, s)
   where
+    showListShape :: Tree Level (NDState, Level) (NDState, ListTree a) -> String
+    showListShape (Single t) = "Single " ++ showListTree t
+    showListShape (Fail (_, l)) = "Fail " ++ show l
+    showListShape (Choice i l r) = "Choice " ++ show i ++ " (" ++ showListShape l ++ ") (" ++ showListShape r ++ ")"
+    showListTree :: (NDState, ListTree a) -> String
+    showListTree (_, NilTree) = "NilTree"
+    showListTree (s, ConsTree x xs) = "ConsTree (" ++ showShape x ++ ") (" ++ showListShape (fmap (s,) xs) ++ ")"
+
     captureTree :: Tree Level (NDState, Level) (NDState, CurryVal a)
                 -> Tree Level (NDState, Level) (NDState, ListTree a)
     captureTree (Single (s, Val a)) =
@@ -752,7 +804,7 @@ captureWithLvl lvl (Curry ma) = Curry $ ND $
       | lvl == lvl' = Single (s, NilTree)
       | otherwise   = Fail (s, lvl')
     captureTree (Choice lvl' l r)
-      | lvl' == lvl = combine (captureTree l) (captureTree r)
+      | lvl' == lvl = combine lvl (captureTree l) (captureTree r)
       -- this ^ is depth first (capturing l first), but we could change it if we want
       | otherwise   = Choice lvl' (captureTree l) (captureTree r)
 
@@ -761,28 +813,39 @@ captureWithLvl lvl (Curry ma) = Curry $ ND $
 -- When we encounter a leaf, we combine it with all collected values of the second argument.
 -- When we encounter a failure, it is absorbed by the second argument.
 
-combine :: Tree Level (NDState, Level) (NDState, ListTree a)
+combine :: Level
         -> Tree Level (NDState, Level) (NDState, ListTree a)
         -> Tree Level (NDState, Level) (NDState, ListTree a)
-combine (Choice lvl1 l1 r1) (Choice lvl2 l2 r2)
- | lvl1 == lvl2 = Choice lvl1 (combine l1 l2) (combine r1 r2)
-combine (Single (_, NilTree))       ys      = ys
-combine (Single (s, ConsTree x xs)) ys      =
-  Single (s, ConsTree x (snd <$> combine (fmap (s,) xs) (getValues ys)))
-combine (Choice lvl1 l1 r1) ys              =
-  Choice lvl1 (combine l1 ys) (combine r1 ys)
-combine (Fail _) (Single xs)                = Single xs
-combine (Fail (s1, lvl1)) (Fail (s2, lvl2)) =
-  if lvl1 <= lvl2 then Fail (s1, lvl1) else Fail (s2, lvl2)
-combine (Fail lvl1) (Choice lvl2 l r)  =
-  Choice lvl2 (combine (Fail lvl1) l) (combine (Fail lvl1) r)
+        -> Tree Level (NDState, Level) (NDState, ListTree a)
+combine lvl t1 t2 = do
+  (s1, v1) <- t1
+  (s2, v2) <- t2
+  return (s2, v1 <++> v2)
 
--- We only want successes in the list, thus we remove failures from a tree list
-getValues :: Tree Level (NDState, Level) (NDState, ListTree a)
-          -> Tree Level (NDState, Level) (NDState, ListTree a)
-getValues (Single (s, v))   = Single (s, v)
-getValues (Fail   (s, _))   = Single (s, NilTree)
-getValues (Choice lvl' l r) = Choice lvl' (getValues l) (getValues r)
+(<++>) :: ListTree a -> ListTree a -> ListTree a
+NilTree <++> a = a
+ConsTree x xs <++> a = ConsTree x (fmap (<++> a) xs)
+
+
+-- combine _   (Single (_, NilTree))       ys      = ys
+-- combine lvl (Single (s, ConsTree x xs)) ys      =
+--   Single (s, ConsTree x (snd <$> combine lvl (fmap (s,) xs) (getValues lvl ys)))
+-- combine lvl (Choice lvl1 l1 r1) ys              =
+--   Choice lvl1 (combine lvl l1 ys) (combine lvl r1 ys)
+-- combine _   (Fail _) (Single xs)                = Single xs
+-- combine _   (Fail (s1, lvl1)) (Fail (s2, lvl2)) =
+--   if lvl1 <= lvl2 then Fail (s1, lvl1) else Fail (s2, lvl2)
+-- combine lvl  (Fail lvl1) (Choice lvl2 l r)  =
+--   Choice lvl2 (combine lvl (Fail lvl1) l) (combine lvl (Fail lvl1) r)
+
+-- getValues :: Level
+--           -> Tree Level (NDState, Level) (NDState, ListTree a)
+--           -> Tree Level (NDState, Level) (NDState, ListTree a)
+-- getValues lvl (Single (s, v))   = Single (s, v)
+-- getValues lvl (Fail   (s, lvl'))
+--   | lvl == lvl' = Single (s, NilTree)
+--   | otherwise   = Fail (s, lvl')
+-- getValues lvl (Choice lvl' l r) = Choice lvl' (getValues lvl l) (getValues lvl r)
 
 -- Lift a tree computation to a Curry computation
 treeToCurry :: Tree Level (NDState, Level) a -> Curry a
@@ -855,43 +918,19 @@ instance (HasPrimitiveInfo f, Unifiable f) => UnifiableGen (K1 i (Curry f)) wher
 instance Unifiable Integer where
   unifyWith _ x y = if x == y then return True else mzero
 
-  lazyUnifyVar n i = modify (addToVarHeap i (return n)) >> return True
+  lazyUnifyVar n i = Curry $ do
+      let cs = toSBV (Var 0 i) .=== toSBV (Val n)
+      modify (\s@NDState { .. } -> addToVarHeap i (return n) s
+                  { constraintStore = insertConstraint cs constraintStore
+                  , constrainedVars = Set.insert i constrainedVars
+                  })
+      _ <- checkConsistency
+      return (Val True)
 
 --------------------------------------------------------------------------------
 -- Some example data types.
 
 data ListC a = NilC | ConsC (Curry a) (Curry (ListC a))
-  deriving Generic
-
-instance HasPrimitiveInfo a => HasPrimitiveInfo (ListC a)
-
-instance HasPrimitiveInfo a => Narrowable (ListC a) where
-  narrow = defaultNarrow
-  narrowConstr = defaultNarrowConstr
-
-instance (Unifiable a, HasPrimitiveInfo a) => Unifiable (ListC a) where
-  unifyWith = defaultUnifyWith
-  lazyUnifyVar = defaultLazyUnifyVar
-
-data Tuple2C a b = Tuple2C (Curry a) (Curry b)
-  deriving Generic
-
-instance (Curryable a, Curryable b) => Levelable (Tuple2C a b) where
-  setLevel lvl (Tuple2C x y) = Tuple2C (setLevelC lvl x) (setLevelC lvl y)
-
-instance (HasPrimitiveInfo a, HasPrimitiveInfo b)
-  => HasPrimitiveInfo (Tuple2C a b)
-
-instance (HasPrimitiveInfo a, HasPrimitiveInfo b)
-  => Narrowable (Tuple2C a b) where
-  narrow = defaultNarrow
-  narrowConstr = defaultNarrowConstr
-
-instance ( Unifiable a, Unifiable b
-         , HasPrimitiveInfo a, HasPrimitiveInfo b )
-  => Unifiable (Tuple2C a b) where
-  unifyWith = defaultUnifyWith
-  lazyUnifyVar = defaultLazyUnifyVar
 
 type family HsEquivalent (a :: k) = (b :: k) | b -> a
 type instance HsEquivalent (a b) = HsEquivalent a (HsEquivalent b)
@@ -1007,7 +1046,14 @@ instance HasPrimitiveInfo Double where
 instance Unifiable Double where
   unifyWith _ x y = if x == y then return True else mzero
 
-  lazyUnifyVar n i = modify (addToVarHeap i (return n)) >> return True
+  lazyUnifyVar n i = Curry $ do
+      let cs = toSBV (Var 0 i) .=== toSBV (Val n)
+      modify (\s@NDState { .. } -> addToVarHeap i (return n) s
+                  { constraintStore = insertConstraint cs constraintStore
+                  , constrainedVars = Set.insert i constrainedVars
+                  })
+      _ <- checkConsistency
+      return (Val True)
 
 instance NormalForm Double where
   nfWith _ !x = return (Right x)
@@ -1044,7 +1090,14 @@ instance HasPrimitiveInfo Char where
 instance Unifiable Char where
   unifyWith _ x y = if x == y then return True else mzero
 
-  lazyUnifyVar n i = modify (addToVarHeap i (return n)) >> return True
+  lazyUnifyVar n i = Curry $ do
+      let cs = toSBV (Var 0 i) .=== toSBV (Val n)
+      modify (\s@NDState { .. } -> addToVarHeap i (return n) s
+                  { constraintStore = insertConstraint cs constraintStore
+                  , constrainedVars = Set.insert i constrainedVars
+                  })
+      _ <- checkConsistency
+      return (Val True)
 
 instance NormalForm Char where
   nfWith _ !x = return (Right x)
