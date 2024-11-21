@@ -76,7 +76,7 @@ getGHCOptsFor topDir hasMain deps targetFile
   ["-v0" | optCompilerVerbosity == 0] ++
   (if hasMain then ["-main-is", mainId] else []) ++
   ["-i " ++ topDir </> "rts"] ++
-  ["-O " ++ show optOptimizationBaseLevel] ++
+  getOptimizationOpts ghcOpts optOptimizationBaseLevel ++
   concat [["-with-rtsopts=-pa", "-prof", "-osuf p_o", "-fprof-auto"] | optProfiling ] ++
   getGHCSrcDirOpts deps frontendOpts ++
   ghcOpts ++
@@ -84,6 +84,13 @@ getGHCOptsFor topDir hasMain deps targetFile
   where
     mainId = case last deps of
       (ModuleIdent _ ms, _) -> "Curry_" ++ intercalate "." ms ++ ".main##"
+
+getOptimizationOpts :: [String] -> Int -> [String]
+getOptimizationOpts _ghcOps optOptimizationBaseLevel =
+  [ "-O " ++ show optOptimizationBaseLevel] ++
+  if optOptimizationBaseLevel < 2
+    then ["-fno-float-in"]
+    else ["-flate-dmd-anal"]
 
 getGHCSrcDirOpts :: [(ModuleIdent, Source)] -> Options -> [String]
 getGHCSrcDirOpts deps opts = mapMaybe (\(mid, src) -> case src of
