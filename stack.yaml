@@ -5,6 +5,7 @@ packages:
   - rts
 extra-deps:
   - set-extra-1.4.2
+  - tree-monad-0.3.2
 allow-newer: true
 local-bin-path: bin
 allow-different-user: true

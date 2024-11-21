@@ -20,7 +20,7 @@ genInstances (Type qname _ vs cs) =
   ++
   [hsShowFreeDecl | not (isListOrTuple qname)]
   ++
-  [ hsEquivDecl 0, hsToDecl, hsFromDecl, hsNarrowableDecl, hsLevelableDecl
+  [ hsEquivDecl 0, hsToDecl, hsFromDecl, hsNarrowableDecl
   , hsUnifiableDecl, hsPrimitiveDecl, hsNormalFormDecl, hsCurryDecl, hsNFDataDecl ]
   where
     hsNFDataDecl = InstDecl () Nothing
@@ -60,12 +60,6 @@ genInstances (Type qname _ vs cs) =
         (IHApp () (IHCon () narrowableQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
           (map (TyVar () . indexToName . fst) vs))))
       (Just [InsDecl () (FunBind () [mkNarrowMatch]), InsDecl () (FunBind () (concatMap mkSameConstrMatch cs))])
-    hsLevelableDecl = InstDecl () Nothing
-      (IRule () Nothing (mkCurryCtxt vs)
-        (IHApp () (IHCon () levelableQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
-          (map (TyVar () . indexToName . fst) vs)))
-      )
-      (Just [InsDecl () (FunBind () (mkLevelDetMatch : concatMap mkLevelMatch cs))])
     hsUnifiableDecl = InstDecl () Nothing
       (IRule () Nothing (mkCurryCtxt vs)
         (IHApp () (IHCon () unifiableQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
@@ -117,18 +111,14 @@ genInstances (Type qname _ vs cs) =
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkElimFlatImpl qname2 ar]]
     mkNarrowMatch = Match () (Ident () "narrow") [] (UnGuardedRhs () (List () (mapMaybe mkNarrowExp cs))) Nothing
     mkNarrowExp (Cons qname2 ar _ _) = preventDict mkNarrowImpl qname2 ar
-    mkLevelDetMatch = Match () (Ident () "setLevel")
-      [PVar () (Ident () "_l"), PAsPat () (Ident () "_arg") (PApp () (convertQualNameToFlatQualName qname) [PWildCard ()])]
-      (UnGuardedRhs () (Hs.Var () (UnQual () (Ident () "_arg")))) Nothing
-    mkLevelMatch (Cons qname2 ar _ _) = [Match () (Ident () "setLevel")
-      [PVar () (Ident () "_l"), PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkLevelImpl qname2 ar]]
-    mkSameConstrMatch (Cons qname2 ar _ _) = [Match () (Ident () "narrowConstr")
+    mkSameConstrMatch c@(Cons qname2 ar _ _) = [Match () (Ident () "narrowConstr")
       [PApp () (convertTypeNameToMonadicHs qname2) (replicate ar (PWildCard ()))]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkSameConstrImpl qname2 ar]] ++
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict (mkSameConstrImpl others) qname2 ar]] ++
       [Match () (Ident () "narrowConstr")
       [mkFlatPattern qname2 (TCons qname []) [1..ar]]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkSameConstrImpl qname2 ar]]
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict (mkSameConstrImpl others) qname2 ar]]
+      where
+        others = filter (/= c) cs
     mkUnifyWithMatch (Cons qname2 ar _ _) = [Match () (Ident () "unifyWith")
       [ PVar () (Ident () "_f")
       , PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . appendName "_a" . indexToName) [1..ar])
@@ -192,11 +182,14 @@ genInstances (Type qname _ vs cs) =
     mkNarrowImpl qname2 ar =
       mkApplicativeChain (Hs.Var () (convertTypeNameToMonadicHs qname2))
         (map (const (mkShare mkFree)) [1..ar])
-    mkLevelImpl qname2 ar =
-      foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
-        (map (mkSetLevelC (Hs.Var () (UnQual () (Ident () "_l"))) . Hs.Var () . UnQual () . indexToName) [1..ar])
-    mkSameConstrImpl qname2 ar = mkApplicativeChain (Hs.Var () (convertTypeNameToMonadicHs qname2))
-      (replicate ar (mkShare mkFree))
+    mkSameConstrImpl others qname2 ar = Tuple () Unboxed [c', others']
+      where
+        f c a = mkApplicativeChain (Hs.Var () (convertTypeNameToMonadicHs c))
+              (replicate a (mkShare mkFree))
+        c' = f qname2 ar
+        others' = List () $ map (\c -> f (getConsName c) (getConsArity c)) others
+        getConsArity (Cons _ ar' _ _) = ar'
+        getConsName (Cons qname2' _ _ _) = qname2'
     mkUnifyWithImpl _ ar = Do () $ maybeAddReturnTrue $
       map (\i -> Qualifier () $ App () (App () (Hs.Var () (UnQual () (Ident () "_f")))
                     (Hs.Var () (UnQual () (appendName "_a" (indexToName i)))))
@@ -371,6 +364,3 @@ mkShowCtxt = mkQuantifiedCtxt (TyApp () (TyCon () hsShowQualName))
 
 mkReadCtxt :: [TVarWithKind] -> Maybe (Context ())
 mkReadCtxt = mkQuantifiedCtxt (TyApp () (TyCon () hsReadQualName))
-
-mkSetLevelC :: Exp () -> Exp () -> Exp ()
-mkSetLevelC = App () . App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "setLevelC")))

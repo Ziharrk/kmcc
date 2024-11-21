@@ -55,9 +55,9 @@ showsFreePrecCurry :: forall a. ShowFree a => Int -> Curry a -> ([(Integer, Stri
 showsFreePrecCurry p x (fm, s) = (fm,) $ Curry $ do
   x' <- deref x
   unCurry $ case x' of
-    Var lvl i -> get >>= \NDState { .. } ->
+    Var i -> get >>= \NDState { .. } ->
       if Set.member i constrainedVars
-        then instantiate @a lvl i >>= \y -> snd $ showsFreePrec p y (fm, s)
+        then instantiate @a i >>= \y -> snd $ showsFreePrec p y (fm, s)
         else showsVar i fm s
     Val   y -> snd $ showsFreePrec p y (fm, s)
 
@@ -80,18 +80,18 @@ literalCase :: HasPrimitiveInfo a => Curry a -> (ID -> Curry b) -> (a -> Curry b
 literalCase x f g = Curry $ do
   x' <- deref x
   unCurry $ case x' of
-    Val   y -> g y
-    Var _ i -> f i
+    Val y -> g y
+    Var i -> f i
 
 bindVar :: Curryable a => ID -> Curry a -> Curry Bool
-bindVar i = unify (freeWith 0 i)
+bindVar i = unify (freeWith i)
 
 normalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent a))
 normalForm' a = do
   a' <- deref a
   case a' of
-    Val     x -> nfWith normalForm' x
-    Var lvl i -> return (Left (Var lvl i))
+    Val x -> nfWith normalForm' x
+    Var i -> return (Left (Var i))
 
 normalForm :: (NormalForm a, FromHs a) => Curry a -> Curry a
 normalForm a = ndEitherToCurry (normalForm' a)
@@ -104,8 +104,8 @@ ndEitherToCurry a = Curry $ a >>= unCurry . eitherToCurry
 
 groundNormalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent a))
 groundNormalForm' a = deref a >>= \case
-  Val     x -> nfWith groundNormalForm' x
-  Var lvl i -> groundNormalForm' (instantiate lvl i)
+  Val x -> nfWith groundNormalForm' x
+  Var i -> groundNormalForm' (instantiate i)
 
 groundNormalForm :: (NormalForm a, FromHs a) => Curry a -> Curry a
 groundNormalForm a = ndEitherToCurry (groundNormalForm' a)
@@ -155,13 +155,10 @@ instance ShowTerm (LiftedFunc a b) where
 instance ReadTerm (LiftedFunc a b) where
   readTerm = pfail
 
-instance (Levelable a, Levelable b) => Levelable (LiftedFunc a b) where
-  setLevel l (Func f) = Func $ \a -> setLevelC l (f (setLevelC l a))
-
 instance NFDataC (LiftedFunc a b) where
   rnfC x = x `seq` ()
 
-instance (Levelable a, Levelable b) => Curryable (LiftedFunc a b)
+instance Curryable (LiftedFunc a b)
 
 {-# INLINE [1] app #-}
 app :: Curry (LiftedFunc a b) -> Curry a -> Curry b
@@ -210,7 +207,7 @@ ensureOneResult :: Curry a -> Curry a
 ensureOneResult (Curry (ND act)) = Curry $ ND $ do
   s <- get
   case lowerCodensity (runStateT act s) of
-    Fail _
+    Fail
       -> throw (IOError Nothing OtherError "ensureOneResult" "FAILERR_ IO action failed non-deterministic" Nothing Nothing)
     Single (x, s')
       -> put s' >> return x
@@ -260,7 +257,7 @@ mainWrapperNDet mx = do
                   NotUnit -> putStrLn a
     _         -> error "mainWrapper: not a single result"
 
-unSingle :: MemoizedCurry.Tree n f l -> l
+unSingle :: MemoizedCurry.Tree l -> l
 unSingle (Single x) = x
 unSingle _ = error "mainWrapper: not a single result"
 
@@ -306,7 +303,7 @@ exprWrapperNDet search optInt fvs b ca = printRes (search $ evalCurryTree extrac
       (va, ids) <- ca
       let swapped = map (\(x, y) -> (y, x)) fvs
       str <- showFreeCurry (Curry (return va)) swapped
-      vs <- mapM (\(VarInfo @v i) -> showFreeCurry (Curry $ deref $ Curry $ return $ Var @v 0 i) swapped) ids
+      vs <- mapM (\(VarInfo @v i) -> showFreeCurry (Curry $ deref $ Curry $ return $ Var @v i) swapped) ids
       let vs' = zipWith (\s n -> n ++ " = " ++ s) vs sortedFvs
       let str' = if null vs || not b then str else "{ " ++ intercalate "\n, " vs' ++ " } " ++ str
       return str'
@@ -317,7 +314,7 @@ getVarId :: forall a. ShowFree a => Curry a -> ND VarInfo
 getVarId ca = do
   a <- unCurry ca
   case a of
-    Var _ i -> return $ VarInfo @a i
+    Var i -> return $ VarInfo @a i
     _ -> error "getVarId: not a variable"
 
 addVarIds :: Curry a -> [ND VarInfo] -> Curry (CurryVal a, [VarInfo])
@@ -366,8 +363,8 @@ dollarBangNDImpl =
   returnFunc (\f ->
   returnFunc (\(Curry a) -> Curry (
     a >>= unCurry. \case
-      Val x   -> x `seq` (f `app` return x)
-      Var lvl i -> f `app` Curry (return (Var lvl i)))))
+      Val x -> x `seq` (f `app` return x)
+      Var i -> f `app` Curry (return (Var i)))))
 
 {-# INLINE condSeq #-}
 condSeq :: Curry Bool -> Curry b -> Curry b
@@ -387,15 +384,15 @@ primitive1 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
     a <- deref ca
     case a of
       Val x -> return $ Val $ fromForeign $ hsF $ toForeign x
-      Var lvl i -> do
+      Var i -> do
         j <- freshID
         s@NDState { .. } <- get
-        let c = sbvF (toSBV (Var lvl i)) .=== toSBV (Var lvl j)
+        let c = sbvF (toSBV (Var i)) .=== toSBV (Var j)
         let csv' = foldr Set.insert constrainedVars (j : allVars a)
         let cst' = insertConstraint c constraintStore
         put (s { constraintStore = cst', constrainedVars = csv' })
         -- Consistency not necessary, see comment in primitive2
-        return (Var lvl j)
+        return (Var j)
   _ -> error "internalError: primitive1: non-primitive type"
 
 {-# SPECIALISE primitive2 :: (SBV Integer -> SBV Integer -> SBV Integer)
@@ -422,11 +419,11 @@ primitive2 sbvF hsF =
             (# Primitive, Primitive, Primitive #) -> do
               k <- freshID
               s@NDState { .. } <- get
-              let c = sbvF (toSBV a) (toSBV b) .=== toSBV (Var 0 k)
-              let (vs, lvl) = case (# a, b #) of
-                                (# Var l1 i, Var l2 j #) -> ([i, j], max l1 l2)
-                                (# Var l1 i, _ #) -> ([i], l1)
-                                (# _, Var l2 j #) -> ([j], l2)
+              let c = sbvF (toSBV a) (toSBV b) .=== toSBV (Var k)
+              let vs = case (# a, b #) of
+                          (# Var i, Var j #) -> [i, j]
+                          (# Var i, _ #) -> [i]
+                          (# _, Var j #) -> [j]
               let csv' = foldr Set.insert constrainedVars (k : vs)
               let cst' = insertConstraint c constraintStore
               put (s { constraintStore = cst', constrainedVars = csv' })
@@ -437,7 +434,7 @@ primitive2 sbvF hsF =
               -- j <- 1
               -- matchFL 9 x
               -- matchFL 0 y
-              return (Var lvl k)
+              return (Var k)
             _ -> error "internalError: primitive2: non-primitive type"))
 
 {-# SPECIALISE primitive2 :: (SBV Integer -> SBV Integer -> SBV Integer)
@@ -468,7 +465,7 @@ primitive2Bool sbvF hsF =
                   let csv' = foldr Set.insert constrainedVars (allVars a ++ allVars b)
                   let cst1 = insertConstraint c constraintStore
                   let cst2 = insertConstraint (sNot c) constraintStore
-                  mplusLevel currentLevel
+                  mplus
                     (do s' <- get
                         put (s' { constraintStore = cst1, constrainedVars = csv' })
                         checkConsistency
@@ -480,8 +477,8 @@ primitive2Bool sbvF hsF =
               _ -> error "internalError: primitive2: non-primitive type"))
 
 allVars :: CurryVal a -> [Integer]
-allVars (Var _ i) = [i]
-allVars _         = []
+allVars (Var i) = [i]
+allVars _       = []
 
 
 -- allow defaulting of type variables with a kind that has a maximum of 10 arguments.

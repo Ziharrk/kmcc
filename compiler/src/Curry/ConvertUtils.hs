@@ -183,7 +183,7 @@ mkLazyUnify :: Exp () -> Exp () -> Exp ()
 mkLazyUnify e = App () (App () (Var () lazyUnifyQualName) e)
 
 mkAddToVarHeap :: Exp () -> Exp () -> Exp ()
-mkAddToVarHeap e = App () (App () (Var () addToVarHeapQualName) e)
+mkAddToVarHeap e1 = App () (App () (Var () addToVarHeapQualName) e1)
 
 mkCondSeq :: Exp () -> Exp () -> Exp ()
 mkCondSeq e = App () (App () (Var () condSeqQualName) e)
@@ -286,9 +286,6 @@ hsToQualName = Qual () (ModuleName () "B") (Ident () "ToHs")
 
 hsFromQualName :: QName ()
 hsFromQualName = Qual () (ModuleName () "B") (Ident () "FromHs")
-
-levelableQualName :: QName ()
-levelableQualName = Qual () (ModuleName () "B") (Ident () "Levelable")
 
 appQualName :: QName ()
 appQualName = Qual () (ModuleName () "B") (Ident () "app")

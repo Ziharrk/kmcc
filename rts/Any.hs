@@ -98,9 +98,6 @@ dummyInstances = [d|
   instance ReadTerm None where
     readTerm = error "reading an ambigouous type variable is not possible"
 
-  instance Levelable None where
-    setLevel _ x = x
-
   instance NFDataC None where
     rnfC x = x `seq` ()
 
