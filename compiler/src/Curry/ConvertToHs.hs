@@ -27,7 +27,7 @@ import qualified Data.Set as Set
 import Data.Maybe (mapMaybe)
 import Language.Haskell.Exts hiding (Literal, Cons, Kind, QName)
 import qualified Language.Haskell.Exts as Hs
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, getModificationTime)
 import System.FilePath (replaceExtension, replaceFileName, takeFileName, (<.>), splitExtension, takeExtension)
 import System.IO (openFile, IOMode (..), utf8, hSetEncoding, hPutStr, hClose, hGetContents')
 
@@ -109,10 +109,22 @@ process :: KMCCOpts -> (Int, Int) -> TProg -> Bool
 process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
   | optForce opts ||
     comp      = compile
-  | otherwise = liftIO (doesFileExist destFile)
-      >>= \exists -> if exists then skip else compile
+  | otherwise = do
+    existsA <- liftIO (doesFileExist destFile)
+    existsB <- liftIO (doesFileExist externalFile)
+    if existsA && existsB
+      then do
+        t1 <- liftIO $ getModificationTime destFile
+        t2 <- liftIO $ getModificationTime externalFile
+        if t1 > t2
+          then skip
+          else compile
+      else if existsA
+        then skip
+        else compile
   where
     destFile = tgtDir (haskellName fn)
+    externalFile = externalName fn
     skip = do
       status opts $ compMessage idx (11, 16) "Skipping" m (fn, destFile)
       when (optCompilerVerbosity kopts > 2) $ do
@@ -135,7 +147,7 @@ process kopts idx@(thisIdx,maxIdx) tprog comp m fn mi
               else liftIO $ dumpMessage kopts "Read cached Haskell file"
     compile = do
       status opts $ compMessage idx (11, 16) "Translating" m (fn, destFile)
-      res <- convertToHs (TWFP (tprog, externalName fn, mi, kopts))
+      res <- convertToHs (TWFP (tprog, externalFile, mi, kopts))
       let printed = prettyPrintStyleMode hsPrettyPrintStyle hsPrettyPrintMode res
       liftIO $ writeUTF8File' (tgtDir (haskellName fn)) printed
       if thisIdx == maxIdx
