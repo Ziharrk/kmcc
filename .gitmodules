@@ -3,4 +3,4 @@
 	url = ssh://git@git.ps.informatik.uni-kiel.de:55055/curry/curry-frontend.git
 [submodule "libs"]
 	path = libs
-	url = https://git.ps.informatik.uni-kiel.de/curry/curry-libs.git
+	url = https://github.com/curry-packages/base.git
