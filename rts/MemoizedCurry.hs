@@ -322,6 +322,12 @@ newtype Curry a = Curry {
 evalCurry :: Curry a -> Tree a
 evalCurry = fmap snd . runCurry
 
+evalCurryWith :: Curry a -> NDState -> Tree a
+evalCurryWith ma s = snd <$> runCurryWith ma s
+
+evalCurryTreeWith :: Curry a -> NDState -> Tree.Tree a
+evalCurryTreeWith ma s = snd <$> runCurryTreeWith ma s
+
 evalCurryTree :: Curry a -> Tree.Tree a
 evalCurryTree = fmap snd . runCurryTree
 
@@ -332,12 +338,22 @@ runCurry (Curry ma) =
     unVal (s, Val x) = (s, x)
     unVal (_, Var _) = error "evalCurry: Variable"
 
-runCurryTree :: Curry a -> Tree.Tree (NDState, a)
-runCurryTree ma = convertTree $ runCurry ma
+runCurryWith :: Curry a -> NDState -> Tree (NDState, a)
+runCurryWith (Curry ma) s =
+  unVal <$> runND (ma >>= \a -> checkConsistency >> return a) s
+  where
+    unVal (s, Val x) = (s, x)
+    unVal (_, Var _) = error "evalCurry: Variable"
+
+runCurryTreeWith :: Curry a -> NDState -> Tree.Tree (NDState, a)
+runCurryTreeWith ma s = convertTree $ runCurryWith ma s
   where
     convertTree (Single x)   = Tree.Leaf x
     convertTree Fail         = Tree.Empty
     convertTree (Choice l r) = Tree.Node (convertTree l) (convertTree r)
+
+runCurryTree :: Curry a -> Tree.Tree (NDState, a)
+runCurryTree ma = runCurryTreeWith ma (initialNDState ())
 
 --------------------------------------------------------------------------------
 -- Instantiation of variables follows a similar scheme as in the paper,
