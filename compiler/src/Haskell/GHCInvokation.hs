@@ -78,6 +78,7 @@ getGHCOptsFor topDir hasMain deps targetFile
   ["-i " ++ topDir </> "rts"] ++
   getOptimizationOpts ghcOpts optOptimizationBaseLevel ++
   concat [["-with-rtsopts=-pa", "-prof", "-osuf p_o", "-fprof-auto"] | optProfiling ] ++
+  ["-with-rtsopts=-T"] ++  -- enables CPU time measurements
   getGHCSrcDirOpts deps frontendOpts ++
   ghcOpts ++
   [takeFileName (dropExtension targetFile)]
