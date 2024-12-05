@@ -29,6 +29,7 @@ optParser = adjustDefaultOpts
                                 <> completeWith (map show [(minBound :: KnownExtension) .. maxBound])))
 
   <*> optional (option parseGHCOpts (hidden <> long "ghc-options" <> short 'g' <> metavar "OPTS" <> help "Pass OPTS to the GHC"))
+  <*> optional (option parseRTSOpts (hidden <> long "rts-options" <> short 'r' <> metavar "RTSOPTS" <> help "Pass RTSOPTS to the GHC"))
 
   <*> switch (long "disable-det-optimization" <> help "Disable optimization of deterministic programs (not included in -O0)")
   <*> optional (option parseOptimization (long "optimization" <> short 'O' <> metavar "n" <> help "Set optimization level to n, with 0 <= n <= 2, default = 1"))
@@ -64,6 +65,11 @@ parseGHCOpts = eitherReader $ \s -> case words s of
   [] -> Left "Empty ghc-options"
   xs -> Right xs
 
+parseRTSOpts :: ReadM [String]
+parseRTSOpts = eitherReader $ \s -> case words s of
+  [] -> Left "Empty rts-options"
+  xs -> Right xs
+
 parseFrontendOpts :: ReadM (Options -> Options)
 parseFrontendOpts = eitherReader $ \s -> case parseOpts (words s) of
   -- to circumvent the bad frontend api for parsing options,
@@ -93,6 +99,7 @@ adjustDefaultOpts :: Bool -> Bool -> Bool
                   -> [FilePath] -> Maybe FilePath
                   -> Maybe (Options -> Options) -> [KnownExtension]
                   -> Maybe [String]
+                  -> Maybe [String]
                   -> Bool -> Maybe Int
                   -> [(String, Int)] -> Bool
                   -> Maybe SearchStrat
@@ -100,7 +107,7 @@ adjustDefaultOpts :: Bool -> Bool -> Bool
                   -> Bool
                   -> Either [InfoCommand] FilePath
                   -> KMCCOpts
-adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b strat pr int torv = defaultOpts
+adjustDefaultOpts f c q v t is o p x ghc rts dOpt opt vars b strat pr int torv = defaultOpts
   { optTarget = fromRight "" torv
   , optCompilerVerbosity = verbosity
   , optShowTimings = t
@@ -114,7 +121,7 @@ adjustDefaultOpts f c q v t is o p x ghc dOpt opt vars b strat pr int torv = def
   , optProfiling = pr
   , optInteractive = int
   , frontendOpts = adjustFrontendOpts
-  , ghcOpts = fromMaybe [] ghc
+  , ghcOpts = fromMaybe [] ghc ++ maybe [] (\ros -> ["-with-rtsopts=" ++ unwords ros]) rts
   }
   where
     verbosity = fromMaybe (if q then 0 else 1) v
