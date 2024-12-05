@@ -60,7 +60,7 @@ kmcc = CCDescription
   cleanCmd                       -- command to clean module
   (CommandLineFreeMode (\vs -> unwords $ map (\(v,i) -> "-V" ++ v ++ "=" ++ show i) vs))
   [ stratOpt, profilingOpt, intOpt, forceOpt, compOpt
-  , ghcOpt -- [firstOpt, resultsOpt, errDepthtOpt]
+  , ghcOpt, rtsOpt -- [firstOpt, resultsOpt, errDepthtOpt]
   ]
  where
   cleanCmd m = unwords
@@ -106,9 +106,15 @@ ghcOpt = CCOption
   "pass options to the GHC compiler"
   [ ArgOpt "ghc-opts" "" showOpt ]
   where
-    showOpt s = case reads s :: [(String,String)] of
-      [(n,"")] -> Just ("--ghc-options \"" ++ s ++ "\"")
-      _        -> Nothing
+    showOpt s = if null s then Nothing else Just $ "--ghc-options \"" ++ s ++ "\""
+
+rtsOpt :: CCOption
+rtsOpt = CCOption
+  "rts            "
+  "pass options to the GHC runtime system"
+  [ ArgOpt "rts" "" showOpt ]
+  where
+    showOpt s = if null s then Nothing else Just $ "--rts-options \"" ++ s ++ "\""
 
 stratOpt :: CCOption
 stratOpt = CCOption
