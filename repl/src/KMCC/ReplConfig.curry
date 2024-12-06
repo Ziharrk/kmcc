@@ -96,9 +96,7 @@ compOpt = CCOption
   "pass options to the backend compiler"
   [ArgOpt "kmcc-opts" "" showOpt]
   where
-    showOpt s = case reads s :: [(String,String)] of
-      [(n,"")] -> Just s
-      _        -> Nothing
+    showOpt s = if null s then Nothing else Just s
 
 ghcOpt :: CCOption
 ghcOpt = CCOption
