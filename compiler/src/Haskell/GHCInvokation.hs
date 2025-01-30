@@ -66,7 +66,9 @@ stackPkgArgs = concatMap (("--package":) . return)
   ]
 
 invokeGHCDefaultArgs :: [String]
-invokeGHCDefaultArgs = ["--make", "-threaded"]
+invokeGHCDefaultArgs =
+  ["--make", "-threaded",
+   "-with-rtsopts=-T -N"]  -- enables CPU time measurements and concurrency
 
 getGHCOptsFor :: FilePath -> Bool -> [(ModuleIdent, Source)] -> FilePath -> KMCCOpts -> [String]
 getGHCOptsFor topDir hasMain deps targetFile
@@ -78,7 +80,6 @@ getGHCOptsFor topDir hasMain deps targetFile
   ["-i " ++ topDir </> "rts"] ++
   getOptimizationOpts ghcOpts optOptimizationBaseLevel ++
   concat [["-with-rtsopts=-pa", "-prof", "-osuf p_o", "-fprof-auto"] | optProfiling ] ++
-  ["-with-rtsopts=-T"] ++  -- enables CPU time measurements
   getGHCSrcDirOpts deps frontendOpts ++
   ghcOpts ++
   [takeFileName (dropExtension targetFile)]

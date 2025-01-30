@@ -3,15 +3,18 @@
 module Tree where
 
 import           Control.Applicative ( Alternative(empty, (<|>)) )
+import           Control.Concurrent ( forkFinally, myThreadId )
 import           Control.Concurrent.Chan ( getChanContents, newChan, writeChan )
-import           Control.Concurrent.MVar ( newEmptyMVar, putMVar, takeMVar )
-import           Control.Concurrent (forkFinally)
-import           Control.DeepSeq ( NFData )
+import           Control.Concurrent.MVar ( newEmptyMVar, putMVar, takeMVar, modifyMVar_ )
+import           Control.DeepSeq ( NFData, force )
+import           Control.Exception ( evaluate )
 import           Control.Monad ( MonadPlus )
 import           Data.Maybe ( catMaybes, isJust )
+import qualified Data.Set as Set (insert, delete, empty, toList)
 import qualified Data.Sequence as Seq
 import           GHC.Generics ( Generic )
 import           GHC.Conc ( killThread )
+import           GHC.Exts ( noinline )
 import           System.IO.Unsafe ( unsafePerformIO )
 import           System.Mem.Weak ( addFinalizer )
 
@@ -43,7 +46,6 @@ instance MonadFail Tree where
 
 instance NFData a => NFData (Tree a) where
 
-
 dfs :: Tree a -> [a]
 dfs t' = dfs' [t']
   where dfs' [] = []
@@ -61,29 +63,33 @@ bfs t' = bfs' (Seq.singleton t')
           Node l r -> bfs' (ts Seq.:|> l Seq.:|> r)
 
 {-# NOINLINE fs #-}
-fs :: Tree a -> [a]
+fs :: NFData a => Tree a -> [a]
 fs t = unsafePerformIO $ do
   ch <- newChan
   mvarTids <- newEmptyMVar
-  putMVar mvarTids []
+  putMVar mvarTids Set.empty
   let go t' = case t' of
         Empty    -> return ()
-        Leaf x   -> writeChan ch (Just x)
+        Leaf x   -> evaluate (force x) >>= writeChan ch . Just
         Node l r -> do
-          mvarL <- newEmptyMVar
-          mvarR <- newEmptyMVar
           tids <- takeMVar mvarTids
-          tidL <- forkFinally (go l) $ \_ -> putMVar mvarL ()
-          tidR <- forkFinally (go r) $ \_ -> putMVar mvarR ()
-          putMVar mvarTids $ [tidL, tidR] ++ tids
-          takeMVar mvarL
-          takeMVar mvarR
+          (mR, mL) <- (,) <$> newEmptyMVar <*> newEmptyMVar
+          tidL <- forkFinally (go l) $ \_ -> finalizeT mvarTids mL
+          tidR <- forkFinally (go r) $ \_ -> finalizeT mvarTids mR
+          putMVar mvarTids $ Set.insert tidR (Set.insert tidL tids)
+          takeMVar mL >> takeMVar mR
   tid <- forkFinally (go t) $ \_ -> writeChan ch Nothing
   result <- catMaybes . takeWhile isJust <$> getChanContents ch
   addFinalizer result $ do
     tids <- takeMVar mvarTids
-    mapM_ killThread (tid : tids)
-  return result
+    mapM_ killThread (tid : Set.toList tids)
+  return (map (noinline (flip const) result) result)
+  where
+    finalizeT mvarTids mv = do
+      putMVar mv ()
+      tid <- myThreadId
+      modifyMVar_ mvarTids (return . Set.delete tid)
+
 
 {-
 fs :: Tree a -> [a]
