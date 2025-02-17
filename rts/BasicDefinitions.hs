@@ -21,7 +21,6 @@ import Control.Exception (throw, catch, evaluate, Exception)
 import Control.Monad (MonadPlus(..), (>=>))
 import Control.Monad.Codensity (lowerCodensity)
 import Control.Monad.State (modify, MonadState(put, get), StateT(runStateT))
-import Control.DeepSeq (deepseq, NFData)
 import Data.List (intercalate, sortOn)
 import Data.SBV (SBV, (.===), sNot)
 import qualified Data.Set as Set

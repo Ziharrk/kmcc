@@ -13,8 +13,6 @@ import Data.SBV (SMTConfig (verbose), runSMTWith)
 import Unsafe.Coerce (unsafeCoerce)
 import Data.SBV.Dynamic (defaultSMTCfg)
 
-import Data.Typeable
-
 type SolverState = (Either String State, MVar ())
 
 -- | A hack to get the state of the solver context.
@@ -49,7 +47,7 @@ startSolver = do
   catches (runSMTWith (defaultSMTCfg { verbose = False }) $ query $ do
     st <- contextState
     _ <- liftIO $ throwIO $ SHE st
-    return (Right st, sem)) $ [
+    return (Right st, sem)) [
     Handler (\ (ex :: StateHackException) -> handleSHE     sem ex),
     Handler (\ (ex :: ErrorCall)          -> handleErrCall sem ex)
     ]

@@ -1,12 +1,8 @@
-{-# LANGUAGE DefaultSignatures          #-}
-{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -15,7 +11,6 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE TypeFamilyDependencies     #-}
@@ -30,7 +25,6 @@ module MemoizedCurry
   , MonadShare(..)
   ) where
 
-import           Data.Maybe                         (isNothing, fromMaybe)
 import qualified Data.Map                           as Map
 import           Data.Map                           (Map)
 import qualified Data.Set                           as Set
@@ -47,21 +41,12 @@ import           Data.SBV.Control                   ( checkSatAssuming,
                                                       CheckSatResult(..),
                                                       Query )
 import           Control.Applicative                (Alternative(..))
-import           Control.Arrow                      (first)
 import           Control.Monad                      (MonadPlus(..), liftM, ap, unless, msum)
 import           Control.Monad.Fix                  (MonadFix(..), fix)
 import           Control.Monad.Codensity            (Codensity(..), lowerCodensity)
 import           Control.Monad.State                (StateT(..), MonadState(..), evalStateT, gets, modify)
 import           Control.Monad.Trans                (MonadTrans(..))
 import           Control.DeepSeq                    (NFData(..))
-import qualified GHC.Generics as GHC                (to, from)
-import           GHC.Generics                       ( Generic(Rep),
-                                                      V1,
-                                                      U1(..),
-                                                      K1(K1),
-                                                      M1(M1),
-                                                      type (:+:)(..),
-                                                      type (:*:)(..) )
 import           GHC.Magic                          (noinline)
 import           GHC.Read                           (expectP)
 import           GHC.Show                           (showLitString)
@@ -74,8 +59,6 @@ import qualified Tree
 
 import Narrowable
 import Solver
-
-import Debug.Trace
 
 -- Changes to the paper:
 -- - The performance optimization that was teasered
@@ -289,7 +272,7 @@ instance Alternative ND where
   a <|> b = mplus a b
 
 instance MonadPlus ND where
-  mzero = ND $ lift $ lift $ Fail
+  mzero = ND $ lift $ lift Fail
   mplus (ND ma1) (ND ma2) = ND $ StateT $ \ndState1 -> Codensity $ \sc ->
     let i1 = freshIDFromState ndState1
         ps = Set.insert (branchID ndState1) (parentIDs ndState1)
@@ -339,8 +322,8 @@ runCurry (Curry ma) =
     unVal (_, Var _) = error "evalCurry: Variable"
 
 runCurryWith :: Curry a -> NDState -> Tree (NDState, a)
-runCurryWith (Curry ma) s =
-  unVal <$> runND (ma >>= \a -> checkConsistency >> return a) s
+runCurryWith (Curry ma) s' =
+  unVal <$> runND (ma >>= \a -> checkConsistency >> return a) s'
   where
     unVal (s, Val x) = (s, x)
     unVal (_, Var _) = error "evalCurry: Variable"
@@ -587,7 +570,7 @@ ma1 `unify` ma2 = Curry $ do
         let (# x, _ #) = narrowConstr v
         sX <- x
         put (addToVarHeap i (return sX) s)
-        unifyWith unify sX v
+        _ <- unifyWith unify sX v
         return True
       Primitive   -> Curry $ do
         s <- get
@@ -626,7 +609,7 @@ ma1 `unifyL` ma2 = Curry $ do
                       })
             _ <- checkConsistency
             return (Val True)
-          Val y -> do
+          Val _ -> do
             let cs = toSBV (Var i1) .=== toSBV a2
             modify (\s@NDState { .. } -> addToVarHeap i1 (Curry (return a2)) s
                       { constraintStore = insertConstraint cs constraintStore

@@ -378,7 +378,7 @@ newtype HsTypeDecl = HTD (Decl ())
 type instance HsEquivalent TypeDecl = HsTypeDecl
 instance ToHs TypeDecl where
   convertToHs (Type qname@(mdl, nm) _ vs cs)
-    | [] <- cs = return $ HTD $ TypeDecl () (mkTypeHead qname []) $ -- eta reduce -> ignore vars
+    | [] <- cs = return $ HTD $ TypeDecl () (mkTypeHead qname []) $ -- eta reduce -> ignore vars -- eta reduce -> ignore vars -- eta reduce -> ignore vars
       TyCon () (Qual () (ModuleName () (convertModName mdl)) (Ident () (escapeTypeName nm ++ "_Det#")))
     | otherwise = do
       cs' <- mapM convertToHs cs
@@ -395,7 +395,7 @@ instance ToHs TypeDecl where
 
 instance ToMonadicHs TypeDecl where
   convertToMonadicHs (Type qname@(mdl, nm) _ vs cs)
-    | [] <- cs = return $ HTD $ TypeDecl () (mkMonadicTypeHead qname []) $ -- eta reduce -> ignore vars
+    | [] <- cs = return $ HTD $ TypeDecl () (mkMonadicTypeHead qname []) $ -- eta reduce -> ignore vars -- eta reduce -> ignore vars -- eta reduce -> ignore vars
       TyCon () (Qual () (ModuleName () (convertModName mdl)) (Ident () (escapeTypeName nm ++ "_ND#")))
     | otherwise = do
       cs' <- (mkFlatConstr qname vs :) <$> mapM convertToMonadicHs cs
@@ -695,7 +695,7 @@ convertExprToMonadicHs vset (ACase _ _ e bs)
       e' <- convertExprToMonadicHs vset e
       bs' <- concat <$> mapM (convertBranchToMonadicHs caseDepth vset) bs
       let f | caseDepth < maxCaseDepth = id
-            | otherwise =  Hs.App () (Hs.Var () (Qual () (ModuleName () ("B")) (Ident () "elimFlatM")))
+            | otherwise =  Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "elimFlatM")))
       return $ mkBind (f e') $ Hs.LCase () (bs' ++ [failedMonadicBranch])
 
 convertExprToMonadicHs _ ex@(ATyped (ty, Det) _ _) =
