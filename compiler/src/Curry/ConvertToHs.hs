@@ -438,7 +438,7 @@ instance ToHs TypeExpr where
                                     (Just $ CxTuple () $ concatMap mkCtxt vs)
                                     <$> convertToHs t
     where mkOther (i, k) = KindedVar () (appendName "c" (indexToName i)) (kindToHsType k)
-          mkCtxt (i, k) = [ TypeA () $ TyEquals () (TyApp () (TyCon () hsEquivQualName) n')(TyVar () n)
+          mkCtxt (i, k) = [ TypeA () $ TyEquals () (TyApp () (TyCon () hsEquivQualName) n') (TyVar () n)
                           , mkQuantifiedForWithNaming mkCurryClassType (appendName "c" . indexToName) (i, k)]
             where n = indexToName i
                   n' = TyVar () $ appendName "c" n
@@ -567,10 +567,13 @@ instance ToHs (AExpr (TypeExpr, NDInfo)) where
           FuncPartCall _ -> convertFuncNameToHs
     return $ foldl (App ()) (Hs.Var () (convertNameToHs qname)) args'
   convertToHs (ALet _ bs e) = do
+    let mkP v e' ty' = PatBind () (PVar () (indexToName v))
+                        (UnGuardedRhs () (ExpTypeSig () (Paren () e') (TyParen () ty'))) Nothing
     e' <- convertToHs e
-    bs' <- mapM (\((v, _), lclE) -> PatBind () (PVar () (indexToName v))
-                     <$> (UnGuardedRhs () <$> convertToHs lclE)
-                     <*> pure Nothing) bs
+    bs' <- mapM (\((v, (ty, _)), lclE) ->
+                    mkP v
+                    <$> convertToHs lclE
+                    <*> convertToHs ty) bs
     return $ Let () (BDecls () bs') e'
   convertToHs AFree {} = throwError [message "Encountered a free variable in an expression inferred to be deterministic"]
   convertToHs AOr {} = throwError [message "Encountered an 'or' in an expression inferred to be deterministic"]
