@@ -22,7 +22,7 @@ import CurryDeps (Source(..))
 import Curry.Files.Filenames (addOutDirModule)
 import Curry.Base.Ident (ModuleIdent(..))
 
-import Options (KMCCOpts (..), debugMessage, statusMessage)
+import Options (KMCCOpts (..), SearchStrat(FS), debugMessage, statusMessage)
 import Curry.ConvertToHs (haskellName)
 
 invokeGHC :: Bool -> [(ModuleIdent, Source)] -> KMCCOpts -> IO ()
@@ -68,11 +68,12 @@ stackPkgArgs = concatMap (("--package":) . return)
 invokeGHCDefaultArgs :: [String]
 invokeGHCDefaultArgs =
   ["--make", "-threaded",
-   "-with-rtsopts=-T -N"]  -- enables CPU time measurements and concurrency
+   "-with-rtsopts=-T"]  -- enables CPU time measurements
 
 getGHCOptsFor :: FilePath -> Bool -> [(ModuleIdent, Source)] -> FilePath -> KMCCOpts -> [String]
 getGHCOptsFor topDir hasMain deps targetFile
-  KMCCOpts { frontendOpts, optCompilerVerbosity, optOptimizationBaseLevel, optProfiling, ghcOpts } =
+  KMCCOpts { frontendOpts, optCompilerVerbosity, optOptimizationBaseLevel
+           , optProfiling, ghcOpts, optSearchStrategy } =
   ["-fforce-recomp" | optForce frontendOpts] ++
   ["-v" | optCompilerVerbosity > 3] ++
   ["-v0" | optCompilerVerbosity == 0] ++
@@ -80,6 +81,8 @@ getGHCOptsFor topDir hasMain deps targetFile
   ["-i " ++ topDir </> "rts"] ++
   getOptimizationOpts ghcOpts optOptimizationBaseLevel ++
   concat [["-with-rtsopts=-pa", "-prof", "-osuf p_o", "-fprof-auto"] | optProfiling ] ++
+  ["-with-rtsopts=-single-threaded" | optSearchStrategy /= FS] ++
+  ["-with-rtsopts=-N" | optSearchStrategy == FS] ++
   getGHCSrcDirOpts deps frontendOpts ++
   ghcOpts ++
   [takeFileName (dropExtension targetFile)]

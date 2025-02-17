@@ -33,7 +33,7 @@ data KMCCOpts = KMCCOpts {
   }
 
 data InfoCommand = CompilerName | NumericVersion | BaseVersion
-data SearchStrat = DFS | BFS | FS
+data SearchStrat = DFS | BFS | FS deriving Eq
 
 -- Verbosity between 0 and 4. Default: 1
 -- 0: no output except for errors
@@ -55,7 +55,7 @@ defaultOpts = KMCCOpts
   , optShowTimings = False
   , optOptimizationBaseLevel = 1
   , optOptimizationDeterminism = True
-  , optSearchStrategy = FS
+  , optSearchStrategy = BFS
   , optProfiling = False
   , optInteractive = False
   , frontendOpts = defaultFrontendOpts
