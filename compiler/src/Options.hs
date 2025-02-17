@@ -11,7 +11,7 @@ import CompilerOpts
       defaultCppOpts,
       defaultOptions,
       CppOpts(cppDefinitions),
-      TargetType(TypedBinaryFlatCurry) )
+      TargetType(..) )
 
 import Paths_kmcc ( version )
 
@@ -64,7 +64,7 @@ defaultOpts = KMCCOpts
 
 defaultFrontendOpts :: Options
 defaultFrontendOpts = defaultOptions
-  { optTargetTypes = [TypedBinaryFlatCurry]
+  { optTargetTypes = [TypedBinaryFlatCurry, TypedFlatCurry]
   , optCppOpts = defaultCppOpts {
       cppDefinitions = Map.fromList [("__KMCC__", 1)]
     }

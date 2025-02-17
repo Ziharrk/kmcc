@@ -14,6 +14,7 @@ import Control.Monad ( msum, void )
 import Curry.Base.Monad ( CYIO )
 import Curry.Base.Pretty ( Pretty(..) )
 import Curry.Base.Ident ( ModuleIdent (..) )
+import Curry.FlatCurry.Files ( readTypedFlatCurry )
 import Curry.FlatCurry.Typed.Type ( TProg (..), TFuncDecl (..), TypeExpr (..) )
 import Curry.Files.Filenames
 import qualified Curry.Syntax.ShowModule as CS
@@ -25,7 +26,7 @@ import Transformations ( qual )
 import Checks ( expandExports )
 import Generators ( genTypedFlatCurry, genAnnotatedFlatCurry, genFlatCurry )
 
-import Curry.FrontendUtils ( runCurryFrontendAction )
+import Curry.FrontendUtils ( runCurryFrontendAction, checkNewer )
 import Options ( KMCCOpts (..), dumpMessage )
 
 getDependencies :: KMCCOpts -> IO [(ModuleIdent, Source)]
@@ -80,21 +81,38 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
   where
     skip = do
       status opts $ compMessage idx (11, 16) "Skipping" m (fn, head destFiles)
-      eithRes <- liftIO $ decodeFileOrFail (tgtDir (typedBinaryFlatName fn))
-      case eithRes of
-        Left (_, err) -> do
-          liftIO $ putStr $ unlines
-            [ "Binary interface file is corrupted."
-            , "For the file \"" ++ fn ++ "\"."
-            , "Decoding failed with:"
-            , err
-            , "Retrying compilation from source..." ]
-          compile
-        Right res -> do
-          if thisIdx == maxIdx
-            then liftIO $ dumpMessage kmccopts $ "Read cached flat curry file:\n" ++ show res
-            else liftIO $ dumpMessage kmccopts "Read cached flat curry file."
-          return (res, False)
+      binaryOrNot <- liftIO $ checkNewer (tgtDir (typedBinaryFlatName fn)) (tgtDir (typedFlatName fn))
+      if binaryOrNot
+        then do
+          eithRes <- liftIO $ decodeFileOrFail (tgtDir (typedBinaryFlatName fn))
+          case eithRes of
+            Left (_, err) -> do
+              liftIO $ putStr $ unlines
+                [ "Binary interface file is corrupted."
+                , "For the file \"" ++ fn ++ "\"."
+                , "Decoding failed with:"
+                , err
+                , "Retrying compilation from source..." ]
+              compile
+            Right res -> do
+              if thisIdx == maxIdx
+                then liftIO $ dumpMessage kmccopts $ "Read cached flat curry file:\n" ++ show res
+                else liftIO $ dumpMessage kmccopts "Read cached flat curry file."
+              return (res, False)
+        else do
+          mbRes <- liftIO $ readTypedFlatCurry (tgtDir (typedFlatName fn))
+          case mbRes of
+            Nothing -> do
+              liftIO $ putStr $ unlines
+                [ "Flat curry file is corrupted."
+                , "For the file \"" ++ fn ++ "\"."
+                , "Retrying compilation from source..." ]
+              compile
+            Just res -> do
+              if thisIdx == maxIdx
+                then liftIO $ dumpMessage kmccopts $ "Read cached flat curry file:\n" ++ show res
+                else liftIO $ dumpMessage kmccopts "Read cached flat curry file."
+              return (genTypedFlatCurry res, False)
     optCheck = do
       fileExists <- liftIO $ doesFileExist optInterface
       if not fileExists then compile else do
