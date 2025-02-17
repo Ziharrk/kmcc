@@ -83,7 +83,7 @@ fs t = unsafePerformIO $ do
   addFinalizer result $ do
     tids <- takeMVar mvarTids
     mapM_ killThread (tid : Set.toList tids)
-  return (map (noinline (flip const) result) result)
+  return (foldr (\x xs -> noinline (flip const) result (x:xs)) [] result)
   where
     finalizeT mvarTids mv = do
       putMVar mv ()
