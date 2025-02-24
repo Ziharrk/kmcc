@@ -25,10 +25,13 @@ For instance, if you run Ubuntu Linux, you can easily install it by
     > sudo apt-get install haskell-stack
 
 Furthermore, the interactive environment ("REPL") of KMCC is
-implemented in Curry so that an already existing Curry system,
+implemented in Curry so that the
+[Curry Package Manager](https://curry-lang.org/tools/cpm/)
+together with a Curry system,
 like [PAKCS](https://www.curry-lang.org/pakcs/) or
 [KiCS2](https://www.curry-lang.org/kics2/),
-is required so that the executable `cypm` is in the load path.
+must be already installed.
+Thus, the executable `cypm` should be in the load path.
 
 If these prerequisites are satisfied, the compiler and
 interactive compilation environment of KMCC can be installed
@@ -46,9 +49,9 @@ by the script `bin/kmcc`. If you put the directory `.../kmcc/bin`
 into your `PATH` variable, KMCC can be invoked as follows:
 
     > kmcc
-    > ----------------------------------------------------------
-    > KMCC Interactive Environment (Version 0.3.0 of 2025-02-24)
-    > ----------------------------------------------------------
+    ----------------------------------------------------------
+    KMCC Interactive Environment (Version 0.3.0 of 2025-02-24)
+    ----------------------------------------------------------
     Prelude> 
 
 Now one can use the command `:help` to get an overview of all
