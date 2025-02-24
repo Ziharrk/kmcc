@@ -1,3 +1,19 @@
+########################################################################
+# Makefile for KMCC
+########################################################################
+
+# Essential system dependencies
+STACK := $(shell which stack)
+CYPM  := $(shell which cypm)
+
+ifeq ($(STACK),)
+$(error Please make sure that 'stack' (the Haskell Stack build tool) is on your PATH or specify it explicitly by passing 'make STACK=...')
+endif
+
+ifeq ($(CYPM),)
+$(error Please make sure that 'cypm' (the Curry Package Manager) is on your PATH or specify it explicitly by passing 'make CYPM=...')
+endif
+
 # The root directory of the installation
 export ROOT = $(CURDIR)
 # The binary directory
@@ -34,21 +50,22 @@ all: bin/kmcc_c frontend repl prebuild_prelude generate_distribution
 
 .PHONY: bin/kmcc_c
 bin/kmcc_c:
-	stack build kmcc:exe:kmcc_c --copy-bins
+	$(STACK) build kmcc:exe:kmcc_c --copy-bins
 
 .PHONY: frontend
 frontend: bin/kmcc-frontend
 
 .PHONY: bin/kmcc-frontend
 bin/kmcc-frontend:
-	stack build curry-frontend:exe:curry-frontend --copy-bins
+	$(STACK) build curry-frontend:exe:curry-frontend --copy-bins
 	mv bin/curry-frontend bin/kmcc-frontend
 
 .PHONY: repl
 repl: bin/kmcc_repl
 
 bin/kmcc_repl: $(INSTALLCURRY) repl/src/KMCC/ReplConfig.curry repl/package.json
-	cd repl && cypm -d BININSTALLPATH=$(BINDIR) install
+	$(CYPM) update
+	cd repl && $(CYPM) -d BININSTALLPATH=$(BINDIR) install
 	# add alias `bin/curry`:
 	cd $(BINDIR) && rm -f curry && ln -s kmcc curry
 
@@ -61,10 +78,10 @@ $(INSTALLCURRY): $(INSTALLCURRYIN) compiler/kmcc.cabal Makefile
 clean:
 	rm -rf bin/kmcc_repl
 	rm -rf bin/kmcc_c
-	rm -rf repl/src/.curry
+	cd repl && $(CYPM) clean
 	rm -rf libs/src/.curry
 	rm -f $(INSTALLCURRY)
-	stack clean
+	$(STACK) clean
 
 .PHONY: prebuild_prelude
 prebuild_prelude: bin/kmcc_c
