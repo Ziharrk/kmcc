@@ -16,9 +16,24 @@ The ideas of this compiler are described in:
 Installation:
 -------------
 
-To install the compiler and interactive compilation environment,
-download this repository and build it. This can be done by the
-following shell commands:
+Since the front end and compiler of KMCC are implemented in Haskell,
+[Haskell Stack](https://www.haskellstack.org/) implementation is required
+to install KMCC.
+Thus, the executable `stack` should be in the load path.
+For instance, if you run Ubuntu Linux, you can easily install it by
+
+    > sudo apt-get install haskell-stack
+
+Furthermore, the interactive environment ("REPL") of KMCC is
+implemented in Curry so that an already existing Curry system,
+like [PAKCS](https://www.curry-lang.org/pakcs/) or
+[KiCS2](https://www.curry-lang.org/kics2/),
+is required so that the executable `cypm` is in the load path.
+
+If these prerequisites are satisfied, the compiler and
+interactive compilation environment of KMCC can be installed
+by downloading this repository and building it.
+This can be done by the following shell commands:
 
     > git clone git@github.com:Ziharrk/kmcc.git
     > cd kmcc
@@ -32,7 +47,7 @@ into your `PATH` variable, KMCC can be invoked as follows:
 
     > kmcc
     > ----------------------------------------------------------
-    > KMCC Interactive Environment (Version 0.3.0 of 2025-02-17)
+    > KMCC Interactive Environment (Version 0.3.0 of 2025-02-24)
     > ----------------------------------------------------------
     Prelude> 
 
