@@ -2,7 +2,6 @@
 {-# LANGUAGE PolyKinds             #-}
 module Any where
 
-import Control.DeepSeq
 import Language.Haskell.TH
 
 import MemoizedCurry

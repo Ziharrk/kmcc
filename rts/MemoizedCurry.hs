@@ -711,7 +711,6 @@ class ReadTerm a where
   readTermList :: ReadPrec [HsEquivalent a]
   readTermList = readTermListDefault
 
-
 readTermListDefault :: ReadTerm a => ReadPrec [HsEquivalent a]
 readTermListDefault = list readTerm
   where
@@ -736,7 +735,8 @@ class NFDataC a where
   rnfC :: (HsEquivalent a ~ a') => a' -> ()
 
 class ( ToHs a, FromHs a, Unifiable a, NormalForm a
-      , HasPrimitiveInfo a, ShowFree a, NFDataC a) => Curryable a
+      , HasPrimitiveInfo a, ShowFree a, NFDataC a
+      , ReadTerm a, ShowTerm a) => Curryable a
 
 type instance HsEquivalent Integer = Integer
 

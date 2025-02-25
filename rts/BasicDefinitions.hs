@@ -17,16 +17,20 @@ module BasicDefinitions
  , fs ,bfs , dfs
  ) where
 
-import Control.Exception (throw, catch, evaluate, Exception)
+import Control.Arrow (first)
+import Control.Exception (throw, catch, evaluate, Exception, SomeException (..))
 import Control.Monad (MonadPlus(..), (>=>))
 import Control.Monad.Codensity (lowerCodensity)
 import Control.Monad.State (modify, MonadState(put, get), StateT(runStateT))
+import Data.IORef (IORef, newIORef, readIORef)
 import Data.List (intercalate, sortOn)
 import Data.SBV (SBV, (.===), sNot)
 import qualified Data.Set as Set
 import GHC.IO.Exception (IOException(..), IOErrorType(..))
 import System.IO.Unsafe (unsafeInterleaveIO, unsafePerformIO)
+import qualified System.Time.Extra as E (offsetTime)
 import Text.Read (pfail)
+import Text.ParserCombinators.ReadPrec (readPrec_to_S)
 
 import MemoizedCurry
 import Narrowable
@@ -241,6 +245,7 @@ instance {-# INCOHERENT #-} UnitDispatchable a where
 
 mainWrapperDet :: forall a. (ShowFree a, FromHs a, UnitDispatchable (HsEquivalent a)) => IO (HsEquivalent a) -> IO ()
 mainWrapperDet mx = do
+  _ <- offsetTime
   x <- mx
   case evalCurry (showFreeCurry (return (from x)) []) of
     Single x' -> case unitDispatch @(HsEquivalent a) of
@@ -250,6 +255,7 @@ mainWrapperDet mx = do
 
 mainWrapperNDet :: forall a. (ShowFree a, ToHs a, UnitDispatchable a) => Curry (IO a) -> IO ()
 mainWrapperNDet mx = do
+  _ <- offsetTime
   case evalCurry (ensureOneResult (bindIO mx (returnFunc $ \x -> return <$> showFreeCurry x []))) of
     Single x' -> x' >>= \a -> case unitDispatch @a of
                   IsUnit  -> return ()
@@ -263,16 +269,20 @@ unSingle _ = error "mainWrapper: not a single result"
 exprWrapperDet :: forall a. (ShowFree a, FromHs a)
                => (Tree.Tree String -> [String])
                -> HsEquivalent a -> IO ()
-exprWrapperDet search a = case search $ evalCurryTree (showFreeCurry (fromHaskell a) []) of
-  []  -> fail "**No value found"
-  [s] -> putStrLn s
-  _   -> error "internalError: More than on result from deterministic expression"
+exprWrapperDet search a = do
+  _ <- offsetTime
+  case search $ evalCurryTree (showFreeCurry (fromHaskell a) []) of
+    []  -> fail "**No value found"
+    [s] -> putStrLn s
+    _   -> error "internalError: More than on result from deterministic expression"
 
 exprWrapperNDet :: forall a. ShowFree a
                 => (Tree.Tree String -> [String])
                 -> Bool -> [(String, Integer)] -> Bool
                 -> Curry (CurryVal a, [VarInfo]) -> IO ()
-exprWrapperNDet search optInt fvs b ca = printRes (search $ evalCurryTree extract) optInt
+exprWrapperNDet search optInt fvs b ca = do
+  _ <- offsetTime
+  printRes (search $ evalCurryTree extract) optInt
   where
     sortedFvs = map fst $ sortOn snd fvs
 
@@ -321,6 +331,28 @@ addVarIds ca xs = Curry $ do
   ids <- sequence xs
   a <- unCurry ca
   return (Val (a, ids))
+
+-- Required for time since the start of the program in milliseconds,
+-- which is deprecated in the curry library.
+{-# NOINLINE offsetTime #-}
+offsetTime :: IO Integer
+offsetTime = readIORef offsetTimeRef >>= fmap (floor . (*(10^3)))
+
+{-# NOINLINE offsetTimeRef #-}
+offsetTimeRef :: IORef (IO Double)
+offsetTimeRef = unsafePerformIO $ E.offsetTime >>= newIORef
+
+-- prim_readsUnqualifiedTerm :: [String] -> String -> [(_,String)]
+readAnyTerm :: forall a. Curryable a => [String] -> String -> [(HsEquivalent a, String)]
+readAnyTerm _ = readPrec_to_S (readTerm @a) 0
+
+-- prim_showTerm :: _ -> String
+showAnyTerm :: forall a. Curryable a => HsEquivalent a -> String
+showAnyTerm a = showTerm @a 0 a ""
+
+isBottomNF :: forall a. Curryable a => HsEquivalent a -> Bool
+isBottomNF e = unsafePerformIO $
+  catch (return $! (case rnfC e of () -> False)) (\(SomeException _) -> return True)
 
 class ForeignType a where
   type Foreign a = b | b -> a
