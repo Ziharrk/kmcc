@@ -54,7 +54,8 @@ genInstances (Type qname _ vs cs) =
       (IRule () Nothing (mkCurryCtxt vs)
         (IHApp () (IHCon () hsFromQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
           (map (TyVar () . indexToName . fst) vs))))
-      (Just [InsDecl () (FunBind () (concatMap mkFromMatch cs)), InsDecl () (FunBind () (concatMap mkElimFlatMatch cs))])
+      (Just [InsDecl () (FunBind () (concatMap mkFromMatch cs)), InsDecl () (FunBind () (concatMap mkElimFlatMatch cs ++ [defaultM]))])
+      where defaultM = Match () (Ident () "elimFlat") [PVar () (Ident () "_x")] (UnGuardedRhs () (Var () (UnQual () (Ident () "_x")))) Nothing
     hsNarrowableDecl = InstDecl () Nothing
       (IRule () Nothing (mkCurryCtxt vs)
         (IHApp () (IHCon () narrowableQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
