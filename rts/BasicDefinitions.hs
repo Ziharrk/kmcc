@@ -27,6 +27,7 @@ import Data.List (intercalate, sortOn)
 import Data.SBV (SBV, (.===), sNot)
 import qualified Data.Set as Set
 import GHC.IO.Exception (IOException(..), IOErrorType(..))
+import GHC.Stack (HasCallStack)
 import System.IO.Unsafe (unsafeInterleaveIO, unsafePerformIO)
 import qualified System.Time.Extra as E (offsetTime)
 import Text.Read (pfail)
@@ -49,7 +50,7 @@ elimFlatM :: (FromHs a) => Curry a -> Curry a
 elimFlatM = fmap elimFlat
 
 {-# NOINLINE fromHaskell #-}
-fromHaskell :: FromHs a => HsEquivalent a -> Curry a
+fromHaskell :: (HasCallStack, FromHs a) => HsEquivalent a -> Curry a
 fromHaskell x = unsafePerformIO $ catch (evaluate (from x) >>= \x' -> return (return x'))
                                 $ \Failed -> return mzero
 

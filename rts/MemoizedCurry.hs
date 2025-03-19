@@ -686,7 +686,7 @@ class ToHs a where
   to :: a -> Curry (HsEquivalent a)
 
 class FromHs a where
-  from :: HsEquivalent a -> a
+  from :: HasCallStack => HsEquivalent a -> a
   elimFlat :: a -> a
 
 class ShowFree a where
