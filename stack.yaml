@@ -9,3 +9,4 @@ extra-deps:
 allow-newer: true
 local-bin-path: bin
 allow-different-user: true
+system-ghc: true

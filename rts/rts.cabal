@@ -1,9 +1,9 @@
 cabal-version: 3.0
 name:          rts
-version:       0.1.0.0
+version:       0.4.0.0
 license:       BSD-3-Clause
 license-file:  LICENSE
-copyright:     (c) 2020-2022, Kai-Oliver Prott, Finn Teegen
+copyright:     (c) 2020-2025, Kai-Oliver Prott, Finn Teegen
 maintainer:    kai.prott@hotmail.de
 author:        Kai-Oliver Prott, Finn Teegen
 category:      Language

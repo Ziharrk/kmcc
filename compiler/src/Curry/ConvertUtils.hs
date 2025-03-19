@@ -29,11 +29,17 @@ mkApplicativeChain e xs = InfixApp () e (QVarOp () dollarApplicativeQualName)
 mkFromHaskell :: Exp () -> Exp ()
 mkFromHaskell = App () (Var () fromHaskellQualName)
 
+mkFrom :: Exp () -> Exp ()
+mkFrom = App () (Var () fromQualName)
+
 mkFromHaskellTyped :: Exp () -> Type () -> Exp ()
 mkFromHaskellTyped e = ExpTypeSig () (mkFromHaskell e) . mkCurry
 
 mkToHaskell :: Exp () -> Exp ()
 mkToHaskell = App () (Var () toHaskellQualName)
+
+mkTo :: Exp () -> Exp ()
+mkTo = App () (Var () toQualName)
 
 toTyVarBndr :: TVarWithKind -> TyVarBind ()
 toTyVarBndr (i, k) = KindedVar () (indexToName i) (kindToHsType k)
@@ -152,6 +158,12 @@ mkNarrowSameConstr = App () (Var () narrowSameConstrQualName)
 mkReturn :: Exp () -> Exp ()
 mkReturn = App () (Var () returnQualName)
 
+mkFmap :: Exp () -> Exp ()
+mkFmap = App () (Var () (Qual () (ModuleName () "P") (Ident () "fmap")))
+
+mkFmapPartial :: Exp () -> Exp ()
+mkFmapPartial = App () (Var () (Qual () (ModuleName () "B") (Ident () "mapCurryPartial")))
+
 mkBind :: Exp () -> Exp () -> Exp ()
 mkBind e1 = InfixApp () e1 (QConOp () bindQualName)
 
@@ -263,8 +275,14 @@ starApplicativeQualName = Qual () (ModuleName () "P") (Symbol () "<*>")
 fromHaskellQualName :: QName ()
 fromHaskellQualName = Qual () (ModuleName () "B") (Ident () "fromHaskell")
 
+fromQualName :: QName ()
+fromQualName = Qual () (ModuleName () "B") (Ident () "from")
+
 toHaskellQualName :: QName ()
 toHaskellQualName = Qual () (ModuleName () "B") (Ident () "toHaskell")
+
+toQualName :: QName ()
+toQualName = Qual () (ModuleName () "B") (Ident () "to")
 
 hsEquivQualName :: QName ()
 hsEquivQualName = Qual () (ModuleName () "B") (Ident () "HsEquivalent")

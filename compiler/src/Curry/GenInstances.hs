@@ -6,14 +6,19 @@ import Data.Maybe ( mapMaybe )
 import Language.Haskell.Exts hiding ( Cons, QName )
 import qualified Language.Haskell.Exts as Hs
 
-import Curry.FlatCurry ( ConsDecl(..), NewConsDecl(..), TypeDecl(..), TypeExpr (..), TVarWithKind )
+import Curry.FlatCurry ( QName, ConsDecl(..), TypeDecl(..), NewConsDecl(..), TypeExpr (..), TVarWithKind )
 
 import Curry.ConvertUtils
 import {-# SOURCE #-} Curry.ConvertToHs
 
 genInstances :: TypeDecl -> [Decl ()]
-genInstances (Type _ _ _ []) = []
-genInstances (Type qname _ vs cs) =
+genInstances (Type qname _ vs cs@(_:_)) = gen qname vs cs True
+genInstances (TypeNew qname _ vs (NewCons qname2 vis ty)) =
+  gen qname vs [Cons qname2 1 vis [ty]] False
+genInstances _ = []
+
+gen :: QName -> [TVarWithKind] -> [ConsDecl] -> Bool -> [Decl ()]
+gen qname vs cs dataNotNew =
   (if isListOrTuple qname
     then []
     else [ hsShowDecl, hsReadDecl ])
@@ -103,23 +108,26 @@ genInstances (Type qname _ vs cs) =
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkToImpl qname2 ar]] ++
       [Match () (Ident () "to")
       [mkFlatPattern qname2 (TCons qname []) [1..ar]]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkToDetImpl qname2 ar]]
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkToDetImpl qname2 ar], dataNotNew]
     mkFromMatch (Cons qname2 ar _ _) = [Match () (Ident () "from")
       [PApp () (convertTypeNameToHs qname2) (map (PVar () . indexToName) [1..ar])]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkFromImpl qname2 ar]]
     mkElimFlatMatch (Cons qname2 ar _ _) = [Match () (Ident () "elimFlat")
       [mkFlatPattern qname2 (TCons qname []) [1..ar]]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkElimFlatImpl qname2 ar]]
-    mkNarrowMatch = Match () (Ident () "narrow") [] (UnGuardedRhs () (List () (mapMaybe mkNarrowExp cs))) Nothing
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkElimFlatImpl qname2 ar], dataNotNew]
+    mkNarrowMatch
+      | dataNotNew = Match () (Ident () "narrow") []
+          (UnGuardedRhs () (List () (mapMaybe mkNarrowExp cs))) Nothing
+      | [Cons qname2 _ _ _] <- cs = Match () (Ident () "narrow") []
+          (UnGuardedRhs () (List () [Hs.App () (mkFmap (Hs.Var () (convertTypeNameToMonadicHs qname2))) mkFree])) Nothing
+      | otherwise = error "genInstances: narrow for newtype with multiple constructors"
     mkNarrowExp (Cons qname2 ar _ _) = preventDict mkNarrowImpl qname2 ar
-    mkSameConstrMatch c@(Cons qname2 ar _ _) = [Match () (Ident () "narrowConstr")
+    mkSameConstrMatch (Cons qname2 ar _ _) = [Match () (Ident () "narrowConstr")
       [PApp () (convertTypeNameToMonadicHs qname2) (replicate ar (PWildCard ()))]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict (mkSameConstrImpl others) qname2 ar]] ++
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkSameConstrImpl qname2 ar]] ++
       [Match () (Ident () "narrowConstr")
       [mkFlatPattern qname2 (TCons qname []) [1..ar]]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict (mkSameConstrImpl others) qname2 ar]]
-      where
-        others = filter (/= c) cs
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkSameConstrImpl qname2 ar], dataNotNew]
     mkUnifyWithMatch (Cons qname2 ar _ _) = [Match () (Ident () "unifyWith")
       [ PVar () (Ident () "_f")
       , PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . appendName "_a" . indexToName) [1..ar])
@@ -131,13 +139,13 @@ genInstances (Type qname _ vs cs) =
       , mkFlatPattern qname2 (TCons qname []) [1..ar]
       , PVar () (Ident () "_b")
       ]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkUnifyWithDetImplRight qname2 ar]] ++
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkUnifyWithDetImplRight qname2 ar], dataNotNew] ++
       [Match () (Ident () "unifyWith")
       [ PVar () (Ident () "_f")
       , PVar () (Ident () "_a")
       , mkFlatPattern qname2 (TCons qname []) [1..ar]
       ]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkUnifyWithDetImplLeft qname2 ar]]
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkUnifyWithDetImplLeft qname2 ar], dataNotNew]
     unifyWithFailMatch = Match () (Ident () "unifyWith")
       [PWildCard (), PWildCard (), PWildCard ()]
       (UnGuardedRhs () mkFailed) Nothing
@@ -146,19 +154,19 @@ genInstances (Type qname _ vs cs) =
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkLazyUnifyImpl qname2 ar]] ++
       [Match () (Ident () "lazyUnifyVar")
       [mkFlatPattern qname2 (TCons qname []) [1..ar], PVar () (Ident () "_i")]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkLazyUnifyDetImpl qname2 ar]]
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkLazyUnifyDetImpl qname2 ar], dataNotNew]
     mkNfWithMatch (Cons qname2 ar _ _) = [Match () (Ident () "nfWith")
       [PVar () (Ident () "_f"), PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkNfWithImpl qname2 ar]] ++
       [Match () (Ident () "nfWith")
       [PVar () (Ident () "_f"), mkFlatPattern qname2 (TCons qname []) [1..ar]]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkNfWithDetImpl qname2 ar]]
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkNfWithDetImpl qname2 ar], dataNotNew]
     mkShowsFreePrecMatch (Cons qname2 ar _ _) = [Match () (Ident () "showsFreePrec")
       [PVar () (Ident () "_p"), PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkShowsFreePrecImpl qname2 ar]] ++
       [Match () (Ident () "showsFreePrec")
       [PVar () (Ident () "_p"), PAsPat () (Ident () "_x") (mkFlatPattern qname2 (TCons qname []) [1..ar])]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkShowsFreePrecDetImpl qname2 ar]]
+      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkShowsFreePrecDetImpl qname2 ar], dataNotNew]
     mkShowMatch (Cons qname2 ar _ tys) = [Match () (Ident () "showTerm")
       [PVar () (Ident () "_p"), PApp () (convertTypeNameToHs qname2) (map (PVar () . indexToName) [1..ar])]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict (mkShowsPrecImpl tys) qname2 ar]]
@@ -171,30 +179,38 @@ genInstances (Type qname _ vs cs) =
 
     mkToImpl qname2 ar =
       mkApplicativeChain (Hs.Var () (convertTypeNameToHs qname2))
-                          (map (mkToHaskell . Hs.Var () . UnQual () . indexToName) [1..ar])
+                          (map (mkToWhat . Hs.Var () . UnQual () . indexToName) [1..ar])
+      where mkToWhat = if dataNotNew then mkToHaskell else mkTo
     mkToDetImpl qname2 ar =
       mkReturn (foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
                  (map (Hs.Var () . UnQual () . indexToName) [1..ar]))
-    mkFromImpl qname2 ar = App () (Hs.Var () (convertQualNameToFlatQualName qname)) $
-      foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
-        (map (Hs.Var () . UnQual () . indexToName) [1..ar])
+    mkFromImpl qname2 ar
+      | dataNotNew = App () (Hs.Var () (convertQualNameToFlatQualName qname)) $
+          foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
+            (map (Hs.Var () . UnQual () . indexToName) [1..ar])
+      | otherwise  = App () (Hs.Var () (convertTypeNameToMonadicHs qname2))
+            (mkFrom $ Hs.Var () $ UnQual () $ indexToName 1)
     mkElimFlatImpl qname2 ar = foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
         (map (mkFromHaskell . Hs.Var () . UnQual () . indexToName) [1..ar])
     mkNarrowImpl qname2 ar =
       mkApplicativeChain (Hs.Var () (convertTypeNameToMonadicHs qname2))
         (map (const (mkShare mkFree)) [1..ar])
-    mkSameConstrImpl others qname2 ar = Tuple () Unboxed [c', others']
+    mkSameConstrImpl qname2 ar
+      | dataNotNew = c'
+      | otherwise = Hs.App () (Hs.Var () (Qual () (ModuleName () "P") (Ident () "head")))
+                              (Hs.Var () (Qual () (ModuleName () "B") (Ident () "narrow")))
       where
         f c a = mkApplicativeChain (Hs.Var () (convertTypeNameToMonadicHs c))
               (replicate a (mkShare mkFree))
         c' = f qname2 ar
-        others' = List () $ map (\c -> f (getConsName c) (getConsArity c)) others
-        getConsArity (Cons _ ar' _ _) = ar'
-        getConsName (Cons qname2' _ _ _) = qname2'
-    mkUnifyWithImpl _ ar = Do () $ maybeAddReturnTrue $
-      map (\i -> Qualifier () $ App () (App () (Hs.Var () (UnQual () (Ident () "_f")))
-                    (Hs.Var () (UnQual () (appendName "_a" (indexToName i)))))
-                    (Hs.Var () (UnQual () (appendName "_b" (indexToName i))))) [1..ar]
+    mkUnifyWithImpl _ ar
+      | dataNotNew = Do () $ maybeAddReturnTrue $
+          map (\i -> Qualifier () $ App () (App () (Hs.Var () (UnQual () (Ident () "_f")))
+                        (Hs.Var () (UnQual () (appendName "_a" (indexToName i)))))
+                        (Hs.Var () (UnQual () (appendName "_b" (indexToName i))))) [1..ar]
+      | otherwise = mkUnifyWith (Hs.Var () (UnQual () (Ident () "_f")))
+                                (Hs.Var () (UnQual () (appendName "_a" (indexToName 1))))
+                                (Hs.Var () (UnQual () (appendName "_b" (indexToName 1))))
     mkUnifyWithDetImplRight qname2 ar = mkUnifyWith
       (Hs.Var () (UnQual () (Ident () "_f")))
       (foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToMonadicHs qname2)
@@ -205,33 +221,56 @@ genInstances (Type qname _ vs cs) =
       (Var () (UnQual () (Ident () "_a")))
       (foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToMonadicHs qname2)
         (map (mkFromHaskell . Hs.Var () . UnQual () . indexToName) [1..ar]))
-    mkLazyUnifyImpl qname2 ar = Do () $
-      map (\i -> Generator () (PVar () (appendName "_s" (indexToName i))) (mkShare mkFree)) [1..ar] ++
-      [Qualifier () $ mkAddToVarHeap (Hs.Var () (UnQual () (Ident () "_i"))) $ mkReturn
-                        (foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
-                        (map (Hs.Var () . UnQual () . indexToName) [1..ar]))] ++
-      maybeAddReturnTrue (
-      map (\i -> Qualifier () $ mkLazyUnify
-                    (Hs.Var () (UnQual () (indexToName i)))
-                    (Hs.Var () (UnQual () (appendName "_s" (indexToName i))))) [1..ar])
+    mkLazyUnifyImpl qname2 ar
+      | dataNotNew = Do () $
+          map (\i -> Generator () (PVar () (appendName "_s" (indexToName i))) (mkShare mkFree)) [1..ar] ++
+          [Qualifier () $ mkAddToVarHeap (Hs.Var () (UnQual () (Ident () "_i"))) $ mkReturn
+                            (foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
+                            (map (Hs.Var () . UnQual () . indexToName) [1..ar]))] ++
+          maybeAddReturnTrue (
+          map (\i -> Qualifier () $ mkLazyUnify
+                        (Hs.Var () (UnQual () (indexToName i)))
+                        (Hs.Var () (UnQual () (appendName "_s" (indexToName i))))) [1..ar])
+      | otherwise = Hs.App () (Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "lazyUnifyVar")))
+                      (Hs.Var () (UnQual () (indexToName 1))))
+                      (Hs.Var () (UnQual () (Ident () "_i")))
     mkLazyUnifyDetImpl qname2 ar = Do ()
       [ Qualifier () $ mkAddToVarHeap (Hs.Var () (UnQual () (Ident () "_i"))) $ mkReturn $
                         App () (Hs.Var () (convertQualNameToFlatQualName qname))
                         (foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
                         (map (Hs.Var () . UnQual () . indexToName) [1..ar]))
       , Qualifier () $ mkReturn (Hs.Var () trueQualName) ]
-    mkNfWithImpl qname2 ar = Do () $
-      map (\i -> Generator () (PVar () (appendName "_f" (indexToName i))) $
-                  App () (Hs.Var () (UnQual () (Ident () "_f"))) $ Hs.Var () $ UnQual () $ indexToName i) [1..ar] ++
-      [Qualifier () $ Hs.Case () (mkTuple Unboxed (map (Hs.Var () . UnQual () . appendName "_f" . indexToName) [1..ar]))
-        [ Alt () (mkTupleP Unboxed (map (PApp () rightQualName . return . PVar ()  . appendName "_d" . indexToName) [1..ar]))
-            (UnGuardedRhs () $ mkReturn $ mkRight $
-              foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToHs qname2)
-                (map (Hs.Var () . UnQual () . appendName "_d" . indexToName) [1..ar])) Nothing
-        , Alt () (PWildCard ())
-            (UnGuardedRhs () $ mkReturn $ mkLeft $ mkVal $
-              foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToMonadicHs qname2)
-                (map (mkEitherToCurry . Hs.Var () . UnQual () . appendName "_f" . indexToName) [1..ar])) Nothing]]
+    mkNfWithImpl qname2 ar
+      | dataNotNew = Do () $
+          map (\i -> Generator () (PVar () (appendName "_f" (indexToName i))) $
+                      App () (Hs.Var () (UnQual () (Ident () "_f"))) $ Hs.Var () $ UnQual () $ indexToName i) [1..ar] ++
+          [Qualifier () $ Hs.Case () (mkTuple Unboxed (map (Hs.Var () . UnQual () . appendName "_f" . indexToName) [1..ar]))
+            [ Alt () (mkTupleP Unboxed (map (PApp () rightQualName . return . PVar ()  . appendName "_d" . indexToName) [1..ar]))
+                (UnGuardedRhs () $ mkReturn $ mkRight $
+                  foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToHs qname2)
+                    (map (Hs.Var () . UnQual () . appendName "_d" . indexToName) [1..ar])) Nothing
+            , Alt () (PWildCard ())
+                (UnGuardedRhs () $ mkReturn $ mkLeft $ mkVal $
+                  foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToMonadicHs qname2)
+                    (map (mkEitherToCurry . Hs.Var () . UnQual () . appendName "_f" . indexToName) [1..ar])) Nothing]]
+      | otherwise = Hs.App () (mkFmap mkEith ) $
+        Hs.App () (Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "nfWith")))
+                  (Hs.Var () (UnQual () (Ident () "_f"))))
+                  (Hs.Var () (UnQual () (indexToName 1)))
+        where mkEith = Paren () $ Hs.LCase ()
+                [ Alt () (PApp () (Qual () (ModuleName () "P") (Ident () "Left"))
+                  [PApp () varName [PVar () (Ident () "_i")]])
+                    (UnGuardedRhs () $ mkLeft $ Hs.App () (Hs.Var () varName) (Hs.Var () (UnQual () (Ident () "_i")))) Nothing
+                , Alt () (PApp () (Qual () (ModuleName () "P") (Ident () "Left"))
+                  [PApp () valName [PVar () (Ident () "_x")]])
+                    (UnGuardedRhs () $ mkLeft $ Hs.App () (Hs.Var () valName)
+                                                (Hs.App () (Hs.Var () (convertTypeNameToMonadicHs qname2))
+                                                           (Hs.Var () (UnQual () (Ident () "_x"))))) Nothing
+                , Alt () (PApp () (Qual () (ModuleName () "P") (Ident () "Right")) [PVar () (Ident () "_d")])
+                    (UnGuardedRhs () $ mkRight $ Hs.App () (Hs.Var () (convertTypeNameToHs qname2))
+                                                           (Hs.Var () (UnQual () (Ident () "_d")))) Nothing ]
+              varName = Qual () (ModuleName () "B") (Ident () "Var")
+              valName = Qual () (ModuleName () "B") (Ident () "Val")
     mkNfWithDetImpl qname2 ar = mkReturn $ mkRight $
       foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
         (map (Hs.Var () . UnQual () . indexToName) [1..ar])
@@ -239,13 +278,15 @@ genInstances (Type qname _ vs cs) =
     mkShowsFreePrecImpl qname2 ar
       | isOpQName qname2 =
         mkShowsBrackets (Hs.Var () (UnQual () (Ident () "_p")))
-        (mkShowSpace (mkShowSpace (mkShowsCurryHighPrec (Hs.Var () $ UnQual () $ indexToName 1))
+        (mkShowSpace (mkShowSpace (mkShowsWhatHighPrec (Hs.Var () $ UnQual () $ indexToName 1))
           (mkShowStringCurry (snd qname2)))
-          (mkShowsCurryHighPrec (Hs.Var () $ UnQual () $ indexToName 2)))
+          (mkShowsWhatHighPrec (Hs.Var () $ UnQual () $ indexToName 2)))
       | otherwise        =
         mkShowsBrackets (Hs.Var () (UnQual () (Ident () "_p")))
         (foldl1 mkShowSpace (mkShowStringCurry (snd qname2) :
-          map (mkShowsCurryHighPrec . Hs.Var () . UnQual () . indexToName) [1..ar]))
+          map (mkShowsWhatHighPrec . Hs.Var () . UnQual () . indexToName) [1..ar]))
+      where mkShowsWhatHighPrec = if dataNotNew then mkShowsCurryHighPrec
+              else Hs.App () (Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "showsFreePrec"))) (Hs.Lit () (Int () 9 "9")))
     mkShowsFreePrecDetImpl qname2 0 = mkShowStringCurry (snd qname2)
     mkShowsFreePrecDetImpl qname2 ar = mkShowsFreePrec (Hs.Var () (UnQual () (Ident () "_p"))) $
                                        (`mkAsTypeOf` Hs.Var () (UnQual () (Ident () "_x"))) $
@@ -274,9 +315,6 @@ genInstances (Type qname _ vs cs) =
 
     maybeAddReturnTrue [] = [Qualifier () $ mkReturn (Hs.Var () trueQualName)]
     maybeAddReturnTrue xs = xs
-genInstances TypeSyn {} = []
-genInstances (TypeNew qname1 vis1 vs (NewCons qname2 vis2 ty)) =
-  genInstances (Type qname1 vis1 vs [Cons qname2 1 vis2 [ty]])
 
 mkTuple :: Boxed -> [Exp ()] -> Exp ()
 mkTuple _       []  = Hs.Con () (Special () (UnitCon ()))

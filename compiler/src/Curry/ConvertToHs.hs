@@ -14,7 +14,7 @@ module Curry.ConvertToHs
 import Control.Arrow (first, second)
 import Control.Monad (void, replicateM, when)
 import Control.Monad.Except (ExceptT, MonadError (..), runExceptT)
-import Control.Monad.Reader (ReaderT, MonadReader (..), runReaderT)
+import Control.Monad.Reader (ReaderT, MonadReader (..), runReaderT, asks)
 import Control.Monad.State (StateT, MonadState (..), evalStateT)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Coerce (coerce)
@@ -23,6 +23,7 @@ import Data.Generics.Schemes (everything)
 import Data.Generics.Aliases (mkQ)
 import Data.List (isPrefixOf, find, (\\), intercalate, unfoldr, partition)
 import qualified Data.Map as Map
+import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Maybe (mapMaybe)
 import Language.Haskell.Exts hiding (Literal, Cons, Kind, QName)
@@ -52,22 +53,29 @@ import Curry.ConvertUtils
 import Curry.Default (defaultAmbiguousDecl, anyQName)
 import Curry.GenInstances (genInstances)
 
-
 data CMState = CMState
   { freshVarIdx :: Integer
   , caseDepth   :: Integer
   }
+
+data CMRead = CMRead
+  { newtypeNames     :: Set QName
+  , dataWithFunNames :: Set QName
+  , ndAnalysisResult :: NDAnalysisResult
+  }
+
 newtype CM a = CM {
-    runCM :: ReaderT NDAnalysisResult (ExceptT [Message] (StateT CMState IO)) a
+    runCM :: ReaderT CMRead (ExceptT [Message] (StateT CMState IO)) a
   } deriving newtype ( Functor, Applicative, Monad, MonadIO
-                     , MonadReader NDAnalysisResult
+                     , MonadReader CMRead
                      , MonadError [Message]
                      , MonadState CMState
                      )
 
-evalCM :: CM a -> NDAnalysisResult -> IO a
-evalCM a analysis = do
-  eith <- evalStateT (runExceptT (runReaderT (runCM a) analysis)) (CMState 0 0)
+evalCM :: CM a -> NDAnalysisResult -> Set QName -> Set QName -> IO a
+evalCM a analysis types funTypes = do
+  eith <- evalStateT (runExceptT (runReaderT (runCM a) (CMRead types funTypes analysis)))
+            (CMState 0 0)
   case eith of
     Left msgs -> abortWithMessages msgs
     Right res -> return res
@@ -93,10 +101,11 @@ increaseCaseDepth act = do
 maxCaseDepth :: Integer
 maxCaseDepth = 5
 
-compileToHs :: Maybe TypeExpr -> [((TProg, Bool), ModuleIdent, FilePath)] -> NDAnalysisResult -> KMCCOpts
+compileToHs :: Maybe TypeExpr -> [((TProg, Bool), ModuleIdent, FilePath)]
+            -> NDAnalysisResult -> Set QName -> Set QName -> KMCCOpts
             -> IO ()
-compileToHs mainType mdls ndInfo opts =
-  evalCM (mapM_ process' (zip [1 ..] (addMainInfo mdls))) ndInfo
+compileToHs mainType mdls ndInfo tyEnv funTypes opts =
+  evalCM (mapM_ process' (zip [1 ..] (addMainInfo mdls))) ndInfo tyEnv funTypes
   where
     addMainInfo [] = []
     addMainInfo [(x, y, z)] = [(x, y, z, mainType)]
@@ -349,22 +358,27 @@ newtype ModuleHeadStuff = MS (String, [(QName, [QName])], [QName])
 type instance HsEquivalent ModuleHeadStuff = ModuleHead ()
 instance ToHs ModuleHeadStuff where
   convertToHs (MS (s, qnamesT, qnamesF)) = do
-    let tyEx = concatMap typeItem qnamesT
+    tyEnv <- asks newtypeNames
+    let tyEx = concatMap (typeItem tyEnv) qnamesT
     fnEx <- concat <$> mapM funcItem qnamesF
     return $ ModuleHead () (ModuleName () (convertModName s)) Nothing $
       Just (ExportSpecList () (tyEx ++ fnEx))
     where
-      typeItem (qname, [])      = map (EAbs () (NoNamespace ()))
+      typeItem _        (qname, [])      = map (EAbs () (NoNamespace ()))
         [convertTypeNameToHs qname, convertTypeNameToMonadicHs qname]
-      typeItem (qname, csNames) = map (uncurry (EThingWith () (NoWildcard ())))
+      typeItem newtypes (qname, csNames) = map (uncurry (EThingWith () (NoWildcard ())))
         [ (convertTypeNameToHs qname, concatMap conItem csNames)
-        , (convertTypeNameToMonadicHs qname, ConName () (convertQualNameToFlatName qname) : map conItemMonadic csNames) ]
+        , (convertTypeNameToMonadicHs qname,
+            (if all (`Set.member` newtypes) csNames
+              then id
+              else (ConName () (convertQualNameToFlatName qname) : ))
+            (map conItemMonadic csNames)) ]
 
       conItem qname = [ConName () (convertTypeNameToHs (Unqual qname))]
       conItemMonadic qname = ConName () (convertTypeNameToMonadicHs (Unqual qname))
 
       funcItem qname = do
-        analysis <- ask
+        analysis <- asks ndAnalysisResult
         return (EVar () (convertFuncNameToMonadicHs qname) : case Map.lookup qname analysis of
           Just Det -> [EVar () $ convertFuncNameToHs qname]
           _        -> [])
@@ -378,7 +392,7 @@ newtype HsTypeDecl = HTD (Decl ())
 type instance HsEquivalent TypeDecl = HsTypeDecl
 instance ToHs TypeDecl where
   convertToHs (Type qname@(mdl, nm) _ vs cs)
-    | [] <- cs = return $ HTD $ TypeDecl () (mkTypeHead qname []) $ -- eta reduce -> ignore vars -- eta reduce -> ignore vars -- eta reduce -> ignore vars
+    | [] <- cs = return $ HTD $ TypeDecl () (mkTypeHead qname []) $
       TyCon () (Qual () (ModuleName () (convertModName mdl)) (Ident () (escapeTypeName nm ++ "_Det#")))
     | otherwise = do
       cs' <- mapM convertToHs cs
@@ -388,14 +402,14 @@ instance ToHs TypeDecl where
     ty <- convertToHs texpr
     return $ HTD $
       TypeDecl () (mkTypeHead qname vs) ty
-  convertToHs (TypeNew qname _ vs (NewCons cname cvis texpr)) = do
-    c' <- convertToHs (Cons cname 1 cvis [texpr])
+  convertToHs (TypeNew qname _ vs (NewCons qname2 vis texpr)) = do
+    c' <- convertToHs (Cons qname2 1 vis [texpr])
     return $ HTD $
-      DataDecl () (DataType ()) Nothing (mkTypeHead qname vs) [c'] []
+      DataDecl () (NewType ()) Nothing (mkTypeHead qname vs) [c'] []
 
 instance ToMonadicHs TypeDecl where
   convertToMonadicHs (Type qname@(mdl, nm) _ vs cs)
-    | [] <- cs = return $ HTD $ TypeDecl () (mkMonadicTypeHead qname []) $ -- eta reduce -> ignore vars -- eta reduce -> ignore vars -- eta reduce -> ignore vars
+    | [] <- cs = return $ HTD $ TypeDecl () (mkMonadicTypeHead qname []) $
       TyCon () (Qual () (ModuleName () (convertModName mdl)) (Ident () (escapeTypeName nm ++ "_ND#")))
     | otherwise = do
       cs' <- (mkFlatConstr qname vs :) <$> mapM convertToMonadicHs cs
@@ -405,11 +419,10 @@ instance ToMonadicHs TypeDecl where
     ty <- convertToMonadicHs texpr
     return $ HTD $
       TypeDecl () (mkMonadicTypeHead qname vs) ty
-  convertToMonadicHs (TypeNew qname _ vs (NewCons cname cvis texpr)) = do
-    c' <- convertToMonadicHs (Cons cname 1 cvis [texpr])
-    let cs' = [mkFlatConstr qname vs, c']
+  convertToMonadicHs (TypeNew qname _ vs c) = do
+    NC c' <- convertToMonadicHs c
     return $ HTD $
-      DataDecl () (DataType ()) Nothing (mkMonadicTypeHead qname vs) cs' []
+      DataDecl () (NewType ()) Nothing (mkMonadicTypeHead qname vs) [c'] []
 
 mkFlatConstr :: QName -> [TVarWithKind] -> QualConDecl ()
 mkFlatConstr qname vs =
@@ -428,6 +441,13 @@ instance ToMonadicHs ConsDecl where
   convertToMonadicHs (Cons cname _ _ texprs) = do
     let tys = map convertQualType texprs
     return $ QualConDecl () Nothing Nothing (ConDecl () (convertTypeNameToMonadicHs (Unqual cname)) tys)
+
+newtype NC = NC (QualConDecl ())
+type instance HsEquivalent NewConsDecl = NC
+instance ToMonadicHs NewConsDecl where
+  convertToMonadicHs (NewCons cname _ texpr) = do
+    let tys = [convertTypeToMonadicHs texpr]
+    return $ NC $ QualConDecl () Nothing Nothing (ConDecl () (convertTypeNameToMonadicHs (Unqual cname)) tys)
 
 type instance HsEquivalent TypeExpr = Type ()
 instance ToHs TypeExpr where
@@ -485,7 +505,7 @@ newtype HsFuncDecl = HFD (Maybe (Decl (), Decl ()))
 type instance HsEquivalent TFuncDecl = HsFuncDecl
 instance ToHs TFuncDecl where
   convertToHs (TFunc qname _ _ texpr rule) = do
-    analysis <- ask
+    analysis <- asks ndAnalysisResult
     case Map.lookup qname analysis of
       Just Det -> do
         ty <- convertToHs texpr
@@ -524,8 +544,9 @@ newtype RuleInfo = RI (QName, TRule)
 type instance HsEquivalent RuleInfo = Match ()
 instance ToHs RuleInfo where
   convertToHs (RI (qname, TRule args expr)) = do
-    analysis <- ask
-    e <- convertToHs (annotateND analysis expr)
+    analysis <- asks ndAnalysisResult
+    dataEnv <- asks dataWithFunNames
+    e <- convertToHs (annotateND analysis dataEnv expr)
     return $ Match () (convertFuncNameToHs (Unqual qname)) (map (PVar () . indexToName . fst) args)
       (UnGuardedRhs () e) Nothing
   convertToHs (RI (qname, TExternal _ str)) = return $
@@ -538,8 +559,9 @@ instance ToHs RuleInfo where
 
 instance ToMonadicHs RuleInfo where
   convertToMonadicHs (RI (qname, TRule args expr)) = do
-    analysis <- ask
-    e' <- convertToMonadicHs (annotateND analysis expr)
+    analysis <- asks ndAnalysisResult
+    dataEnv <- asks dataWithFunNames
+    e' <- convertToMonadicHs (annotateND analysis dataEnv expr)
     let argInfo = map fst args
     let e'' = foldr (\v -> mkReturnFunc .  Lambda () [PVar () (indexToName v)]) e' argInfo
     return $ Match () (convertFuncNameToMonadicHs (Unqual qname)) []
@@ -559,13 +581,19 @@ instance ToHs (AExpr (TypeExpr, NDInfo)) where
   convertToHs (AComb _ FuncCall (("Prelude", "apply"), _) [arg1, arg2]) =
     App () <$> convertToHs arg1 <*> convertToHs arg2
   convertToHs (AComb _ ct (qname, _) args) = do
-    args' <- mapM convertToHs args
-    let convertNameToHs = case ct of
-          ConsCall -> convertTypeNameToHs
-          ConsPartCall _ -> convertTypeNameToHs
-          FuncCall -> convertFuncNameToHs
-          FuncPartCall _ -> convertFuncNameToHs
-    return $ foldl (App ()) (Hs.Var () (convertNameToHs qname)) args'
+    tyEnv <- asks newtypeNames
+    case (Set.member qname tyEnv, args) of
+      (True, [arg]) -> Hs.App () (Hs.Var () (convertTypeNameToHs qname)) . Paren ()
+                        <$> convertToHs arg
+      (True, []) -> return $ Hs.Var () (convertTypeNameToHs qname)
+      _ -> do
+        args' <- mapM convertToHs args
+        let convertNameToHs = case ct of
+              ConsCall -> convertTypeNameToHs
+              ConsPartCall _ -> convertTypeNameToHs
+              FuncCall -> convertFuncNameToHs
+              FuncPartCall _ -> convertFuncNameToHs
+        return $ foldl (App ()) (Hs.Var () (convertNameToHs qname)) args'
   convertToHs (ALet _ bs e) = do
     let mkP v e' ty' = PatBind () (PVar () (indexToName v))
                         (UnGuardedRhs () (ExpTypeSig () (Paren () e') (TyParen () ty'))) Nothing
@@ -641,13 +669,25 @@ convertExprToMonadicHs vset (AComb (_, _) _ (("Prelude", "apply"), _) [f, a]) = 
     [f', a'] -> applyToArgs mkMonadicApp id f' [(Just a, a')]
     _ -> throwError [message "Internal error: Prelude.apply called with wrong number of arguments"]
 convertExprToMonadicHs vset (AComb _ ConsCall (qname, _) args) = do
-  args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
-  applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) args'
+  tyEnv <- asks newtypeNames
+  case (Set.member qname tyEnv, args) of
+    (True, [arg]) -> Hs.App () (mkFmap (Hs.Var () (convertTypeNameToMonadicHs qname))) . Paren ()
+                      <$> convertExprToMonadicHs vset arg
+    _ -> do
+      args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
+      applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) args'
 convertExprToMonadicHs vset (AComb _ (ConsPartCall missing) (qname, _) args) = do
-  args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
+  tyEnv <- asks newtypeNames
   missingVs <- replicateM missing freshVarName
-  let mkLam e = foldr (\v -> mkReturnFunc .  Lambda () [PVar () v]) e missingVs
-  mkLam <$> applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) (args' ++ map ((Nothing,) . Hs.Var () . UnQual ()) missingVs)
+  case (Set.member qname tyEnv, args) of
+    (True, []) -> return $ Paren () $ mkFmapPartial $
+      Lambda () [PVar () (head missingVs)] $
+      Hs.App () (Hs.Var () (convertTypeNameToMonadicHs qname)) $ Paren () $
+      Hs.Var () (UnQual () (head missingVs))
+    _ -> do
+      args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
+      let mkLam e = foldr (\v -> mkReturnFunc .  Lambda () [PVar () v]) e missingVs
+      mkLam <$> applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) (args' ++ map ((Nothing,) . Hs.Var () . UnQual ()) missingVs)
 convertExprToMonadicHs vset (AComb _ _ (qname, _) args) = do -- (Partial) FuncCall
   args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
   applyToArgs mkMonadicApp id (Hs.Var () (convertFuncNameToMonadicHs qname)) args'
@@ -691,12 +731,21 @@ convertExprToMonadicHs vset (ACase _ _ e bs)
       bs' <- mapM (convertDetBranchToMonadic vset) bs
       return $ Hs.Case () e' (bs' ++ [failedMonadicBranch])
   | otherwise = increaseCaseDepth $ do
-      CMState { caseDepth } <- get
-      e' <- convertExprToMonadicHs vset e
-      bs' <- concat <$> mapM (convertBranchToMonadicHs caseDepth vset) bs
-      let f | caseDepth < maxCaseDepth = id
-            | otherwise =  Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "elimFlatM")))
-      return $ mkBind (f e') $ Hs.LCase () (bs' ++ [failedMonadicBranch])
+      tyEnv <- asks newtypeNames
+      case bs of
+        [ABranch p@(APattern _ (qname, _) [(v,_)]) be] | Set.member qname tyEnv -> do
+          (\p' e' bs' -> mkLetBind (indexToName v, Hs.App ()
+            (mkFmap (Hs.Lambda () [p'] (Hs.Var () (UnQual () (indexToName v))))) e') bs')
+            <$> convertToMonadicHs p
+            <*> convertExprToMonadicHs vset e
+            <*> convertExprToMonadicHs vset be
+        _ -> do
+          CMState { caseDepth } <- get
+          e' <- convertExprToMonadicHs vset e
+          bs' <- concat <$> mapM (convertBranchToMonadicHs caseDepth vset) bs
+          let f | caseDepth < maxCaseDepth = id
+                | otherwise =  Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "elimFlatM")))
+          return $ mkBind (f e') $ Hs.LCase () (bs' ++ [failedMonadicBranch])
 
 convertExprToMonadicHs _ ex@(ATyped (ty, Det) _ _) =
   mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
@@ -763,8 +812,10 @@ convertDetBranchToMonadic vSet (ABranch pat e)
                   APattern _ _ args -> mapM (\(i, (ty, _)) -> (i,) <$> convertToMonadicHs ty) args
                   _                 -> return []
       let vSet' = Set.union vSet (Set.fromList (map fst vsNames))
-      analysis <- ask
-      let annE = annotateND' analysis (Map.fromSet (const Det) vSet') (genTypedExpr (fmap fst e))
+      analysis <- asks ndAnalysisResult
+      dataEnv <- asks dataWithFunNames
+      let annE = annotateND' analysis (Map.fromSet (const Det) vSet')
+                   dataEnv (genTypedExpr (fmap fst e))
       e' <- convertExprToMonadicHs vSet' annE
       return (Alt () pat' (UnGuardedRhs () (foldr (uncurry mkFromHaskellBind) e' vsNames)) Nothing)
 
@@ -792,8 +843,10 @@ convertBranchToMonadicHs n vSet (ABranch pat e)
           vsTyped <- mapM (\(i, (ty, _)) -> (i,) <$> convertToMonadicHs ty) vs
           let vsNames = map fst vsTyped
           let vSet' = Set.union vSet (Set.fromList vsNames)
-          analysis <- ask
-          let annE = annotateND' analysis (Map.fromSet (const Det) vSet') (genTypedExpr (fmap fst e))
+          analysis <- asks ndAnalysisResult
+          dataEnv <- asks dataWithFunNames
+          let annE = annotateND' analysis (Map.fromSet (const Det) vSet')
+                       dataEnv (genTypedExpr (fmap fst e))
           e' <- convertExprToMonadicHs vSet' annE
           let pat' = mkFlatPattern qname ty' vsNames
           let alt2 = [Alt () pat' (UnGuardedRhs () (foldr (uncurry mkFromHaskellBind) e' vsTyped)) Nothing]
@@ -813,8 +866,10 @@ mkFlatPattern qname ty args =
 
 type instance HsEquivalent (APattern (TypeExpr, NDInfo)) = (Pat ())
 instance ToHs (APattern (TypeExpr, NDInfo)) where
-  convertToHs (APattern _ (qname, _) args) = return (PApp () (convertTypeNameToHs qname) (map (PVar () . indexToName . fst) args))
-  convertToHs (ALPattern _ lit) = return $ convertLit (PParen ()) (PLit () (Signless ())) lit
+  convertToHs (APattern _ (qname, _) args) =
+    return (PApp () (convertTypeNameToHs qname) (map (PVar () . indexToName . fst) args))
+  convertToHs (ALPattern _ lit) =
+    return $ convertLit (PParen ()) (PLit () (Signless ())) lit
 
 instance ToMonadicHs (APattern (TypeExpr, NDInfo)) where
   convertToMonadicHs p@(ALPattern _ _) = convertToHs p

@@ -40,7 +40,7 @@ main = do
       depsTime <- getCurrentTime
       timeMessage kmccopts "Time for dependency analysis" (diffUTCTime depsTime firstTime)
       statusMessage kmccopts "Compiling..."
-      progs <- compileFileToFcy kmccopts deps
+      (progs, tcEnv, dataEnv) <- compileFileToFcy kmccopts deps
       compileTime <- getCurrentTime
       timeMessage kmccopts "Time for flat curry compilation" (diffUTCTime compileTime depsTime)
       statusMessage kmccopts "Analyzing..."
@@ -49,7 +49,7 @@ main = do
       analyzeTime <- getCurrentTime
       timeMessage kmccopts "Time for analysis" (diffUTCTime analyzeTime compileTime)
       statusMessage kmccopts "Converting to Haskell..."
-      compileToHs mainType progs ndInfos kmccopts
+      compileToHs mainType progs ndInfos tcEnv dataEnv kmccopts
       convertTime <- getCurrentTime
       timeMessage kmccopts "Time for conversion to Haskell" (diffUTCTime convertTime analyzeTime)
       statusMessage kmccopts "Invoking GHC..."

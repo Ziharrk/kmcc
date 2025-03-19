@@ -22,5 +22,5 @@ checkNewer file1 file2 = do
     then do
       t1 <- getModificationTime file1
       t2 <- getModificationTime file2
-      return $ t1 > t2
+      return $ t1 >= t2
     else return True

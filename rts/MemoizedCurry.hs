@@ -41,7 +41,7 @@ import           Data.SBV.Control                   ( checkSatAssuming,
                                                       CheckSatResult(..),
                                                       Query )
 import           Control.Applicative                (Alternative(..))
-import           Control.Monad                      (MonadPlus(..), liftM, ap, unless, msum)
+import           Control.Monad                      (MonadPlus(..), ap, unless, msum)
 import           Control.Monad.Fix                  (MonadFix(..), fix)
 import           Control.Monad.Codensity            (Codensity(..), lowerCodensity)
 import           Control.Monad.State                (StateT(..), MonadState(..), evalStateT, gets, modify)
@@ -425,7 +425,16 @@ instance Monad Curry where
   (>>=) = bind
 
 instance Functor Curry where
-  fmap = liftM
+  {-# INLINE fmap #-}
+  fmap = mapCurry
+
+{-# INLINE mapCurry #-}
+mapCurry :: (a -> b) -> Curry a -> Curry b
+mapCurry f = (>>= return . f)
+
+{-# INLINE mapCurryPartial #-}
+mapCurryPartial :: (a -> b) -> Curry (a :-> b)
+mapCurryPartial f = return $ Func $ \a -> mapCurry f a
 
 {-# RULES
 "ret/bind" forall x f. pureCurry x `bind` f = f x
@@ -568,7 +577,7 @@ ma1 `unify` ma2 = Curry $ do
     unifyVar i v = case primitiveInfo @a of
       NoPrimitive -> do
         s <- get
-        let (# x, _ #) = narrowConstr v
+        let x = narrowConstr v
         sX <- x
         put (addToVarHeap i (return sX) s)
         _ <- unifyWith unify sX v
@@ -677,7 +686,7 @@ class ToHs a where
   to :: a -> Curry (HsEquivalent a)
 
 class FromHs a where
-  from :: HasCallStack => HsEquivalent a -> a
+  from :: HsEquivalent a -> a
   elimFlat :: a -> a
 
 class ShowFree a where
@@ -737,7 +746,7 @@ class NFDataC a where
 
 class ( ToHs a, FromHs a, Unifiable a, NormalForm a
       , HasPrimitiveInfo a, ShowFree a, NFDataC a
-      , ReadTerm a, ShowTerm a) => Curryable a
+      , ReadTerm a, ShowTerm a ) => Curryable a
 
 type instance HsEquivalent Integer = Integer
 

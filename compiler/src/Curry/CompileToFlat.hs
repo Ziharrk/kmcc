@@ -6,16 +6,19 @@ import Data.Bifunctor ( second )
 import Data.Binary ( decodeFileOrFail, encodeFile)
 import Data.List ( intercalate )
 import Data.Maybe ( mapMaybe, fromMaybe, catMaybes )
+import Data.Set ( Set, insert )
 import System.FilePath ( (</>), (-<.>), replaceExtension )
 import System.Directory ( doesFileExist )
 
+import Base.SCC (scc)
 import Base.Messages ( status )
 import Control.Monad ( msum, void )
 import Curry.Base.Monad ( CYIO )
 import Curry.Base.Pretty ( Pretty(..) )
 import Curry.Base.Ident ( ModuleIdent (..) )
 import Curry.FlatCurry.Files ( readTypedFlatCurry )
-import Curry.FlatCurry.Typed.Type ( TProg (..), TFuncDecl (..), TypeExpr (..) )
+import Curry.FlatCurry.Typed.Type ( TProg (..), TFuncDecl (..), TypeExpr (..)
+                                  , QName, NewConsDecl(..), TypeDecl(..), ConsDecl (..) )
 import Curry.Files.Filenames
 import qualified Curry.Syntax.ShowModule as CS
 import CurryBuilder ( findCurry, processPragmas, adjustOptions, smake, compMessage)
@@ -47,9 +50,10 @@ showDeps = concatMap showDeps'
     showDeps' (m, _) = showMid m
 
 compileFileToFcy :: KMCCOpts -> [(ModuleIdent, Source)]
-                 -> IO [((TProg, Bool), ModuleIdent, FilePath)]
-compileFileToFcy opts srcs = runCurryFrontendAction (frontendOpts opts) $
-  catMaybes <$> mapM process' (zip [1 ..] srcs)
+                 -> IO ([((TProg, Bool), ModuleIdent, FilePath)], Set QName, Set QName)
+compileFileToFcy opts srcs = runCurryFrontendAction (frontendOpts opts) $ do
+  res <- catMaybes <$> mapM process' (zip [1 ..] srcs)
+  return (res, foldr insertNewtypes mempty res, foldr insertDataTypes mempty res)
   where
     total  = length srcs
     tgtDir = addOutDirModule (optUseOutDir (frontendOpts opts)) (optOutDir (frontendOpts opts))
@@ -58,7 +62,9 @@ compileFileToFcy opts srcs = runCurryFrontendAction (frontendOpts opts) $
     process' (n, (m, Source fn ps is)) = do
       opts' <- processPragmas (frontendOpts opts) ps
       deps <- ((fn : mapMaybe curryInterface is)++) <$> liftIO getExternalDepFile
-      Just . (, m, fn) <$> process (opts { frontendOpts = adjustOptions (n == total) opts' }) (n, total) m fn deps
+      res <- process (opts { frontendOpts = adjustOptions (n == total) opts' })
+               (n, total) m fn deps
+      return  $ Just (res, m, fn)
       where
         curryInterface i = case lookup i srcs of
           Just (Source    fn' _ _) -> Just $ tgtDir i $ interfName fn'
@@ -71,6 +77,33 @@ compileFileToFcy opts srcs = runCurryFrontendAction (frontendOpts opts) $
                 False -> return []
 
     process' _ = return Nothing
+
+    insertNewtypes ((TProg _ _ ds _ _, _), _, _) tcE = foldr insertNewtype tcE ds
+      where
+        insertNewtype (TypeNew _ _ _ (NewCons qname _ _)) = insert qname
+        insertNewtype _ = id
+
+    insertDataTypes ((TProg _ _ ds _ _, _), _, _) dataE =
+      foldr add (insert funQName dataE) (scc typeName typeArgs ds)
+      where
+        add :: [TypeDecl] -> Set QName -> Set QName
+        add xs s =
+          if any (any (`elem` s) . typeArgs) xs
+            then foldr (\t s' -> foldr insert s' (typeName t)) s xs
+            else s
+        typeName (Type qname _ _ _)    = [qname]
+        typeName (TypeNew qname _ _ _) = [qname]
+        typeName _                     = []
+        typeArgs (Type _ _ _ tes)      = concatMap typeArgs' tes
+        typeArgs (TypeNew _ _ _ (NewCons _ _ t)) = typeArgs'' t
+        typeArgs _                   = []
+        typeArgs' (Cons _ _ _ tes) = concatMap typeArgs'' tes
+        typeArgs'' (FuncType ty1 ty2) =
+          funQName : typeArgs'' ty1 ++ typeArgs'' ty2
+        typeArgs'' (TVar _) = []
+        typeArgs'' (TCons qname tys) = qname : concatMap typeArgs'' tys
+        typeArgs'' (ForallType _ ty) = typeArgs'' ty
+        funQName = ("Prelude", "->")
 
 -- |Compile a single source module to typed flat curry.
 process :: KMCCOpts -> (Int, Int)
@@ -112,7 +145,7 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
               if thisIdx == maxIdx
                 then liftIO $ dumpMessage kmccopts $ "Read cached flat curry file:\n" ++ show res
                 else liftIO $ dumpMessage kmccopts "Read cached flat curry file."
-              return (genTypedFlatCurry res, False)
+              return (res, False)
     optCheck = do
       fileExists <- liftIO $ doesFileExist optInterface
       if not fileExists then compile else do
