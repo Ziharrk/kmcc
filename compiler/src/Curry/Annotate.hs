@@ -78,7 +78,7 @@ isFunFree dataNames t = not (isFun t)
     isFun (FuncType _ _)     = True
     isFun (TVar _)           = False
     isFun (TCons qname args) = qname `elem` dataNames || any isFun args
-    isFun (ForallType _ arg) = isFun arg
+    isFun (ForallType _ _  ) = True -- Otherwise the type system will get confused
 
 exprAnn :: AExpr a -> a
 exprAnn (AVar a _) = a

@@ -33,7 +33,9 @@ mkFrom :: Exp () -> Exp ()
 mkFrom = App () (Var () fromQualName)
 
 mkFromHaskellTyped :: Exp () -> Type () -> Exp ()
-mkFromHaskellTyped e = ExpTypeSig () (mkFromHaskell e) . mkCurry
+mkFromHaskellTyped e ty@(TyForall _ _ _ (TyApp _ (TyCon _ q) _))
+ | q == curryQualName   = ExpTypeSig () (mkFromHaskell e) ty
+mkFromHaskellTyped e ty = ExpTypeSig () (mkFromHaskell e) (mkCurry ty)
 
 mkToHaskell :: Exp () -> Exp ()
 mkToHaskell = App () (Var () toHaskellQualName)
@@ -121,7 +123,7 @@ countVarUse (ATyped _ e _) vidx = countVarUse e vidx
 mkFromHaskellBind :: Int -> Type () -> Exp () -> Exp ()
 mkFromHaskellBind i ty = Let () (BDecls ()
   [PatBind () (PVar () (appendName "_nd" (indexToName i)))
-    (UnGuardedRhs () (ExpTypeSig () (mkFromHaskell (Var () (UnQual () (indexToName i)))) (mkCurry ty))) Nothing])
+    (UnGuardedRhs () (mkFromHaskellTyped (Var () (UnQual () (indexToName i))) ty)) Nothing])
 
 mkShareBind :: (Name (), Exp ()) -> Exp () -> Exp ()
 mkShareBind (v, e1@(App _ (Var _ fromHs) _)) e2 | fromHs == fromHaskellQualName =
