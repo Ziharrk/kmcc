@@ -6,7 +6,7 @@ import Data.Time ( NominalDiffTime )
 import Data.Version ( showVersion )
 import System.FilePath ( (</>) )
 
-import CompilerOpts
+import Curry.Frontend.CompilerOpts
     ( Options(..),
       defaultCppOpts,
       defaultOptions,

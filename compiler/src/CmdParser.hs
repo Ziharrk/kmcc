@@ -5,9 +5,11 @@ import Data.Maybe ( fromMaybe )
 import Options.Applicative
 import System.FilePath ( pathSeparator )
 
-import CompilerOpts ( Options(..), KnownExtension, parseOpts, updateOpts, Verbosity (..) )
+import Curry.Frontend.CompilerOpts ( Options(..), KnownExtension
+                                   , parseOpts, updateOpts, Verbosity (..) )
 
-import Options ( KMCCOpts(..), InfoCommand(..), SearchStrat (..),defaultOpts, defaultFrontendOpts )
+import Options ( KMCCOpts(..), InfoCommand(..), SearchStrat (..)
+               , defaultOpts, defaultFrontendOpts )
 
 getCmdOpts :: IO KMCCOpts
 getCmdOpts = customExecParser (prefs showHelpOnEmpty)

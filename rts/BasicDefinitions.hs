@@ -4,6 +4,7 @@
 {-# LANGUAGE QuantifiedConstraints  #-}
 {-# LANGUAGE RecordWildCards        #-}
 {-# LANGUAGE TemplateHaskell        #-}
+{-# LANGUAGE TypeAbstractions       #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE TypeOperators          #-}
 {-# LANGUAGE UnboxedTuples          #-}
@@ -17,7 +18,6 @@ module BasicDefinitions
  , fs ,bfs , dfs
  ) where
 
-import Control.Arrow (first)
 import Control.Exception (throw, catch, evaluate, Exception, SomeException (..))
 import Control.Monad (MonadPlus(..), (>=>))
 import Control.Monad.Codensity (lowerCodensity)
@@ -336,7 +336,7 @@ addVarIds ca xs = Curry $ do
 -- which is deprecated in the curry library.
 {-# NOINLINE offsetTime #-}
 offsetTime :: IO Integer
-offsetTime = readIORef offsetTimeRef >>= fmap (floor . (*(10^3)))
+offsetTime = readIORef offsetTimeRef >>= fmap (floor . (*(10 ^ (3 :: Int))))
 
 {-# NOINLINE offsetTimeRef #-}
 offsetTimeRef :: IORef (IO Double)

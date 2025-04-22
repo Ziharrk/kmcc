@@ -2,16 +2,16 @@ module Curry.FrontendUtils where
 
 import System.Directory ( doesFileExist, getModificationTime )
 
-import Base.Messages ( warnOrAbort, abortWithMessages )
 import Curry.Base.Monad ( runCYIO, CYIO )
-import qualified CompilerOpts as Frontend
-import CompilerOpts ( Options(..) )
+import Curry.Frontend.Base.Messages ( warnOrAbort, abortWithMessages )
+import qualified Curry.Frontend.CompilerOpts as Frontend
+import Curry.Frontend.CompilerOpts ( Options(..) )
 
 runCurryFrontendAction :: Frontend.Options -> CYIO a -> IO a
 runCurryFrontendAction opts act =
-  runCYIO act >>= either abortWithMessages continueWithMessages
+  runCYIO act >>= \(e, msgs) -> either abortWithMessages (continueWithMessages msgs) e
   where
-    continueWithMessages (results, msgs) =
+    continueWithMessages msgs results =
       warnOrAbort (optWarnOpts opts) msgs >> return results
 
 checkNewer :: FilePath -> FilePath -> IO Bool

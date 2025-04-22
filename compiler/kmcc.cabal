@@ -26,7 +26,7 @@ executable kmcc_c
     autogen-modules:  Paths_kmcc
     ghc-options:     -Wall
     build-depends:    base                 ^>= 4.19,
-    build-depends:    base                 ^>= 4.18,
+                      curry-frontend       ^>= 3.0,
                       filepath             ^>= 1.4,
                       binary               ^>= 0.8,
                       containers           ^>= 0.6,

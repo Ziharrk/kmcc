@@ -17,8 +17,8 @@ import System.FilePath
       dropExtension )
 import System.Process (callProcess)
 
-import CompilerOpts (Options(..))
-import CurryDeps (Source(..))
+import Curry.Frontend.CompilerOpts (Options(..))
+import Curry.Frontend.CurryDeps (Source(..))
 import Curry.Files.Filenames (addOutDirModule)
 import Curry.Base.Ident (ModuleIdent(..))
 

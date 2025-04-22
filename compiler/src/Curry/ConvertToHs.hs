@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
+{-# OPTIONS_GHC -Wno-orphans        #-}
 module Curry.ConvertToHs
   ( compileToHs, haskellName
   , mkCurryCtxt, mkQuantifiedCtxt, mkQuantifiedFor, mkFlatPattern
@@ -32,7 +33,7 @@ import System.Directory (doesFileExist, getModificationTime)
 import System.FilePath (replaceExtension, replaceFileName, takeFileName, (<.>), splitExtension, takeExtension)
 import System.IO (openFile, IOMode (..), utf8, hSetEncoding, hPutStr, hClose, hGetContents')
 
-import Base.Messages (status, abortWithMessages, message)
+import Curry.Frontend.Base.Messages (status, abortWithMessages, message)
 import Curry.Base.Message (Message(..))
 import Curry.Base.Ident (ModuleIdent)
 import Curry.Base.Pretty (text)
@@ -41,9 +42,9 @@ import Curry.FlatCurry hiding (Let)
 import Curry.FlatCurry.Annotated.Type (APattern(..), ABranchExpr(..), AExpr(..))
 import Curry.FlatCurry.Typed.Type (TRule(..), TFuncDecl(..), TProg(..), TExpr (..))
 import Curry.Files.Filenames (addOutDirModule)
-import Generators.GenTypedFlatCurry (genTypedExpr)
-import CompilerOpts (Options(..))
-import CurryBuilder (compMessage)
+import Curry.Frontend.Generators.GenTypedFlatCurry (genTypedExpr)
+import Curry.Frontend.CompilerOpts (Options(..))
+import Curry.Frontend.CurryBuilder (compMessage)
 
 import Options (KMCCOpts(..), dumpMessage)
 import Curry.Analysis (NDAnalysisResult, NDInfo (..))
@@ -267,10 +268,13 @@ patchMainPre ty opts fs = case ty of
           let check [] = return []
               check ((n, i):xs)
                 | Just v <- find ((==i) . fst) vs = (v:) <$> check xs
-                | otherwise         = throwError $ return @[] $ Message NoSpanInfo $ text $
-                  "Variable specified on the command line with name and index " ++
-                  show (n, i) ++
-                  " is not free in the expression."
+                | otherwise         = throwError [Message
+                  NoSpanInfo
+                  (text $
+                    "Variable specified on the command line with name and index " ++
+                    show (n, i) ++
+                    " is not free in the expression.")
+                  []]
           specifiedVs <- check (optVarNames opts)
           let ty' = foldr (FuncType . snd) fty specifiedVs
           return (TFunc qname (length specifiedVs) vis ty' (TRule specifiedVs (TFree (vs \\ specifiedVs) e')))
@@ -302,10 +306,13 @@ patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do
                     (Hs.Var () (searchStratQualName (optSearchStrategy opts))) )
                     (Hs.Var () (Qual () nm (Ident () "main_Det"))), ds)
         | otherwise  -> do
-          let findMainDecl [] = throwError $ return @[] $ Message NoSpanInfo $ text "Main function not found"
+          let findMainDecl [] = throwError [Message
+                NoSpanInfo
+                (text "Main function not found")
+                []]
               findMainDecl ((FunBind _ [Match _ (Ident () "main_ND") [] (UnGuardedRhs () e) Nothing]):bs) = return (e, bs)
               findMainDecl (b:bs) = second (b:) <$> findMainDecl bs
-              findMainSig [] = throwError $ return @[] $ Message NoSpanInfo $ text "Main type signature not found"
+              findMainSig [] = throwError [Message NoSpanInfo (text "Main type signature not found") []]
               findMainSig ((TypeSig _ [Ident () "main_ND"] mainTy):bs) = return (mainTy, bs)
               findMainSig (b:bs) = second (b:) <$> findMainSig bs
           (mainRhsE, withoutMainDecl) <- findMainDecl ds
@@ -643,7 +650,7 @@ applyToArgs apply ret funE args = do
       _ -> False
     isTransparent (Hs.Var _ (UnQual _ _)) = True
     isTransparent (Hs.Lit _ _) = True
-    isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "BasicDefinitions") (Ident () "fromHaskell"))) _) = True
+    isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "fromHaskell"))) _) = True
     isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "M") (Ident () "return"))) _) = True
     isTransparent _ = False
     isDeterministic (AVar _ _) = True

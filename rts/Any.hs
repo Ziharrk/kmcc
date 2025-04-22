@@ -18,7 +18,7 @@ mkDataType :: Int -> Q [Dec]
 mkDataType ar = do
     let nm = mkName $ "Any" ++ show ar
     let tvs = map (mkName . ('a':) . show) [1..ar]
-    let d = DataD [] nm (map (`PlainTV` ()) tvs) Nothing [] []
+    let d = DataD [] nm (map (`PlainTV` BndrReq) tvs) Nothing [] []
     let t = KiSigD nm $ foldr ((AppT . AppT ArrowT) . VarT) StarT tvs
     return [d, t]
 

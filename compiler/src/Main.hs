@@ -7,8 +7,8 @@ import Data.Version ( showVersion )
 import System.Environment ( getExecutablePath )
 import System.FilePath ( (</>), splitPath, joinPath, takeDirectory )
 
-import CompilerOpts ( Options(..) )
-import Base.Utils ( fst3 )
+import Curry.Frontend.CompilerOpts ( Options(..) )
+import Curry.Frontend.Base.Utils ( fst3 )
 
 import CmdParser ( getCmdOpts )
 import Options ( KMCCOpts(..), InfoCommand (..), statusMessage, timeMessage )
