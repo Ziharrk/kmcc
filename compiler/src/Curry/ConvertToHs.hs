@@ -686,11 +686,11 @@ convertExprToMonadicHs vset (AComb _ ConsCall (qname, _) args) = do
 convertExprToMonadicHs vset (AComb _ (ConsPartCall missing) (qname, _) args) = do
   tyEnv <- asks newtypeNames
   missingVs <- replicateM missing freshVarName
-  case (Set.member qname tyEnv, args) of
-    (True, []) -> return $ Paren () $ mkFmapPartial $
-      Lambda () [PVar () (head missingVs)] $
+  case (Set.member qname tyEnv, args, missingVs) of
+    (True, [], [v]) -> return $ Paren () $ mkFmapPartial $
+      Lambda () [PVar () v] $
       Hs.App () (Hs.Var () (convertTypeNameToMonadicHs qname)) $ Paren () $
-      Hs.Var () (UnQual () (head missingVs))
+      Hs.Var () (UnQual () v)
     _ -> do
       args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
       let mkLam e = foldr (\v -> mkReturnFunc .  Lambda () [PVar () v]) e missingVs

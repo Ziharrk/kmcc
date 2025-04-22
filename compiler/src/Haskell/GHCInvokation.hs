@@ -92,7 +92,7 @@ getGHCOptsFor topDir hasMain deps targetFile
 
 getOptimizationOpts :: [String] -> Int -> [String]
 getOptimizationOpts _ghcOps optOptimizationBaseLevel =
-  [ "-O " ++ show optOptimizationBaseLevel] ++
+  ("-O " ++ show optOptimizationBaseLevel) :
   if optOptimizationBaseLevel < 2
     then ["-fno-float-in"]
     else ["-flate-dmd-anal"]

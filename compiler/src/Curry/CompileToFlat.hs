@@ -116,7 +116,7 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
   | otherwise     = smake (tgtDir (interfName fn) : destFiles) deps compile optCheck
   where
     skip = do
-      status opts $ compMessage idx (11, 16) "Skipping" m (fn, head destFiles)
+      status opts $ compMessage idx (11, 16) "Skipping" m (fn, destFile0)
       binaryOrNot <- liftIO $ checkNewer (tgtDir (typedBinaryFlatName fn)) (tgtDir (typedFlatName fn))
       if binaryOrNot
         then do
@@ -155,7 +155,7 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
         ok <- liftIO compareOptions
         if ok then skip else compile
     compile = do
-      status opts $ compMessage idx (11, 16) "Compiling" m (fn, head destFiles)
+      status opts $ compMessage idx (11, 16) "Compiling" m (fn, destFile0)
       res <- compileModule opts m fn
       if thisIdx == maxIdx
         then liftIO $ dumpMessage kmccopts $ "Generated flat curry file:\n" ++ show res
@@ -190,7 +190,10 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
 
     tgtDir = addOutDirModule (optUseOutDir opts) (optOutDir opts) m
 
-    destFiles = [ gen fn | (t, gen) <- nameGens, t `elem` optTargetTypes opts]
+    (destFile0, destFiles) =
+      case [ gen fn | (t, gen) <- nameGens, t `elem` optTargetTypes opts] of
+        [] -> error "No output destination found"
+        (x:xs) -> (x, xs)
     nameGens  =
       [ (Tokens              , tgtDir . tokensName         )
       , (Comments            , tgtDir . commentsName       )
