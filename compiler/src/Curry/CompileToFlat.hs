@@ -96,10 +96,10 @@ compileFileToFcy opts srcs = runCurryFrontendAction (frontendOpts opts) $ do
             else s
         typeName (Type qname _ _ _)    = [qname]
         typeName (TypeNew qname _ _ _) = [qname]
-        typeName _                     = []
-        typeArgs (Type _ _ _ tes)      = concatMap typeArgs' tes
+        typeName (TypeSyn qname _ _ _) = [qname]
+        typeArgs (Type _ _ _ tes)                = concatMap typeArgs' tes
         typeArgs (TypeNew _ _ _ (NewCons _ _ t)) = typeArgs'' t
-        typeArgs _                   = []
+        typeArgs (TypeSyn _ _ _ t)               = typeArgs'' t
         typeArgs' (Cons _ _ _ tes) = concatMap typeArgs'' tes
         typeArgs'' (FuncType ty1 ty2) =
           funQName : typeArgs'' ty1 ++ typeArgs'' ty2
