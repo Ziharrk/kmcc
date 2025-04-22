@@ -1,5 +1,6 @@
-resolver: lts-22.29
+resolver: lts-23.19
 packages: []
 extra-deps:
-  - set-extra-1.4.1
+  - set-extra-1.4.2
+  - sbv-10.6
 allow-newer: true

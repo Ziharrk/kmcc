@@ -1,12 +1,10 @@
-resolver: lts-22.29
+resolver: lts-23.19
 packages:
   - compiler
   - curry-frontend
   - rts
 extra-deps:
   - set-extra-1.4.2
-  - tree-monad-0.3.2
-allow-newer: true
 local-bin-path: bin
 allow-different-user: true
 system-ghc: true
