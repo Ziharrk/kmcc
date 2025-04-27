@@ -92,12 +92,12 @@ gen qname vs cs dataNotNew =
           (map (TyVar () . indexToName . fst) vs))))
       Nothing
     hsShowDecl = InstDecl () Nothing
-      (IRule () Nothing (if any isDict cs then Nothing else mkShowCtxt vs)
+      (IRule () Nothing (if any isDict cs then Nothing else mkCurryCtxt vs)
         (IHApp () (IHCon () hsShowQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
           (map (TyVar () . indexToName . fst) vs))))
       (Just [InsDecl () (FunBind () (concatMap mkShowMatch cs))])
     hsReadDecl = InstDecl () Nothing
-      (IRule () Nothing (if any isDict cs then Nothing else mkReadCtxt vs)
+      (IRule () Nothing (if any isDict cs then Nothing else mkCurryCtxt vs)
         (IHApp () (IHCon () hsReadQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
           (map (TyVar () . indexToName . fst) vs))))
       (Just [InsDecl () (FunBind () (if any isDict cs then [] else mkReadMatch cs))])
@@ -397,9 +397,3 @@ mkReadParen = App () (Hs.Var () hsReadParenQualName)
 
 mkShowsPrecHigh :: TypeExpr -> Exp () -> Exp ()
 mkShowsPrecHigh ty = App () (App () (App () (Hs.Var () hsShowsPrecQualName) (TypeApp () (TyParen () (convertTypeToMonadicHs ty)))) (Hs.Lit () (Int () 9 "9")))
-
-mkShowCtxt :: [TVarWithKind] -> Maybe (Context ())
-mkShowCtxt = mkQuantifiedCtxt (TyApp () (TyCon () hsShowQualName))
-
-mkReadCtxt :: [TVarWithKind] -> Maybe (Context ())
-mkReadCtxt = mkQuantifiedCtxt (TyApp () (TyCon () hsReadQualName))
