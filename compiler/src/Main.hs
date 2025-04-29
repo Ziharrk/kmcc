@@ -2,6 +2,7 @@ module Main where
 
 import Data.Char ( isSpace )
 import Data.Maybe ( isJust )
+import qualified Data.Map as Map
 import Data.Time ( getCurrentTime, diffUTCTime )
 import Data.Version ( showVersion )
 import System.Environment ( getExecutablePath )
@@ -11,9 +12,9 @@ import Curry.Frontend.CompilerOpts ( Options(..) )
 import Curry.Frontend.Base.Utils ( fst3 )
 
 import CmdParser ( getCmdOpts )
-import Options ( KMCCOpts(..), InfoCommand (..), statusMessage, timeMessage )
+import Options ( KMCCOpts(..), InfoCommand (..), statusMessage, timeMessage, debugMessage )
 import Curry.CompileToFlat ( getDependencies, compileFileToFcy, checkForMain )
-import Curry.Analysis ( analyzeNondet )
+import Curry.Analysis ( analyzeNondet, NDInfo (..) )
 import Curry.ConvertToHs ( compileToHs )
 import Haskell.GHCInvokation ( invokeGHC )
 import Paths_kmcc ( version )
@@ -48,6 +49,11 @@ main = do
       ndInfos <- analyzeNondet progs kmccopts
       analyzeTime <- getCurrentTime
       timeMessage kmccopts "Time for analysis" (diffUTCTime analyzeTime compileTime)
+      debugMessage kmccopts "ND Functions:"
+      debugMessage kmccopts "----------------"
+      let relevantNDFuns =
+            filter (elem '#' . snd) (Map.keys (Map.filter (== NonDet) ndInfos))
+      debugMessage kmccopts (show relevantNDFuns)
       statusMessage kmccopts "Converting to Haskell..."
       compileToHs mainType progs ndInfos tcEnv dataEnv kmccopts
       convertTime <- getCurrentTime
@@ -56,5 +62,5 @@ main = do
       invokeGHC (isJust mainType) deps kmccopts
       ghcTime <- getCurrentTime
       timeMessage kmccopts "Time for GHC invokation" (diffUTCTime ghcTime convertTime)
-      timeMessage kmccopts "Timne total" (diffUTCTime ghcTime firstTime)
+      timeMessage kmccopts "Time total" (diffUTCTime ghcTime firstTime)
     xs -> mapM_ printVersionOpt xs

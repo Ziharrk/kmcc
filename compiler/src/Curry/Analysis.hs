@@ -7,7 +7,7 @@
 module Curry.Analysis where
 
 import Control.Arrow ( first, second )
-import Control.Monad ( when )
+import Control.Monad ( when, msum, unless )
 import Control.Monad.IO.Class ( MonadIO(..) )
 import Control.Monad.Except ( ExceptT (..), MonadError (..), runExceptT )
 import Control.Monad.State ( StateT (..), MonadState, evalStateT, get, put, modify' )
@@ -28,7 +28,7 @@ import Curry.Base.Ident ( ModuleIdent )
 import Curry.Frontend.CurryBuilder ( compMessage )
 import Curry.Frontend.CompilerOpts ( Options(..) )
 import Curry.Files.Filenames ( addOutDirModule )
-import Options ( KMCCOpts (frontendOpts, optOptimizationDeterminism), dumpMessage )
+import Options ( KMCCOpts (frontendOpts, optOptimizationDeterminism), dumpMessage, debugMessage )
 
 type NDAnalysisResult = Map QName NDInfo
 
@@ -40,6 +40,16 @@ type family NDAnalysisState s = a | a -> s where
 
 data NDInfo = Det | NonDet
   deriving (Binary, Generic, Eq, Ord, Show, Bounded)
+
+data NDReason = None | FreeV | Choice | Fun QName
+  deriving Show
+
+instance Monoid NDReason where
+  mempty = None
+
+instance Semigroup NDReason where
+  None <> r = r
+  r <> _ = r
 
 newtype AM s a = AnalysisMonad {
     runAM :: StateT (NDAnalysisState s) (ExceptT [Message] IO) a
@@ -93,7 +103,7 @@ process kmccopts idx@(thisIdx,maxIdx) tprog comp m fn
           return analysis
     compile = do
       res@(analysis, _) <- runLocalState $ do
-        status opts $ compMessage idx (11, 16) "Analyzing" m (fn, destFile)
+        -- status opts $ compMessage idx (11, 16) "Analyzing" m (fn, destFile)
         analyzeTProg kmccopts tprog
       liftIO $ encodeFile (tgtDir (analysisName fn)) res
       if thisIdx == maxIdx
@@ -115,46 +125,56 @@ runLocalState a = do
 
 analyzeTProg :: KMCCOpts -> TProg -> AM 'Local ()
 analyzeTProg opts = trTProg $ \_ _ _ funcs _ -> do
-  mapM_ (trTFunc initAnalysis) funcs -- do an initial run to initialize all functions and collect visibility infos
+  mapM_ (trTFunc (initAnalysis opts)) funcs -- do an initial run to initialize all functions and collect visibility infos
   if optOptimizationDeterminism opts
-    then fixedPoint (or <$> mapM (trTFunc analyzeFunc) funcs)
+    then fixedPoint (or <$> mapM (trTFunc (analyzeFunc opts)) funcs)
     else modify' (first (Map.map (const NonDet))) -- fill infos with default value
 
-initAnalysis :: QName -> a -> Visibility -> c -> TRule -> AM 'Local ()
-initAnalysis qname _ vis _ rule = do
+initAnalysis :: KMCCOpts -> QName -> a -> Visibility -> c -> TRule -> AM 'Local ()
+initAnalysis opts qname _ vis _ rule = do
   (mp, _) <- get
   when (vis == Public) $ modify' (second (Set.insert qname))
-  modify' (first (Map.insert qname (checkDeterministic rule mp)))
+  let (res, reason) = checkDeterministic rule mp
+  unless ('#' `elem` snd qname || res == Det) $ liftIO $ debugMessage opts (show (qname, res, reason))
+  modify' (first (Map.insert qname res))
 
 fixedPoint :: Monad m => m Bool -> m ()
 fixedPoint act = do
   b <- act
   when b $ fixedPoint act
 
-analyzeFunc :: QName -> a -> Visibility -> c -> TRule -> AM 'Local Bool
-analyzeFunc qname _ _ _ rule = do
+analyzeFunc :: KMCCOpts -> QName -> a -> Visibility -> c -> TRule -> AM 'Local Bool
+analyzeFunc opts qname _ _ _ rule = do
   (mp, _) <- get
   case Map.lookup qname mp of
     Just NonDet -> return False
     cur -> do
-      let res = checkDeterministic rule mp
+      let (res, reason) = checkDeterministic rule mp
       if cur == Just res
         then return False
-        else modify' (first (Map.insert qname res)) >> return True
+        else do
+          unless ('#' `elem` snd qname) $ liftIO $ debugMessage opts (show (qname, res, reason))
+          modify' (first (Map.insert qname res)) >> return True
 
-checkDeterministic :: TRule -> NDAnalysisResult -> NDInfo
+checkDeterministic :: TRule -> NDAnalysisResult -> (NDInfo, Maybe NDReason)
 checkDeterministic (TRule _ expr) mp = trTExpr var lit comb lt free o cse branch typed expr
   where
-    var _ _ = Det
-    lit _ _ = Det
-    comb _ _ name args = max (Map.findWithDefault Det name mp) (maximum (minBound : args))
-    lt bs e = max e (foldr (max . snd) Det bs)
-    free _ _ = NonDet
-    o _ _ = NonDet
-    cse _ e bs = max e (maximum (minBound : bs))
+    var _ _ = (Det, Nothing)
+    lit _ _ = (Det, Nothing)
+    comb _ _ name args' = (max here (maximum (minBound : args)), if here == NonDet then Just (Fun name) else msum reasons)
+      where (args, reasons) = unzip args'
+            here = Map.findWithDefault Det name mp
+    lt bs' (e, reason) = (max e (foldr (max . snd) Det bs), msum (reason:reasons))
+      where
+        (bs, reasons) = unzip $ map (\(a, (i,r)) -> ((a, i), r)) bs'
+    free _ _ = (NonDet, Just FreeV)
+    o _ _ = (NonDet, Just Choice)
+    cse _ (e, reason) bs' = (max e (maximum (minBound : bs)), msum (reason:reasons))
+      where
+        (bs, reasons) = unzip bs'
     branch _ e = e
     typed e _ = e
-checkDeterministic (TExternal _ ext) _ = Map.findWithDefault Det ext externalInfoMap
+checkDeterministic (TExternal _ ext) _ = (Map.findWithDefault Det ext externalInfoMap, Nothing)
 
 externalInfoMap :: Map String NDInfo
 externalInfoMap = Map.fromList
