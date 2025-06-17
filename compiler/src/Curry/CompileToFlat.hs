@@ -193,7 +193,7 @@ process kmccopts idx@(thisIdx,maxIdx) m fn deps
     (destFile0, destFiles) =
       case [ gen fn | (t, gen) <- nameGens, t `elem` optTargetTypes opts] of
         [] -> error "No output destination found"
-        (x:xs) -> (x, xs)
+        (x:xs) -> (x, x:xs)
     nameGens  =
       [ (Tokens              , tgtDir . tokensName         )
       , (Comments            , tgtDir . commentsName       )
