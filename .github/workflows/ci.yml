@@ -56,18 +56,25 @@ jobs:
           path: bin/*
           if-no-files-found: warn
 
-      - name: Pack workspace (exclude .git)
+      - name: Pack workspace (exclude VCS and caches)
+        id: pack_ws
         run: |
-          tar \
-            --exclude='.git' \
-            --exclude='*/.stack-work' \
-            -czf kmcc-workspace.tar.gz .
+          set -euo pipefail
+          REPO_DIR="$(pwd)"
+          REPO_NAME="$(basename "$REPO_DIR")"
+          OUT="$RUNNER_TEMP/${REPO_NAME}-workspace.tar.gz"
+          tar -C "$(dirname "$REPO_DIR")" \
+            --exclude="$REPO_NAME/.git" \
+            --exclude="$REPO_NAME/**/.git" \
+            --exclude="$REPO_NAME/**/.stack-work" \
+            -czf "$OUT" "$REPO_NAME"
+          echo "archive=$OUT" >> "$GITHUB_OUTPUT"
 
       - name: Upload workspace artifact
         uses: actions/upload-artifact@v4
         with:
           name: kmcc-workspace
-          path: kmcc-workspace.tar.gz
+          path: ${{ steps.pack_ws.outputs.archive }}
 
       - name: Summary
         run: |
