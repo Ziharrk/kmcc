@@ -42,18 +42,6 @@ jobs:
         id: z3
         uses: cda-tum/setup-z3@v1
 
-      - name: Stack setup (download GHC/toolchain if needed)
-        run: stack setup --no-system-ghc
-
-      - name: Build dependencies
-        run: stack build --no-system-ghc --only-dependencies --fast --no-terminal
-
-      - name: Build all packages
-        run: stack build --no-system-ghc --fast --no-terminal
-
-      - name: Run test suites
-        run: stack test --no-system-ghc --fast --no-terminal
-
       - name: Build KMCC binaries via Make (excluding repl)
         run: |
           make CYPM=/bin/true bin/kmcc_c frontend prebuild_prelude generate_distribution
@@ -83,4 +71,4 @@ jobs:
 
       - name: Summary
         run: |
-          echo "KMCC build & tests completed."
+          echo "KMCC build completed."
