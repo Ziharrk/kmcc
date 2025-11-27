@@ -633,9 +633,10 @@ applyToArgs :: (Exp () -> Exp () -> Exp ())
 applyToArgs apply ret funE args = do
   vs <- replicateM (length args) freshVarName
   let combineForSharing [] = ([], [])
-      combineForSharing ((_, (_, e)):xs) | isKnownShareless ||
-                                           isTransparent e
-                                          = (e:es, infos)
+      combineForSharing ((_, (origE, e)):xs) | isKnownShareless ||
+                                               isTransparent e ||
+                                               maybe True isClassOrInstImpl origE
+                                             = (e:es, infos)
         where (es, infos) = combineForSharing xs
       combineForSharing ((v, (_, e)):xs) = (Hs.Var () (UnQual () v):es, (v, e):infos)
         where (es, infos) = combineForSharing xs
@@ -652,6 +653,9 @@ applyToArgs apply ret funE args = do
     isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "fromHaskell"))) _) = True
     isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "M") (Ident () "return"))) _) = True
     isTransparent _ = False
+    isClassOrInstImpl (AComb _ _ ((_, nm), _) []) = "_impl" `isPrefixOf` nm || "_dict" `isPrefixOf` nm
+    isClassOrInstImpl (ATyped _ e _) = isClassOrInstImpl e
+    isClassOrInstImpl _ = False
 
 convertExprToMonadicHs :: Set.Set Int -> AExpr (TypeExpr, NDInfo) -> CM (Exp ())
 convertExprToMonadicHs vset (AVar _ idx) = if idx `elem` vset
