@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: kmcc-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      STACK_ROOT: ~/.stack
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Haskell (GHC + Stack)
+        uses: actions/setup-haskell@v1
+        with:
+          ghc-version: '9.8.2'
+          enable-stack: true
+          stack-version: 'latest'
+
+      - name: Cache Stack
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.stack
+            **/.stack-work
+          key: ${{ runner.os }}-stack-${{ hashFiles('stack.yaml', 'compiler/kmcc.cabal', 'curry-frontend/curry-frontend.cabal', 'rts/rts.cabal') }}
+          restore-keys: |
+            ${{ runner.os }}-stack-
+
+      - name: Install system dependencies (Z3)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y z3
+
+      - name: Stack setup (download GHC/toolchain if needed)
+        run: stack setup
+
+      - name: Build dependencies
+        run: stack build --only-dependencies --fast --no-terminal
+
+      - name: Build all packages
+        run: stack build --fast --no-terminal
+
+      - name: Run test suites
+        run: stack test --fast --no-terminal
+
+      - name: Build KMCC binaries via Make (excluding repl)
+        run: |
+          make CYPM=/bin/true bin/kmcc_c frontend prebuild_prelude generate_distribution
+
+      - name: List produced binaries
+        run: ls -l bin
+
+      - name: Upload binaries artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kmcc-binaries
+          path: bin/*
+          if-no-files-found: warn
+
+      - name: Pack workspace (exclude .git)
+        run: |
+          tar \
+            --exclude='.git' \
+            --exclude='*/.stack-work' \
+            -czf kmcc-workspace.tar.gz .
+
+      - name: Upload workspace artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kmcc-workspace
+          path: kmcc-workspace.tar.gz
+
+      - name: Summary
+        run: |
+          echo "KMCC build & tests completed."
