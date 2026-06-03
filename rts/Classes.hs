@@ -6,7 +6,6 @@
 Module      : Plugin.Effect.Classes
 Description : Type classes used for the effect implementation
 Copyright   : (c) Kai-Oliver Prott (2020)
-Maintainer  : kai.prott@hotmail.de
 
 This module contains type classes for the nondeterminism effect and the
 explicit sharing.
