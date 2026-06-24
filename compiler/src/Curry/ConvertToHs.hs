@@ -627,10 +627,10 @@ instance ToMonadicHs (AExpr (TypeExpr, NDInfo)) where
   convertToMonadicHs = convertExprToMonadicHs Set.empty
 
 applyToArgs :: (Exp () -> Exp () -> Exp ())
-            -> (Exp () -> Exp ()) -> Exp ()
+            -> (Exp () -> Exp ()) -> Exp () -> Maybe (AExpr (TypeExpr, NDInfo))
             -> [(Maybe (AExpr (TypeExpr, NDInfo)), Exp ())]
             -> CM (Exp ())
-applyToArgs apply ret funE args = do
+applyToArgs apply ret funE origFunE args = do
   vs <- replicateM (length args) freshVarName
   let combineForSharing [] = ([], [])
       combineForSharing ((_, (origE, e)):xs) | isKnownShareless ||
@@ -644,7 +644,7 @@ applyToArgs apply ret funE args = do
   let applic = ret $ foldl apply funE exprs
   return $ foldr mkShareBind applic shares
   where
-    isKnownShareless = case funE of
+    isKnownShareless = maybe False isClassOrInstImpl origFunE || case funE of
       Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "apply_ND")) -> True
       Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "qmark_ND")) -> True
       _ -> False
@@ -654,6 +654,7 @@ applyToArgs apply ret funE args = do
     isTransparent (Hs.App () (Hs.Var () (Qual () (ModuleName () "M") (Ident () "return"))) _) = True
     isTransparent _ = False
     isClassOrInstImpl (AComb _ _ ((_, nm), _) []) = "_impl" `isPrefixOf` nm || "_dict" `isPrefixOf` nm
+    isClassOrInstImpl (AComb _ _ ((_, nm), _) _ ) = "_Dict" `isPrefixOf` nm
     isClassOrInstImpl (ATyped _ e _) = isClassOrInstImpl e
     isClassOrInstImpl _ = False
 
@@ -669,17 +670,17 @@ convertExprToMonadicHs _ ex@(AComb (ty, Det) ConsCall  _ _) =
 convertExprToMonadicHs vset (AComb (_, _) _ (("Prelude", "apply"), _) [f, a]) = do
   args' <- mapM (convertExprToMonadicHs vset) [f, a]
   case args' of
-    [f', a'] -> applyToArgs mkMonadicApp id f' [(Just a, a')]
+    [f', a'] -> applyToArgs mkMonadicApp id f' (Just f) [(Just a, a')]
     _ -> throwError [message "Internal error: Prelude.apply called with wrong number of arguments"]
-convertExprToMonadicHs vset (AComb _ ConsCall (qname, _) args) = do
+convertExprToMonadicHs vset e@(AComb _ ConsCall (qname, _) args) = do
   tyEnv <- asks newtypeNames
   case (Set.member qname tyEnv, args) of
     (True, [arg]) -> Hs.App () (mkFmap (Hs.Var () (convertTypeNameToMonadicHs qname))) . Paren ()
                       <$> convertExprToMonadicHs vset arg
     _ -> do
       args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
-      applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) args'
-convertExprToMonadicHs vset (AComb _ (ConsPartCall missing) (qname, _) args) = do
+      applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) (Just e) args'
+convertExprToMonadicHs vset e@(AComb _ (ConsPartCall missing) (qname, _) args) = do
   tyEnv <- asks newtypeNames
   missingVs <- replicateM missing freshVarName
   case (Set.member qname tyEnv, args, missingVs) of
@@ -689,11 +690,12 @@ convertExprToMonadicHs vset (AComb _ (ConsPartCall missing) (qname, _) args) = d
       Hs.Var () (UnQual () v)
     _ -> do
       args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
-      let mkLam e = foldr (\v -> mkReturnFunc .  Lambda () [PVar () v]) e missingVs
-      mkLam <$> applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) (args' ++ map ((Nothing,) . Hs.Var () . UnQual ()) missingVs)
-convertExprToMonadicHs vset (AComb _ _ (qname, _) args) = do -- (Partial) FuncCall
+      let mkLam = flip (foldr (\v -> mkReturnFunc .  Lambda () [PVar () v])) missingVs
+      mkLam <$> applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) (Just e)
+                  (args' ++ map ((Nothing,) . Hs.Var () . UnQual ()) missingVs)
+convertExprToMonadicHs vset e@(AComb _ _ (qname, _) args) = do -- (Partial) FuncCall
   args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
-  applyToArgs mkMonadicApp id (Hs.Var () (convertFuncNameToMonadicHs qname)) args'
+  applyToArgs mkMonadicApp id (Hs.Var () (convertFuncNameToMonadicHs qname)) (Just e) args'
 convertExprToMonadicHs _ ex@(ALet (ty, Det) _ _) =
   mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
 convertExprToMonadicHs vset ex@(ALet _ bs e) = do
