@@ -14,12 +14,17 @@ ifeq ($(CYPM),)
 $(error Please make sure that 'cypm' (the Curry Package Manager) is on your PATH or specify it explicitly by passing 'make CYPM=...')
 endif
 
+# The name of the Curry system (required by scripts)
+export CURRYSYSTEM = kmcc
+
 # The root directory of the installation
 export ROOT = $(CURDIR)
 # The binary directory
 export BINDIR = $(ROOT)/bin
 # The directory containaing the REPL sources
 export REPLDIR = $(ROOT)/repl
+# The directory where the actual libraries are located
+export LIBDIR  = $(ROOT)/libs/src
 
 # The template Installation module for use by the REPL
 INSTALLCURRYIN = $(REPLDIR)/src/Installation.curry.in
@@ -47,6 +52,8 @@ export INSTALLDATE := $(shell date)
 ##############################################################################
 .PHONY: all
 all: bin/kmcc_c frontend repl prebuild_prelude generate_distribution
+	# pre-compile all libraries to produce up-to-date intermediate files:
+	$(MAKE) compile-all-libs
 
 .PHONY: bin/kmcc_c
 bin/kmcc_c:
@@ -91,3 +98,8 @@ prebuild_prelude: bin/kmcc_c
 .PHONY: generate_distribution
 generate_distribution:
 	./genDistribution.sh
+
+# compile the targets for all libraries:
+.PHONY: compile-all-libs
+compile-all-libs:
+	scripts/compile-all-libs.sh
