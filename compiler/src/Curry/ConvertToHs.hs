@@ -829,14 +829,14 @@ convertBranchToMonadicHs n vSet (ABranch pat e)
   | (ty, Det) <- exprAnn e = do
       e' <- convertToHs e
       mty <- convertToMonadicHs ty
-      let transE = mkFromHaskellTyped e' mty
       pat1 <- convertToMonadicHs pat
-      let alt2 = case pat of
-                   APattern _ (qname, (ty', _)) args ->
-                    [Alt () (mkFlatPattern qname ty' (map fst args)) (UnGuardedRhs () transE) Nothing]
-                   ALPattern _ _ -> []
       let alt1 = Alt () pat1 (UnGuardedRhs () transE) Nothing
-      return (alt1 : if n <= maxCaseDepth then alt2 else [])
+          transE = mkFromHaskellTyped e' mty
+      return (alt1 : if n > maxCaseDepth then [] else
+                case pat of
+                  APattern _ (qname, (ty', _)) args ->
+                    [Alt () (mkFlatPattern qname ty' (map fst args)) (UnGuardedRhs () transE) Nothing]
+                  ALPattern _ _ -> [])
   | otherwise = do
       alt1 <- do
         e' <- convertExprToMonadicHs vSet e
@@ -845,17 +845,17 @@ convertBranchToMonadicHs n vSet (ABranch pat e)
       case pat of
         APattern _ (qname@(_, baseName), (ty', _)) vs
           | not ("_Dict#" `isPrefixOf` baseName) -> do
-          vsTyped <- mapM (\(i, (ty, _)) -> (i,) <$> convertToMonadicHs ty) vs
-          let vsNames = map fst vsTyped
-          let vSet' = Set.union vSet (Set.fromList vsNames)
           analysis <- asks ndAnalysisResult
           dataEnv <- asks dataWithFunNames
-          let annE = annotateND' analysis (Map.fromSet (const Det) vSet')
-                       dataEnv (genTypedExpr (fmap fst e))
-          e' <- convertExprToMonadicHs vSet' annE
-          let pat' = mkFlatPattern qname ty' vsNames
-          let alt2 = [Alt () pat' (UnGuardedRhs () (foldr (uncurry mkFromHaskellBind) e' vsTyped)) Nothing]
-          return (alt1 : if n <= maxCaseDepth then alt2 else [])
+          (alt1 :) <$> if n > maxCaseDepth then return [] else do
+            vsTyped <- mapM (\(i, (ty, _)) -> (i,) <$> convertToMonadicHs ty) vs
+            let pat' = mkFlatPattern qname ty' vsNames
+                vsNames = map fst vsTyped
+            let annE = annotateND' analysis (Map.fromSet (const Det) vSet')
+                        dataEnv (genTypedExpr (fmap fst e))
+                vSet' = Set.union vSet (Set.fromList vsNames)
+            e' <- convertExprToMonadicHs vSet' annE
+            return [Alt () pat' (UnGuardedRhs () (foldr (uncurry mkFromHaskellBind) e' vsTyped)) Nothing]
         _ -> return [alt1]
 
 mkFlatPattern :: QName -> TypeExpr -> [Int] -> Pat ()
