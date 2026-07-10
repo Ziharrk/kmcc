@@ -44,9 +44,9 @@ mkInstances max_ar = do
 
 mkFamily :: Int -> Q [Dec]
 mkFamily max_ar = do
-  let hd = TypeFamilyHead (mkName "Any") [] NoSig Nothing
-  let fam = ClosedTypeFamilyD hd (map mkEqn [1..max_ar])
   let k = mkName "k"
+  let hd = TypeFamilyHead (mkName "Any") [PlainTV k BndrInvis] NoSig Nothing
+  let fam = ClosedTypeFamilyD hd (map mkEqn [1..max_ar])
   let sig = KiSigD (mkName "Any")
               (ForallT [PlainTV k SpecifiedSpec] []
               (VarT k))
