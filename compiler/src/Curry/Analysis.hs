@@ -103,7 +103,7 @@ process kmccopts idx@(thisIdx,maxIdx) tprog comp m fn
           return analysis
     compile = do
       res@(analysis, _) <- runLocalState $ do
-        -- status opts $ compMessage idx (11, 16) "Analyzing" m (fn, destFile)
+        status opts $ compMessage idx (11, 16) "Analyzing" m (fn, destFile)
         analyzeTProg kmccopts tprog
       liftIO $ encodeFile (tgtDir (analysisName fn)) res
       if thisIdx == maxIdx
