@@ -15,7 +15,6 @@ instance ToHs (D.IORef a) where
 
 instance FromHs (D.IORef a) where
   from x  = P.error "FFI Error: 'From' Conversion on IORef"
-  elimFlat = P.id
 
 instance ShowTerm (D.IORef a) where
   showTerm _ _ = P.showString "<<IORef>>"

@@ -59,8 +59,7 @@ gen qname vs cs dataNotNew =
       (IRule () Nothing (mkCurryCtxt vs)
         (IHApp () (IHCon () hsFromQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
           (map (TyVar () . indexToName . fst) vs))))
-      (Just [InsDecl () (FunBind () (concatMap mkFromMatch cs)), InsDecl () (FunBind () (concatMap mkElimFlatMatch cs ++ [defaultM]))])
-      where defaultM = Match () (Ident () "elimFlat") [PVar () (Ident () "_x")] (UnGuardedRhs () (Var () (UnQual () (Ident () "_x")))) Nothing
+      (Just [InsDecl () (FunBind () (concatMap mkFromMatch cs))])
     hsNarrowableDecl = InstDecl () Nothing
       (IRule () Nothing (mkCurryCtxt vs)
         (IHApp () (IHCon () narrowableQualName) (TyParen () $ foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qname))
@@ -112,9 +111,6 @@ gen qname vs cs dataNotNew =
     mkFromMatch (Cons qname2 ar _ _) = [Match () (Ident () "from")
       [PApp () (convertTypeNameToHs qname2) (map (PVar () . indexToName) [1..ar])]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkFromImpl qname2 ar]]
-    mkElimFlatMatch (Cons qname2 ar _ _) = [Match () (Ident () "elimFlat")
-      [mkFlatPattern qname2 (TCons qname []) [1..ar]]
-      (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkElimFlatImpl qname2 ar], dataNotNew]
     mkNarrowMatch
       | dataNotNew = Match () (Ident () "narrow") []
           (UnGuardedRhs () (List () (mapMaybe mkNarrowExp cs))) Nothing
@@ -190,8 +186,6 @@ gen qname vs cs dataNotNew =
             (map (Hs.Var () . UnQual () . indexToName) [1..ar])
       | otherwise  = App () (Hs.Var () (convertTypeNameToMonadicHs qname2))
             (mkFrom $ Hs.Var () $ UnQual () $ indexToName 1)
-    mkElimFlatImpl qname2 ar = foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
-        (map (mkFromHaskell . Hs.Var () . UnQual () . indexToName) [1..ar])
     mkNarrowImpl qname2 ar =
       mkApplicativeChain (Hs.Var () (convertTypeNameToMonadicHs qname2))
         (map (const (mkShare mkFree)) [1..ar])

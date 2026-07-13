@@ -17,7 +17,6 @@ instance ToHs N.Socket where
 
 instance FromHs N.Socket where
   from = P.id
-  elimFlat = P.id
 
 instance ShowTerm N.Socket where
   showTerm _ _ = P.showString "<<Socket>>"

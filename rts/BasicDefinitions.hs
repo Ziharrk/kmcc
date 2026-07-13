@@ -44,10 +44,6 @@ failed = throw Failed
 toHaskell :: ToHs a => Curry a -> Curry (HsEquivalent a)
 toHaskell = (>>= to)
 
-{-# INLINE elimFlatM #-}
-elimFlatM :: (FromHs a) => Curry a -> Curry a
-elimFlatM = fmap elimFlat
-
 {-# NOINLINE fromHaskell #-}
 fromHaskell :: FromHs a => HsEquivalent a -> Curry a
 fromHaskell x = unsafePerformIO $ catch (evaluate (from x) >>= \x' -> return (return x'))
@@ -133,7 +129,6 @@ instance ToHs (LiftedFunc a b) where
 
 instance FromHs (LiftedFunc a b) where
   from _ = error "FFI Error: 'From' Conversion on functions"
-  elimFlat _ = error "FFI Error: 'From' Conversion on functions"
 
 instance HasPrimitiveInfo (LiftedFunc a b) where
   primitiveInfo = NoPrimitive

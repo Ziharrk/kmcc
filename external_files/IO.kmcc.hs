@@ -31,7 +31,6 @@ instance ToHs CurryHandle where
 
 instance FromHs CurryHandle where
   from = P.id
-  elimFlat = P.id
 
 instance ShowTerm CurryHandle where
   showTerm _ _ = P.showString "<<Handle>>"

@@ -56,7 +56,6 @@ import Curry.GenInstances (genInstances)
 
 data CMState = CMState
   { freshVarIdx :: Integer
-  , caseDepth   :: Integer
   }
 
 data CMRead = CMRead
@@ -76,31 +75,16 @@ newtype CM a = CM {
 evalCM :: CM a -> NDAnalysisResult -> Set QName -> Set QName -> IO a
 evalCM a analysis types funTypes = do
   eith <- evalStateT (runExceptT (runReaderT (runCM a) (CMRead types funTypes analysis)))
-            (CMState 0 0)
+            (CMState 0)
   case eith of
     Left msgs -> abortWithMessages msgs
     Right res -> return res
 
 freshVarName :: CM (Hs.Name ())
 freshVarName = do
-  CMState { freshVarIdx = i, caseDepth = j } <- get
-  put (CMState (succ i) j)
+  CMState { freshVarIdx = i } <- get
+  put (CMState (succ i))
   return (Ident () $  "x_" ++ show i)
-
-resetCaseDepth :: CM a -> CM a
-resetCaseDepth act = do
-  CMState { freshVarIdx = i, caseDepth = j } <- get
-  put (CMState i 0)
-  act <* put (CMState i j)
-
-increaseCaseDepth :: CM a -> CM a
-increaseCaseDepth act = do
-  CMState { freshVarIdx = i, caseDepth = j } <- get
-  put (CMState i (succ j))
-  act <* put (CMState i j)
-
-maxCaseDepth :: Integer
-maxCaseDepth = 5
 
 compileToHs :: Maybe TypeExpr -> [((TProg, Bool), ModuleIdent, FilePath)]
             -> NDAnalysisResult -> Set QName -> Set QName -> KMCCOpts
@@ -526,7 +510,7 @@ instance ToMonadicHs TFuncDecl where
   convertToMonadicHs (TFunc qname _ _ texpr rule) = do
     let ty = convertQualType (normalizeCurryType texpr)
     let tsig = TypeSig () [convertFuncNameToMonadicHs (Unqual qname)] ty
-    match <- resetCaseDepth $ convertToMonadicHs (RI (qname, rule))
+    match <- convertToMonadicHs (RI (qname, rule))
     let f = FunBind () [match]
     return $ HFD $ Just (tsig, f)
 
@@ -735,7 +719,7 @@ convertExprToMonadicHs vset (ACase _ _ e bs)
       e' <- convertToHs e
       bs' <- mapM (convertDetBranchToMonadic vset) bs
       return $ Hs.Case () e' (bs' ++ [failedMonadicBranch])
-  | otherwise = increaseCaseDepth $ do
+  | otherwise = do
       tyEnv <- asks newtypeNames
       case bs of
         [ABranch p@(APattern _ (qname, _) [(v,_)]) be] | Set.member qname tyEnv -> do
@@ -745,12 +729,9 @@ convertExprToMonadicHs vset (ACase _ _ e bs)
             <*> convertExprToMonadicHs vset e
             <*> convertExprToMonadicHs vset be
         _ -> do
-          CMState { caseDepth } <- get
           e' <- convertExprToMonadicHs vset e
-          bs' <- concat <$> mapM (convertBranchToMonadicHs caseDepth vset) bs
-          let f | caseDepth < maxCaseDepth = id
-                | otherwise =  Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "elimFlatM")))
-          return $ mkBind (f e') $ Hs.LCase () (bs' ++ [failedMonadicBranch])
+          bs' <- concat <$> mapM (convertBranchToMonadicHs vset) bs
+          return $ mkBind e' $ Hs.LCase () (bs' ++ [failedMonadicBranch])
 
 convertExprToMonadicHs _ ex@(ATyped (ty, Det) _ _) =
   mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
@@ -824,19 +805,19 @@ convertDetBranchToMonadic vSet (ABranch pat e)
       e' <- convertExprToMonadicHs vSet' annE
       return (Alt () pat' (UnGuardedRhs () (foldr (uncurry mkFromHaskellBind) e' vsNames)) Nothing)
 
-convertBranchToMonadicHs :: Integer -> Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM [Alt ()]
-convertBranchToMonadicHs n vSet (ABranch pat e)
+convertBranchToMonadicHs :: Set.Set Int -> ABranchExpr (TypeExpr, NDInfo) -> CM [Alt ()]
+convertBranchToMonadicHs vSet (ABranch pat e)
   | (ty, Det) <- exprAnn e = do
       e' <- convertToHs e
       mty <- convertToMonadicHs ty
       pat1 <- convertToMonadicHs pat
       let alt1 = Alt () pat1 (UnGuardedRhs () transE) Nothing
           transE = mkFromHaskellTyped e' mty
-      return (alt1 : if n > maxCaseDepth then [] else
-                case pat of
-                  APattern _ (qname, (ty', _)) args ->
-                    [Alt () (mkFlatPattern qname ty' (map fst args)) (UnGuardedRhs () transE) Nothing]
-                  ALPattern _ _ -> [])
+      let alt2 = case pat of
+            APattern _ (qname, (ty', _)) args ->
+              [Alt () (mkFlatPattern qname ty' (map fst args)) (UnGuardedRhs () transE) Nothing]
+            ALPattern _ _ -> []
+      return (alt1 : alt2)
   | otherwise = do
       alt1 <- do
         e' <- convertExprToMonadicHs vSet e
@@ -847,15 +828,15 @@ convertBranchToMonadicHs n vSet (ABranch pat e)
           | not ("_Dict#" `isPrefixOf` baseName) -> do
           analysis <- asks ndAnalysisResult
           dataEnv <- asks dataWithFunNames
-          (alt1 :) <$> if n > maxCaseDepth then return [] else do
-            vsTyped <- mapM (\(i, (ty, _)) -> (i,) <$> convertToMonadicHs ty) vs
-            let pat' = mkFlatPattern qname ty' vsNames
-                vsNames = map fst vsTyped
-            let annE = annotateND' analysis (Map.fromSet (const Det) vSet')
-                        dataEnv (genTypedExpr (fmap fst e))
-                vSet' = Set.union vSet (Set.fromList vsNames)
-            e' <- convertExprToMonadicHs vSet' annE
-            return [Alt () pat' (UnGuardedRhs () (foldr (uncurry mkFromHaskellBind) e' vsTyped)) Nothing]
+          vsTyped <- mapM (\(i, (ty, _)) -> (i,) <$> convertToMonadicHs ty) vs
+          let pat' = mkFlatPattern qname ty' vsNames
+              vsNames = map fst vsTyped
+          let annE = annotateND' analysis (Map.fromSet (const Det) vSet')
+                      dataEnv (genTypedExpr (fmap fst e))
+              vSet' = Set.union vSet (Set.fromList vsNames)
+          e' <- convertExprToMonadicHs vSet' annE
+          let alt2 = Alt () pat' (UnGuardedRhs () (foldr (uncurry mkFromHaskellBind) e' vsTyped)) Nothing
+          return [alt1, alt2]
         _ -> return [alt1]
 
 mkFlatPattern :: QName -> TypeExpr -> [Int] -> Pat ()

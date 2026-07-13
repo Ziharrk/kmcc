@@ -1,17 +1,36 @@
 cradle:
-  stack:
+  multi:
     - path: curry-frontend/src
-      component: "curry-frontend:lib"
-      stackYaml: "stack.yaml"
+      config:
+        cradle:
+          stack:
+              component: "curry-frontend:lib"
+              stackYaml: "stack.yaml"
     - path: curry-frontend/app
-      stackYaml: "stack.yaml"
-      component: "curry-frontend:exe:curry-frontend"
+      config:
+        cradle:
+          stack:
+            stackYaml: "stack.yaml"
+            component: "curry-frontend:exe:curry-frontend"
     - path: curry-frontend/test
-      component: "curry-frontend:test:test-frontend"
-      stackYaml: "stack.yaml"
+      config:
+        cradle:
+          stack:
+            component: "curry-frontend:test:test-frontend"
+            stackYaml: "stack.yaml"
     - path: compiler/src
-      component: "kmcc:exe:kmcc_c"
-      stackYaml: "stack.yaml"
+      config:
+        cradle:
+          stack:
+            component: "kmcc:exe:kmcc_c"
+            stackYaml: "stack.yaml"
     - path: rts
-      component: "rts:lib"
-      stackYaml: "stack.yaml"
+      config:
+        cradle:
+          stack:
+            component: "rts:lib"
+            stackYaml: "stack.yaml"
+    - path: ./
+      config:
+        cradle:
+          none:

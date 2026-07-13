@@ -14,6 +14,7 @@ import Curry.Frontend.Base.Utils ( fst3 )
 import CmdParser ( getCmdOpts )
 import Options ( KMCCOpts(..), InfoCommand (..), statusMessage, timeMessage, debugMessage )
 import Curry.CompileToFlat ( getDependencies, compileFileToFcy, checkForMain )
+import Curry.CaseLift ( simplifyCaseExpressions )
 import Curry.Analysis ( analyzeNondet, NDInfo (..) )
 import Curry.ConvertToHs ( compileToHs )
 import Haskell.GHCInvokation ( invokeGHC )
@@ -41,7 +42,8 @@ main = do
       depsTime <- getCurrentTime
       timeMessage kmccopts "Time for dependency analysis" (diffUTCTime depsTime firstTime)
       statusMessage kmccopts "Compiling..."
-      (progs, tcEnv, dataEnv) <- compileFileToFcy kmccopts deps
+      (progsUnCased, tcEnv, dataEnv) <- compileFileToFcy kmccopts deps
+      let progs = map (\((p, b), m, f) -> ((simplifyCaseExpressions p, b), m, f)) progsUnCased
       compileTime <- getCurrentTime
       timeMessage kmccopts "Time for flat curry compilation" (diffUTCTime compileTime depsTime)
       statusMessage kmccopts "Analyzing..."

@@ -688,6 +688,7 @@ class ToHs a where
 class FromHs a where
   from :: HsEquivalent a -> a
   elimFlat :: a -> a
+  elimFlat = error "elimFlat is not used anymore"
 
 class ShowFree a where
   showsFreePrec :: Int -> a -> ShowSFree
@@ -755,8 +756,6 @@ instance ToHs Integer where
 
 instance FromHs Integer where
   from = id
-  {-# INLINE elimFlat #-}
-  elimFlat = id
 
 instance ShowFree Integer where
   showsFreePrec _ x = showsStringCurry (show x)
@@ -782,7 +781,6 @@ instance ToHs Double where
 
 instance FromHs Double where
   from = id
-  elimFlat = id
 
 instance HasPrimitiveInfo Double where
   primitiveInfo = Primitive
@@ -823,7 +821,6 @@ instance ToHs Char where
 
 instance FromHs Char where
   from = id
-  elimFlat = id
 
 instance HasPrimitiveInfo Char where
   primitiveInfo = Primitive
@@ -872,7 +869,6 @@ instance ToHs (IO a) where
 
 instance FromHs a => FromHs (IO a) where
   from x = from <$> x
-  elimFlat = id
 
 instance HasPrimitiveInfo (IO a) where
   primitiveInfo = NoPrimitive
