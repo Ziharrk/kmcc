@@ -40,6 +40,7 @@ import Curry.Base.Pretty (text)
 import Curry.Base.SpanInfo (SpanInfo(..))
 import Curry.FlatCurry hiding (Let)
 import Curry.FlatCurry.Annotated.Type (APattern(..), ABranchExpr(..), AExpr(..))
+import Curry.FlatCurry.Annotated.Goodies (typeArity)
 import Curry.FlatCurry.Typed.Type (TRule(..), TFuncDecl(..), TProg(..), TExpr (..))
 import Curry.Files.Filenames (addOutDirModule)
 import Curry.Frontend.Generators.GenTypedFlatCurry (genTypedExpr)
@@ -400,10 +401,11 @@ instance ToHs TypeDecl where
 
 instance ToMonadicHs TypeDecl where
   convertToMonadicHs (Type qname@(mdl, nm) _ vs cs)
-    | [] <- cs = return $ HTD $ TypeDecl () (mkMonadicTypeHead qname []) $
+    | null cs = return $ HTD $ TypeDecl () (mkMonadicTypeHead qname []) $
       TyCon () (Qual () (ModuleName () (convertModName mdl)) (Ident () (escapeTypeName nm ++ "_ND#")))
     | otherwise = do
-      cs' <- (mkFlatConstr qname vs :) <$> mapM convertToMonadicHs cs
+      let mk = if "dict#" `isPrefixOf` nm then id else (mkFlatConstr qname vs :)
+      cs' <- mk <$> mapM convertToMonadicHs cs
       return $ HTD $
         DataDecl () (DataType ()) Nothing (mkMonadicTypeHead qname vs) cs' []
   convertToMonadicHs (TypeSyn qname _ vs texpr) =  do
@@ -437,8 +439,8 @@ newtype NC = NC (QualConDecl ())
 type instance HsEquivalent NewConsDecl = NC
 instance ToMonadicHs NewConsDecl where
   convertToMonadicHs (NewCons cname _ texpr) = do
-    let tys = [convertTypeToMonadicHs texpr]
-    return $ NC $ QualConDecl () Nothing Nothing (ConDecl () (convertTypeNameToMonadicHs (Unqual cname)) tys)
+    ty <- convertToMonadicHs texpr
+    return $ NC $ QualConDecl () Nothing Nothing (ConDecl () (convertTypeNameToMonadicHs (Unqual cname)) [ty])
 
 type instance HsEquivalent TypeExpr = Type ()
 instance ToHs TypeExpr where
@@ -455,20 +457,28 @@ instance ToHs TypeExpr where
                   n' = TyVar () $ appendName "c" n
 
 instance ToMonadicHs TypeExpr where
-  convertToMonadicHs = return . convertTypeToMonadicHs
+  convertToMonadicHs = return . convertTypeToMonadicHs id 0
 
-convertTypeToMonadicHs :: TypeExpr -> Type ()
-convertTypeToMonadicHs (TVar idx) = TyVar () (indexToName idx)
-convertTypeToMonadicHs (FuncType t1 t2) = mkLiftedFunc (convertTypeToMonadicHs t1) (convertTypeToMonadicHs t2)
-convertTypeToMonadicHs (TCons qn tys) = foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qn)) $ map convertTypeToMonadicHs tys
-convertTypeToMonadicHs (ForallType vs t) = TyForall () (Just (map toTyVarBndr vs)) (mkCurryCtxt vs) (convertQualType t)
+convertTypeToMonadicHs :: (Type () -> Type ()) -> Int -> TypeExpr -> Type ()
+convertTypeToMonadicHs mkCurryF _ (TVar idx) = mkCurryF $
+  TyVar () (indexToName idx)
+convertTypeToMonadicHs mkCurryF 0 (FuncType t1 t2) =
+  mkCurryF $ mkLiftedFunc (convertTypeToMonadicHs id 0 t1) (convertTypeToMonadicHs id 0 t2)
+convertTypeToMonadicHs mkCurryF arity (FuncType t1 t2) =
+  TyFun () (mkCurry (convertTypeToMonadicHs id 0 t1)) (convertTypeToMonadicHs mkCurryF (arity - 1) t2)
+convertTypeToMonadicHs mkCurryF _ (TCons qn tys) = mkCurryF $
+  foldl (TyApp ()) (TyCon () (convertTypeNameToMonadicHs qn)) $
+  map (convertTypeToMonadicHs id 0) tys
+convertTypeToMonadicHs _ arity (ForallType vs t) =
+  TyForall () (Just (map toTyVarBndr vs)) (mkCurryCtxt vs) (convertQualTypeArity arity t)
 
 convertQualType :: TypeExpr -> Type ()
-convertQualType ty
-  | ForallType _ _ <- ty = ty'
-  | otherwise            = mkCurry ty'
-  where
-    ty' = convertTypeToMonadicHs ty
+convertQualType = convertQualTypeArity 0
+
+convertQualTypeArity :: Int -> TypeExpr -> Type ()
+convertQualTypeArity arity ty
+  | ForallType _ _ <- ty = convertTypeToMonadicHs id arity ty
+  | otherwise            = convertTypeToMonadicHs mkCurry arity ty
 
 mkCurryCtxt :: [TVarWithKind] -> Maybe (Context ())
 mkCurryCtxt = mkQuantifiedCtxt mkCurryClassType
@@ -507,8 +517,8 @@ instance ToHs TFuncDecl where
       _ -> return $ HFD Nothing
 
 instance ToMonadicHs TFuncDecl where
-  convertToMonadicHs (TFunc qname _ _ texpr rule) = do
-    let ty = convertQualType (normalizeCurryType texpr)
+  convertToMonadicHs (TFunc qname arity _ texpr rule) = do
+    let ty = convertQualTypeArity arity (normalizeCurryType texpr)
     let tsig = TypeSig () [convertFuncNameToMonadicHs (Unqual qname)] ty
     match <- convertToMonadicHs (RI (qname, rule))
     let f = FunBind () [match]
@@ -553,17 +563,24 @@ instance ToMonadicHs RuleInfo where
     analysis <- asks ndAnalysisResult
     dataEnv <- asks dataWithFunNames
     e' <- convertToMonadicHs (annotateND analysis dataEnv expr)
-    let argInfo = map fst args
-    let e'' = foldr (\v -> mkReturnFunc .  Lambda () [PVar () (indexToName v)]) e' argInfo
+    let e'' = if null args then e' else Lambda () (map (PVar () . indexToName . fst) args) e'
     return $ Match () (convertFuncNameToMonadicHs (Unqual qname)) []
       (UnGuardedRhs () e'') Nothing
-  convertToMonadicHs (RI (qname, TExternal _ str)) = return $
-    Match () (convertFuncNameToMonadicHs (Unqual qname)) []
-      (UnGuardedRhs () (Hs.Var () (UnQual () (Ident () (escapeFuncName unqualStr ++ "_ND#"))))) Nothing
-    where unqualStr = case dropWhile (/= '.') str of
-            ""  -> str
-            "." -> str
-            _:s -> s
+  convertToMonadicHs (RI (qname, TExternal ty str)) = do
+    args <- replicateM (typeArityMono ty) freshVarName
+    let f = Hs.Var () (UnQual () (Ident () (escapeFuncName unqualStr ++ "_ND#")))
+    e <- applyToArgs False 0 f Nothing (map ((Nothing,) . Hs.Var () . Hs.UnQual ()) args)
+    return $
+      Match () (convertFuncNameToMonadicHs (Unqual qname))
+        (map (PVar ()) args)
+        (UnGuardedRhs () e) Nothing
+    where
+      typeArityMono (ForallType _ ty') = typeArity ty'
+      typeArityMono ty' = typeArity ty'
+      unqualStr = case dropWhile (/= '.') str of
+                    ""  -> str
+                    "." -> str
+                    _:s -> s
 
 type instance HsEquivalent (AExpr (TypeExpr, NDInfo)) = Exp ()
 instance ToHs (AExpr (TypeExpr, NDInfo)) where
@@ -610,11 +627,10 @@ failedBranch = Alt () (PWildCard ())
 instance ToMonadicHs (AExpr (TypeExpr, NDInfo)) where
   convertToMonadicHs = convertExprToMonadicHs Set.empty
 
-applyToArgs :: (Exp () -> Exp () -> Exp ())
-            -> (Exp () -> Exp ()) -> Exp () -> Maybe (AExpr (TypeExpr, NDInfo))
+applyToArgs :: Bool -> Int -> Exp () -> Maybe (AExpr (TypeExpr, NDInfo))
             -> [(Maybe (AExpr (TypeExpr, NDInfo)), Exp ())]
             -> CM (Exp ())
-applyToArgs apply ret funE origFunE args = do
+applyToArgs isConsCall realArity funE origFunE args = do
   vs <- replicateM (length args) freshVarName
   let combineForSharing [] = ([], [])
       combineForSharing ((_, (origE, e)):xs) | isKnownShareless ||
@@ -624,9 +640,15 @@ applyToArgs apply ret funE origFunE args = do
         where (es, infos) = combineForSharing xs
       combineForSharing ((v, (_, e)):xs) = (Hs.Var () (UnQual () v):es, (v, e):infos)
         where (es, infos) = combineForSharing xs
+  lamVars <- replicateM (realArity - length args) freshVarName
   let (exprs, shares) = combineForSharing $ zip vs args
-  let applic = ret $ foldl apply funE exprs
-  return $ foldr mkShareBind applic shares
+      (directApply, monadApply) = splitAt realArity exprs
+      directApplied = (if isConsCall then mkReturn else id) $
+                      foldl (App ()) funE
+                        (directApply ++ map (Hs.Var () . UnQual ()) lamVars)
+      monadApplied = foldl mkMonadicApp directApplied monadApply
+      lamdified = foldr (\v -> mkReturnFunc .  Lambda () [PVar () v]) monadApplied lamVars
+  return $ foldr mkShareBind lamdified shares
   where
     isKnownShareless = maybe False isClassOrInstImpl origFunE || case funE of
       Hs.Var () (Qual () (ModuleName () "Curry_Prelude") (Ident () "apply_ND")) -> True
@@ -654,7 +676,7 @@ convertExprToMonadicHs _ ex@(AComb (ty, Det) ConsCall  _ _) =
 convertExprToMonadicHs vset (AComb (_, _) _ (("Prelude", "apply"), _) [f, a]) = do
   args' <- mapM (convertExprToMonadicHs vset) [f, a]
   case args' of
-    [f', a'] -> applyToArgs mkMonadicApp id f' (Just f) [(Just a, a')]
+    [f', a'] -> applyToArgs False 0 f' (Just f) [(Just a, a')]
     _ -> throwError [message "Internal error: Prelude.apply called with wrong number of arguments"]
 convertExprToMonadicHs vset e@(AComb _ ConsCall (qname, _) args) = do
   tyEnv <- asks newtypeNames
@@ -663,7 +685,7 @@ convertExprToMonadicHs vset e@(AComb _ ConsCall (qname, _) args) = do
                       <$> convertExprToMonadicHs vset arg
     _ -> do
       args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
-      applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) (Just e) args'
+      applyToArgs True (length args) (Hs.Var () (convertTypeNameToMonadicHs qname)) (Just e) args'
 convertExprToMonadicHs vset e@(AComb _ (ConsPartCall missing) (qname, _) args) = do
   tyEnv <- asks newtypeNames
   missingVs <- replicateM missing freshVarName
@@ -675,11 +697,14 @@ convertExprToMonadicHs vset e@(AComb _ (ConsPartCall missing) (qname, _) args) =
     _ -> do
       args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
       let mkLam = flip (foldr (\v -> mkReturnFunc .  Lambda () [PVar () v])) missingVs
-      mkLam <$> applyToArgs (App ()) mkReturn (Hs.Var () (convertTypeNameToMonadicHs qname)) (Just e)
+      mkLam <$> applyToArgs True (length args + missing) (Hs.Var () (convertTypeNameToMonadicHs qname)) (Just e)
                   (args' ++ map ((Nothing,) . Hs.Var () . UnQual ()) missingVs)
-convertExprToMonadicHs vset e@(AComb _ _ (qname, _) args) = do -- (Partial) FuncCall
+convertExprToMonadicHs vset e@(AComb _ ct (qname, _) args) = do -- (Partial) FuncCall
   args' <- mapM (\a -> (Just a,) <$> convertExprToMonadicHs vset a) args
-  applyToArgs mkMonadicApp id (Hs.Var () (convertFuncNameToMonadicHs qname)) (Just e) args'
+  applyToArgs False (length args + missing) (Hs.Var () (convertFuncNameToMonadicHs qname)) (Just e) args'
+  where missing = case ct of
+          FuncCall -> 0
+          FuncPartCall m -> m
 convertExprToMonadicHs _ ex@(ALet (ty, Det) _ _) =
   mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
 convertExprToMonadicHs vset ex@(ALet _ bs e) = do

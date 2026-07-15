@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeFamilyDependencies #-}
 module Curry.ConvertToHs where
 
-import Language.Haskell.Exts ( Context, Name )
+import Language.Haskell.Exts ( Context, Name, Type )
 import qualified Language.Haskell.Exts as Hs
 
 import Curry.FlatCurry.Type ( TVarWithKind, QName, TypeExpr )
@@ -35,4 +35,4 @@ instance ToMonadicHsName QName where
 convertQualNameToFlatName :: QName -> Name ()
 convertQualNameToFlatQualName :: QName -> Hs.QName ()
 
-convertTypeToMonadicHs :: TypeExpr -> Hs.Type ()
+convertTypeToMonadicHs :: (Type () -> Type ()) -> Int -> TypeExpr -> Hs.Type ()

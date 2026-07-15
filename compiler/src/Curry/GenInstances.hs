@@ -303,7 +303,7 @@ gen qname vs cs dataNotNew =
       where
         f | isOpQName q = hsSymbolQualName
           | otherwise   = hsIdentQualName
-    mkBindP ty p = Generator () p (Hs.App () (Hs.Var () hsReadPrecQualName) (TypeApp () (TyParen () (convertTypeToMonadicHs ty))))
+    mkBindP ty p = Generator () p (Hs.App () (Hs.Var () hsReadPrecQualName) (TypeApp () (TyParen () (convertTypeToMonadicHs id 0 ty))))
     mkReturnP qname2 ar = mkReturn (foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
       (map (Hs.Var () . UnQual () . indexToName) [1..ar]))
 
@@ -390,4 +390,4 @@ mkReadParen :: Exp () -> Exp ()
 mkReadParen = App () (Hs.Var () hsReadParenQualName)
 
 mkShowsPrecHigh :: TypeExpr -> Exp () -> Exp ()
-mkShowsPrecHigh ty = App () (App () (App () (Hs.Var () hsShowsPrecQualName) (TypeApp () (TyParen () (convertTypeToMonadicHs ty)))) (Hs.Lit () (Int () 9 "9")))
+mkShowsPrecHigh ty = App () (App () (App () (Hs.Var () hsShowsPrecQualName) (TypeApp () (TyParen () (convertTypeToMonadicHs id 0 ty)))) (Hs.Lit () (Int () 9 "9")))
