@@ -42,9 +42,21 @@ jobs:
         id: z3
         uses: cda-tum/setup-z3@v1
 
+      - name: Setup PAKCS
+        id: pakcs
+        run: |
+          curl -sSL -o pakcs.sh https://www.curry-lang.org/pakcs/pakcs-docker.sh
+          chmod +x pakcs.sh
+
       - name: Build KMCC binaries via Make (excluding repl)
         run: |
           make CYPM=/bin/true bin/kmcc_c frontend prebuild_prelude generate_distribution
+
+      - name: Build KMCC repl
+        run: |
+          make CYPM=/bin/true bin/kmcc_repl
+          # twice, to generate with pakcs and then with kmcc
+          make CYPM=/bin/true bin/kmcc_repl
 
       - name: List produced binaries
         run: ls -l bin
