@@ -5,6 +5,7 @@
 # Essential system dependencies
 STACK := $(shell which stack)
 CYPM  := $(shell which cypm)
+PAKCS := $(shell which pakcs)
 
 ifeq ($(STACK),)
 $(error Please make sure that 'stack' (the Haskell Stack build tool) is on your PATH or specify it explicitly by passing 'make STACK=...')
@@ -72,7 +73,13 @@ repl: bin/kmcc_repl
 
 bin/kmcc_repl: $(INSTALLCURRY) repl/src/KMCC/ReplConfig.curry repl/package.json
 	$(CYPM) update
+ifeq (,$(wildcard bin/kmcc_repl)) # build REPL using PAKCS, since we need the REPL to compile the REPL using KMCC
+	cd repl && $(CYPM) -d CURRYBIN=$(PAKCS) -d BININSTALLPATH=$(BINDIR) install
+	# recompile using the newly built REPL:
 	cd repl && $(CYPM) -d BININSTALLPATH=$(BINDIR) install
+else
+	cd repl && $(CYPM) -d BININSTALLPATH=$(BINDIR) install
+endif
 	# add alias `bin/curry`:
 	cd $(BINDIR) && rm -f curry && ln -s kmcc curry
 
