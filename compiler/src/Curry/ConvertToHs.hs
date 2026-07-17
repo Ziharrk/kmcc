@@ -310,7 +310,7 @@ patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do
           let mainNDHashDecl = FunBind () [Match () (Ident () "mainND##") [] (UnGuardedRhs () mainRhsE) Nothing]
           let mainNDHashType = TypeSig () [Ident () "mainND##"] mainType
 
-          let e' = foldl (\e -> mkMonadicApp e . Hs.Var () . UnQual ()) (Hs.Var () (Qual () nm (Ident () "mainND##"))) mainVs
+          let e' = foldl (\e -> Hs.App () e . Hs.Var () . UnQual ()) (Hs.Var () (Qual () nm (Ident () "mainND##"))) mainVs
           let mainNDExpr = foldr (mkLetBind . (,mkFree)) e' mainVs
           let mainNDDecl = FunBind () [Match () (Ident () "main_ND") [] (UnGuardedRhs () mainNDExpr) Nothing]
 
@@ -327,6 +327,7 @@ patchMainPost _ _ h ds = return (h, ds)
 
 getLiftedPats :: Exp () -> [Pat ()]
 getLiftedPats (Hs.App _ _ (Lambda _ [p] e)) = p : getLiftedPats e
+getLiftedPats (Lambda _ [p] e) = p : getLiftedPats e
 getLiftedPats (Hs.InfixApp _ _ bind (Lambda _ _ e))
   | isBind bind = getLiftedPats e
   where isBind (Hs.QConOp _ v) = v == bindQualName
@@ -342,7 +343,7 @@ mkVarReturn :: [Name ()] -> Exp () -> Exp ()
 mkVarReturn fvs = go
   where
     go e =
-      let mainE = foldl (\e' -> mkMonadicApp e' . Hs.Var () . UnQual ()) e fvs
+      let mainE = foldl (\e' -> Hs.App () e' . Hs.Var () . UnQual ()) e fvs
           eWithInfo = mkAddVarIds mainE (map (mkGetVarId . Hs.Var () . UnQual ()) fvs)
       in foldr (mkShareBind . (,mkFree)) eWithInfo fvs
 

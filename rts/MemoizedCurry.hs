@@ -51,7 +51,6 @@ import           GHC.Magic                          (noinline)
 import           GHC.Read                           (expectP)
 import           GHC.Show                           (showLitString)
 import           GHC.IO                             (unsafePerformIO)
-import           GHC.Stack                          (HasCallStack)
 import           Text.Read.Lex as L
 import           Text.Read                          (ReadPrec, readPrec, reset, pfail, lexP, (+++), parens)
 import           Unsafe.Coerce                      (unsafeCoerce)
