@@ -12,18 +12,18 @@ stability:     experimental
 
 common deps
   build-depends:
-    base             ^>= 4.16,
-    ghc-prim         ^>= 0.8,
-    template-haskell ^>= 2.18,
-    containers       ^>= 0.6.0,
-    deque            ^>= 0.4.3,
-    transformers     ^>= 0.5.6,
-    mtl              ^>= 2.2.2,
-    syb              ^>= 0.7.1,
-    extra            ^>= 1.7.3,
-    tree-monad       ^>= 0.3.1,
-    kan-extensions   ^>= 5.2.2,
-    sbv              ^>= 8.17,
+    base             ^>= 4.20,
+    ghc-prim         ^>= 0.12,
+    template-haskell ^>= 2.22,
+    containers       ^>= 0.7,
+    deque            ^>= 0.4,
+    transformers     ^>= 0.6,
+    mtl              ^>= 2.3,
+    syb              ^>= 0.7,
+    extra            ^>= 1.8,
+    tree-monad       ^>= 0.3,
+    kan-extensions   ^>= 5.2,
+    sbv              ^>= 10.6,
     adjunctions      ^>= 4.4,
     deepseq
   ghc-options:      -Wall

@@ -3,4 +3,6 @@ packages: []
 extra-deps:
   - set-extra-1.4.2
   - sbv-10.6
+allow-newer-deps:
+  - tree-monad
 allow-newer: true
