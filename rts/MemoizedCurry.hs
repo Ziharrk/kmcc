@@ -583,12 +583,20 @@ ma1 `unify` ma2 = Curry $ do
         return True
       Primitive   -> Curry $ do
         s <- get
-        let cs1 = toSBV (Var i) .=== toSBV (Val v)
-            s1 = addToVarHeap i (return v) s
-                      { constraintStore = insertConstraint cs1 (constraintStore s)
-                      , constrainedVars = Set.insert i (constrainedVars s)
-                      }
-        put s1 >> checkConsistency >> return (Val True)
+        if isUnconstrained i s
+          then do
+            put (addToVarHeap i (return v) s)
+            return (Val True)
+          else do
+            let cs1 = toSBV (Var i) .=== toSBV (Val v)
+                s1 = addToVarHeap i (return v) s
+                          { constraintStore = insertConstraint cs1 (constraintStore s)
+                          , constrainedVars = Set.insert i (constrainedVars s)
+                          }
+            put s1 >> checkConsistency >> return (Val True)
+
+isUnconstrained :: Integer -> NDState -> Bool
+isUnconstrained i s = not (Set.member i (constrainedVars s))
 
 (=:=) :: (HasPrimitiveInfo a, Unifiable a) => Curry (a :-> a :-> Bool)
 (=:=) = return . Func $ \a -> return . Func $ \b -> unify a b
@@ -608,24 +616,27 @@ ma1 `unifyL` ma2 = Curry $ do
     Var i1
       | Primitive <- primitiveInfo @a -> do
         a2 <- deref ma2
+        s@NDState { .. } <- get
         case a2 of
           Var i2 | i1 == i2  -> return (Val True)
                  | otherwise -> do
             let cs = toSBV (Var @a i1) .=== toSBV a2
-            modify (\s@NDState { .. } -> addToVarHeap i1 (Curry (return a2)) s
-                      { constraintStore = insertConstraint cs constraintStore
-                      , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
-                      })
+            put (addToVarHeap i1 (Curry (return a2)) s
+                  { constraintStore = insertConstraint cs constraintStore
+                  , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
+                  })
             _ <- checkConsistency
             return (Val True)
-          Val _ -> do
-            let cs = toSBV (Var i1) .=== toSBV a2
-            modify (\s@NDState { .. } -> addToVarHeap i1 (Curry (return a2)) s
-                      { constraintStore = insertConstraint cs constraintStore
-                      , constrainedVars = Set.insert i1 constrainedVars
-                      })
-            _ <- checkConsistency
-            return (Val True)
+          Val v
+            | isUnconstrained i1 s -> put (addToVarHeap i1 (return v) s) >> return (Val True)
+            | otherwise -> do
+              let cs = toSBV (Var i1) .=== toSBV a2
+              put (addToVarHeap i1 (Curry (return a2)) s
+                    { constraintStore = insertConstraint cs constraintStore
+                    , constrainedVars = Set.insert i1 constrainedVars
+                    })
+              _ <- checkConsistency
+              return (Val True)
       | otherwise -> unCurry $ do
         ma2' <- share ma2
         modify (addToVarHeap i1 ma2')
@@ -665,13 +676,19 @@ instance Unifiable Integer where
   unifyWith _ x y = if x == y then return True else mzero
 
   lazyUnifyVar n i = Curry $ do
-      let cs = toSBV (Var i) .=== toSBV (Val n)
-      modify (\s@NDState { .. } -> addToVarHeap i (return n) s
-                  { constraintStore = insertConstraint cs constraintStore
-                  , constrainedVars = Set.insert i constrainedVars
-                  })
-      _ <- checkConsistency
-      return (Val True)
+    s@NDState { .. } <- get
+    if isUnconstrained i s
+      then do
+        put (addToVarHeap i (return n) s)
+        return (Val True)
+      else do
+        let cs = toSBV (Var i) .=== toSBV (Val n)
+        put (addToVarHeap i (return n) s
+              { constraintStore = insertConstraint cs constraintStore
+              , constrainedVars = Set.insert i constrainedVars
+              })
+        _ <- checkConsistency
+        return (Val True)
 
 --------------------------------------------------------------------------------
 -- Some example data types.
@@ -788,13 +805,19 @@ instance Unifiable Double where
   unifyWith _ x y = if x == y then return True else mzero
 
   lazyUnifyVar n i = Curry $ do
-      let cs = toSBV (Var i) .=== toSBV (Val n)
-      modify (\s@NDState { .. } -> addToVarHeap i (return n) s
-                  { constraintStore = insertConstraint cs constraintStore
-                  , constrainedVars = Set.insert i constrainedVars
-                  })
-      _ <- checkConsistency
-      return (Val True)
+    s@NDState { .. } <- get
+    if isUnconstrained i s
+      then do
+        put (addToVarHeap i (return n) s)
+        return (Val True)
+      else do
+        let cs = toSBV (Var i) .=== toSBV (Val n)
+        put (addToVarHeap i (return n) s
+              { constraintStore = insertConstraint cs constraintStore
+              , constrainedVars = Set.insert i constrainedVars
+              })
+        _ <- checkConsistency
+        return (Val True)
 
 instance NormalForm Double where
   nfWith _ !x = return (Right x)
@@ -828,13 +851,19 @@ instance Unifiable Char where
   unifyWith _ x y = if x == y then return True else mzero
 
   lazyUnifyVar n i = Curry $ do
-      let cs = toSBV (Var i) .=== toSBV (Val n)
-      modify (\s@NDState { .. } -> addToVarHeap i (return n) s
-                  { constraintStore = insertConstraint cs constraintStore
-                  , constrainedVars = Set.insert i constrainedVars
-                  })
-      _ <- checkConsistency
-      return (Val True)
+    s@NDState { .. } <- get
+    if isUnconstrained i s
+      then do
+        put (addToVarHeap i (return n) s)
+        return (Val True)
+      else do
+        let cs = toSBV (Var i) .=== toSBV (Val n)
+        put (addToVarHeap i (return n) s
+              { constraintStore = insertConstraint cs constraintStore
+              , constrainedVars = Set.insert i constrainedVars
+              })
+        _ <- checkConsistency
+        return (Val True)
 
 instance NormalForm Char where
   nfWith _ !x = return (Right x)
