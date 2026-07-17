@@ -1,67 +1,76 @@
-{-# LANGUAGE MagicHash             #-}
-{-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE MagicHash             #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 import qualified Prelude as P
 import qualified Data.IORef as D
 import BasicDefinitions
 
--- Curryable instance for S.Handle
-type instance HsEquivalent D.IORef = D.IORef
+type instance HsEquivalent IORef_ND# = IORef_Det#
 
-instance ToHs (D.IORef a) where
-  to = P.error "FFI Error: 'To' Conversion on IORef"
+instance ToHs (IORef_ND# a) where
+  to (RefND r) = P.return (RefDet r)
 
-instance FromHs (D.IORef a) where
-  from x  = P.error "FFI Error: 'From' Conversion on IORef"
+instance FromHs (IORef_ND# a) where
+  from (RefDet r) = RefND r
 
-instance ShowTerm (D.IORef a) where
+instance ShowTerm (IORef_ND# a) where
   showTerm _ _ = P.showString "<<IORef>>"
 
-instance ReadTerm (D.IORef a) where
+instance ReadTerm (IORef_ND# a) where
   readTerm = P.error "reading an IORef is not possible"
 
-instance ShowFree (D.IORef a) where
+instance ShowFree (IORef_ND# a) where
   showsFreePrec _ _ = showsStringCurry "<<IORef>>"
 
-instance NormalForm (D.IORef a) where
+instance NormalForm (IORef_ND# a) where
   nfWith _ !x = P.return (P.Left (Val x))
 
-instance Narrowable (D.IORef a) where
+instance Narrowable (IORef_ND# a) where
   narrow = P.error "narrowing an IORef is not possible"
   narrowConstr = P.error "narrowing an IORef is not possible"
 
-instance HasPrimitiveInfo (D.IORef a) where
+instance HasPrimitiveInfo (IORef_ND# a) where
   primitiveInfo = NoPrimitive
 
-instance Unifiable (D.IORef a) where
+instance Unifiable (IORef_ND# a) where
   unifyWith _ _ _ = P.error "unifying an IORef is not possible"
 
   lazyUnifyVar _ _ = P.error "unifying an IORef is not possible"
 
-instance NFDataC (D.IORef a) where
+instance NFDataC (IORef_ND# a) where
   rnfC !_ = ()
 
-instance Curryable a => Curryable (D.IORef a)
+instance Curryable a => Curryable (IORef_ND# a)
 
 -- type declarations for IORef
-type IORef_Det# = D.IORef
-type IORef_ND# = D.IORef
+newtype IORef_Det# a = RefDet (D.IORef a)
+newtype IORef_ND# a = RefND (D.IORef (HsEquivalent a))-- actually contains a HsEquivalent that is dynamically converted
+-- that is also why we need unsafeCoerce in the following functions
 
 -- function definitions
-iORefdotnewIORef_Det# = D.newIORef
+iORefdotnewIORef_Det# :: a -> Curry_Prelude.IO_Det (IORef_Det# a)
+iORefdotnewIORef_Det# x = P.fmap RefDet (D.newIORef x)
+
+iORefdotnewIORef_ND# :: ToHs a => Curry (a :-> Curry_Prelude.IO_ND (IORef_ND# a))
 iORefdotnewIORef_ND# = P.return P.$ Func P.$ \x -> do
-  x' <- x
-  P.return (D.newIORef x')
+  x' <- toHaskell x
+  P.return (P.fmap RefND (D.newIORef x'))
 
-iORefdotprimuscorereadIORef_Det# = D.readIORef
+iORefdotprimuscorereadIORef_Det# :: IORef_Det# a -> Curry_Prelude.IO_Det a
+iORefdotprimuscorereadIORef_Det# (RefDet r) = D.readIORef r
+
+iORefdotprimuscorereadIORef_ND# :: FromHs a => Curry (IORef_ND# a :-> Curry_Prelude.IO_ND a)
 iORefdotprimuscorereadIORef_ND# = P.return P.$ Func P.$ \x -> do
-  x' <- x
-  P.return (D.readIORef x')
+  RefND x' <- x
+  P.return (P.fmap from (D.readIORef x'))
 
-iORefdotprimuscorewriteIORef_Det# x y = fromForeign P.$ D.writeIORef x y
+iORefdotprimuscorewriteIORef_Det# :: IORef_Det# a -> a -> Curry_Prelude.IO_Det (Curry_Prelude.CUnit_Det)
+iORefdotprimuscorewriteIORef_Det# (RefDet x) y = fromForeign P.$ D.writeIORef x y
+
+iORefdotprimuscorewriteIORef_ND# :: (ToHs a, FromHs a) => Curry (IORef_ND# a :-> a :-> Curry_Prelude.IO_ND (Curry_Prelude.CUnit_ND))
 iORefdotprimuscorewriteIORef_ND# = P.return P.$ Func P.$ \x -> P.return P.$ Func P.$ \y -> do
-  x' <- x
-  y' <- y
+  RefND x' <- x
+  y' <- toHaskell y
   P.return (P.fmap from (fromForeign (D.writeIORef x' y')))
