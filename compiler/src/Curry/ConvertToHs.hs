@@ -326,8 +326,8 @@ patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do
 patchMainPost _ _ h ds = return (h, ds)
 
 getLiftedPats :: Exp () -> [Pat ()]
-getLiftedPats (Hs.App _ _ (Lambda _ [p] e)) = p : getLiftedPats e
-getLiftedPats (Lambda _ [p] e) = p : getLiftedPats e
+getLiftedPats (Hs.App _ _ (Lambda _ ps e)) = ps ++ getLiftedPats e
+getLiftedPats (Lambda _ ps e) = ps ++ getLiftedPats e
 getLiftedPats (Hs.InfixApp _ _ bind (Lambda _ _ e))
   | isBind bind = getLiftedPats e
   where isBind (Hs.QConOp _ v) = v == bindQualName
