@@ -11,10 +11,6 @@ ifeq ($(STACK),)
 $(error Please make sure that 'stack' (the Haskell Stack build tool) is on your PATH or specify it explicitly by passing 'make STACK=...')
 endif
 
-ifeq ($(CYPM),)
-$(error Please make sure that 'cypm' (the Curry Package Manager) is on your PATH or specify it explicitly by passing 'make CYPM=...')
-endif
-
 # The name of the Curry system (required by scripts)
 export CURRYSYSTEM = kmcc
 
