@@ -62,7 +62,7 @@ jobs:
         run: ls -l bin
 
       - name: Upload binaries artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kmcc-binaries
           path: bin/*
@@ -83,7 +83,7 @@ jobs:
           echo "archive=$OUT" >> "$GITHUB_OUTPUT"
 
       - name: Upload workspace artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kmcc-workspace
           path: ${{ steps.pack_ws.outputs.archive }}
