@@ -52,7 +52,7 @@ export INSTALLDATE := $(shell date)
 
 ##############################################################################
 .PHONY: all
-all: bin/kmcc_c frontend repl prebuild_prelude generate_distribution
+all: bin/kmcc_c frontend generate_distribution repl prebuild_prelude
 	# pre-compile all libraries to produce up-to-date intermediate files:
 	$(MAKE) compile-all-libs
 
@@ -69,7 +69,12 @@ bin/kmcc-frontend:
 	mv bin/curry-frontend bin/kmcc-frontend
 
 .PHONY: repl
-repl: bin/kmcc_repl
+repl: $(INSTALLCURRY) 
+ifeq (,$(wildcard .git)) # build REPL with script if this is not a git repo
+	scripts/compile-repl.sh
+else
+	$(MAKE) bin/kmcc_repl
+endif
 
 bin/kmcc_repl: $(INSTALLCURRY) repl/src/KMCC/ReplConfig.curry repl/package.json
 	$(CYPM) update
@@ -110,3 +115,23 @@ generate_distribution:
 .PHONY: compile-all-libs
 compile-all-libs:
 	scripts/compile-all-libs.sh
+
+################################DISTRIBUTION##################################
+# Create distribution version as tar file kmcc*.tar.gz:
+
+# directory name of distribution
+DISTDIR    = kmcc-$(VERSION)
+
+.PHONY: dist
+dist:
+	rm -rf kmcc*.tar.gz $(DISTDIR) # remove any old distribution
+	git clone . $(DISTDIR)         # create copy of git version
+	cd $(DISTDIR) && git submodule update --init
+	cd $(DISTDIR)/repl && $(CYPM) install --noexec
+	tar cfvz $(DISTDIR).tar.gz --exclude-vcs --exclude-from=./.tarignore $(DISTDIR)
+	rm -rf $(DISTDIR)
+	@echo "----------------------------------------------------------------"
+	@echo "Distribution file $(DISTDIR).tar.gz generated."
+
+
+################################DISTRIBUTION##################################

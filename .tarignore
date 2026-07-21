@@ -1,0 +1,4 @@
+.github
+.tarignore
+repl/.cpm/CURRYPATH_CACHE
+repl/.cpm/package_cache
