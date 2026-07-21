@@ -17,6 +17,19 @@ export CURRYHOME
 REPL="$CURRYHOME/bin/kmcc_repl"
 
 ###########################################################################
+# If the first argument is 'cypm', invoke the Curry Package Manger
+# where this script is set as the Curry binary:
+if [ "$1" = cypm ] ; then
+  CPM=`which cypm`
+  if [ ! -x "$CPM" ] ; then
+    echo "Cannot invoke CPM: executable 'cypm' not found!"
+    exit 1
+  fi
+  shift
+  exec $CPM -d curry_bin="$SCRIPT" ${1+"$@"}
+fi
+
+###########################################################################
 # Invoke the Curry REPL with CPM to compute CURRYPATH:
 
 # Check whether we should call CPM to compute the correct load path:
