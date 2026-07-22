@@ -74,8 +74,20 @@ else
 endif
 
 bin/kmcc_repl: $(INSTALLCURRY) repl/src/KMCC/ReplConfig.curry repl/package.json
+	@if [ ! -x "$(CYPM)" ] ; then \
+	  echo "Executable 'cypm' not found!" ; \
+	  echo "Please make sure that 'cypm' (the Curry Package Manager) is" ; \
+	  echo "on your PATH or specify it explicitly by 'make CYPM=...'" ; \
+	  exit 1 ; \
+	fi
 	$(CYPM) update
 ifeq (,$(wildcard bin/kmcc_repl)) # build REPL using PAKCS, since we need the REPL to compile the REPL using KMCC
+	@if [ ! -x "$(PAKCS)" ] ; then \
+	  echo "Executable 'pakcs' not found!" ; \
+	  echo "Please make sure that 'pakcs is on your PATH or" ; \
+	  echo "specify it explicitly by 'make PAKCS=...'" ; \
+	  exit 1 ; \
+	fi
 	cd repl && $(CYPM) -d CURRYBIN=$(PAKCS) -d BININSTALLPATH=$(BINDIR) install
 	# recompile using the newly built REPL:
 	cd repl && $(CYPM) -d BININSTALLPATH=$(BINDIR) install
