@@ -57,7 +57,11 @@ into your `PATH` variable, KMCC can be invoked as follows:
 Now one can use the command `:help` to get an overview of all
 available commands in this environment.
 
-A distinguishing feature of KMCC is its operational completeness
+
+Features:
+---------
+
+A distinguishing feature of KMCC is its **operational completeness**
 by offering a fair search strategy in the default mode.
 For instance, KMCC computes a value to the following
 non-deterministic choice between three expressions,
@@ -65,3 +69,16 @@ where the leftmost and rightmost are non-terminating:
 
     Prelude> length [1 ..] ? 42 ? length [1 ..]
     42
+
+Another feature of KMCC is **unification of arithmetic expressions**
+involving free variables:
+    Prelude> 3+x =:= 5 where x free
+    { x = 2 } True
+    Prelude> 3*x =:= 4.8 where x free
+    { x = 1.5999999999999999 } True
+
+Such arithmetic constraints are solved by sending them to
+the SMT solver [Z3](https://github.com/Z3Prover/z3.git), i.e.,
+it is necessary that the executable `z3` is in the PATH.
+Thus, the solving of arithmetic constraints is not complete
+but limited to the features of Z3.
