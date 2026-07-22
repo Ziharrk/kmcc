@@ -10,30 +10,34 @@
 SCRIPT=$(readlink -f "$0")
 SCRIPTPATH=$(dirname "$SCRIPT")
 
-CURRYHOME="$SCRIPTPATH/.."
+CURRYHOME=$(dirname "$SCRIPTPATH")
 export CURRYHOME
 
 # The executable of the Curry REPL installed by CPM:
 REPL="$CURRYHOME/bin/kmcc_repl"
 
+if [ -x "$CURRYHOME/bin/cypm" ] ; then
+  WHICHCPM="$CURRYHOME/bin/cypm"
+else
+  WHICHCPM=`which cypm`
+fi
+
 ###########################################################################
 # If the first argument is 'cypm', invoke the Curry Package Manger
 # where this script is set as the Curry binary:
 if [ "$1" = cypm ] ; then
-  CPM=`which cypm`
-  if [ ! -x "$CPM" ] ; then
+  if [ ! -x "$WHICHCPM" ] ; then
     echo "Cannot invoke CPM: executable 'cypm' not found!"
     exit 1
   fi
   shift
-  exec $CPM -d curry_bin="$SCRIPT" ${1+"$@"}
+  exec "$WHICHCPM" -d curry_bin="$SCRIPT" ${1+"$@"}
 fi
 
 ###########################################################################
 # Invoke the Curry REPL with CPM to compute CURRYPATH:
 
 # Check whether we should call CPM to compute the correct load path:
-WHICHCPM=`which cypm`
 if [ ! -d "$HOME" ] ; then
   USECPM=no   # do not use CPM without a home directory
 elif [ -x "$WHICHCPM" ] ; then
