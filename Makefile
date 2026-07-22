@@ -51,6 +51,7 @@ export INSTALLDATE := $(shell date)
 all: bin/kmcc_c frontend generate_distribution repl prebuild_prelude
 	# pre-compile all libraries to produce up-to-date intermediate files:
 	$(MAKE) compile-all-libs
+	$(MAKE) tools
 
 .PHONY: bin/kmcc_c
 bin/kmcc_c:
@@ -112,11 +113,24 @@ generate_distribution:
 compile-all-libs:
 	scripts/compile-all-libs.sh
 
+# compile CPM if its sources are present:
+export REPL = $(BINDIR)/$(CURRYSYSTEM) # required to build CPM
+.PHONY: tools
+tools:
+	@if [ -d currytools ] ; then $(MAKE) -C currytools/cpm ; fi
+
+# URL of the curry-tools git repository:
+CURRYTOOLSURL = https://github.com/cau-placc/curry-tools.git
+
+# download curry-tools directory containing sources of CPM:
+currytools:
+	git clone $(CURRYTOOLSURL) currytools
+
 ################################DISTRIBUTION##################################
 # Create distribution version as tar file kmcc*.tar.gz:
 
 # directory name of distribution
-DISTDIR    = kmcc-$(VERSION)
+DISTDIR       = kmcc-$(VERSION)
 
 .PHONY: dist
 dist:
@@ -124,6 +138,7 @@ dist:
 	git clone . $(DISTDIR)         # create copy of git version
 	cd $(DISTDIR) && git submodule update --init
 	cd $(DISTDIR)/repl && $(CYPM) install --noexec
+	cd $(DISTDIR) && $(MAKE) currytools
 	tar cfvz $(DISTDIR).tar.gz --exclude-vcs --exclude-from=./.tarignore $(DISTDIR)
 	rm -rf $(DISTDIR)
 	@echo "----------------------------------------------------------------"

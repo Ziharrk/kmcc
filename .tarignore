@@ -2,3 +2,4 @@
 .tarignore
 repl/.cpm/CURRYPATH_CACHE
 repl/.cpm/package_cache
+currytools/download_tools.sh
