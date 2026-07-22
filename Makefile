@@ -84,7 +84,7 @@ bin/kmcc_repl: $(INSTALLCURRY) repl/src/KMCC/ReplConfig.curry repl/package.json
 ifeq (,$(wildcard bin/kmcc_repl)) # build REPL using PAKCS, since we need the REPL to compile the REPL using KMCC
 	@if [ ! -x "$(PAKCS)" ] ; then \
 	  echo "Executable 'pakcs' not found!" ; \
-	  echo "Please make sure that 'pakcs is on your PATH or" ; \
+	  echo "Please make sure that 'pakcs' is on your PATH or" ; \
 	  echo "specify it explicitly by 'make PAKCS=...'" ; \
 	  exit 1 ; \
 	fi
