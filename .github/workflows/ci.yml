@@ -46,19 +46,19 @@ jobs:
         run: |
           curl -sSL -o pakcs.sh https://www.curry-lang.org/pakcs/pakcs-docker.sh
           chmod +x pakcs.sh
-          sed -i 's/DOCKEROPTS="-it --rm"/DOCKEROPTS="-i --rm"/' pakcs.sh
+          sed -i 's/-it --rm/-i --rm/' pakcs.sh
 
           cat > pakcs <<'EOF'
           #!/bin/sh
-          exec sh "$GITHUB_WORKSPACE/pakcs.sh" "$@"
+          exec sh "$PWD/pakcs.sh" "$@"
           EOF
 
           cat > cypm <<'EOF'
           #!/bin/sh
-          exec sh "$GITHUB_WORKSPACE/pakcs.sh" cypm "$@"
+          exec sh "$PWD/pakcs.sh" cypm "$@"
           EOF
 
-          chmod +x pakcs cypm
+          chmod +x cypm pakcs
 
       - name: Build KMCC binaries via Make (excluding repl)
         run: |
