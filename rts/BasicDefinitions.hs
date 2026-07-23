@@ -124,11 +124,13 @@ type LiftedFunc = (:->)
 
 type instance HsEquivalent LiftedFunc = (->)
 
-instance ToHs (LiftedFunc a b) where
-  to _ = error "FFI Error: 'To' Conversion on functions"
+instance (ToHs b, FromHs a) => ToHs (LiftedFunc a b) where
+  to (Func f) = return (\x -> fromTree $ evalCurry (ensureOneResult (toHaskell (f (fromHaskell x)))))
+    where fromTree (Single x) = x
+          fromTree _        = error "to: not a single result"
 
-instance FromHs (LiftedFunc a b) where
-  from _ = error "FFI Error: 'From' Conversion on functions"
+instance (ToHs a, FromHs b) => FromHs (LiftedFunc a b) where
+  from f = Func $ \x -> fmap f (toHaskell x) >>= fromHaskell
 
 instance HasPrimitiveInfo (LiftedFunc a b) where
   primitiveInfo = NoPrimitive
@@ -156,7 +158,7 @@ instance ReadTerm (LiftedFunc a b) where
 instance NFDataC (LiftedFunc a b) where
   rnfC x = x `seq` ()
 
-instance Curryable (LiftedFunc a b)
+instance (Curryable a, Curryable b) => Curryable (LiftedFunc a b)
 
 {-# INLINE [1] app #-}
 app :: Curry (LiftedFunc a b) -> Curry a -> Curry b
