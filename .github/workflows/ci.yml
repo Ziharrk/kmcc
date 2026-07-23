@@ -55,9 +55,10 @@ jobs:
       - name: Build KMCC repl
         run: |
           alias pakcs="sh pakcs.sh"
-          make CYPM=/bin/true bin/kmcc_repl
+          alias cypm="sh pakcs.sh cypm"
+          make CYPM="sh pakcs.sh cypm" PAKCS="sh pakcs.sh" bin/kmcc_repl
           # twice, to generate with pakcs and then with kmcc
-          make CYPM=/bin/true bin/kmcc_repl
+          make CYPM="sh pakcs.sh cypm" PAKCS="sh pakcs.sh" bin/kmcc_repl
 
       - name: List produced binaries
         run: ls -l bin
