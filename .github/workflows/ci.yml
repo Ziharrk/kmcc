@@ -50,12 +50,14 @@ jobs:
 
           cat > pakcs <<'EOF'
           #!/bin/sh
-          exec sh "$PWD/pakcs.sh" "$@"
+          SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          exec sh "$SCRIPT_DIR/pakcs.sh" "$@"
           EOF
 
           cat > cypm <<'EOF'
           #!/bin/sh
-          exec sh "$PWD/pakcs.sh" cypm "$@"
+          SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          exec sh "$SCRIPT_DIR/pakcs.sh" cypm "$@"
           EOF
 
           chmod +x cypm pakcs
