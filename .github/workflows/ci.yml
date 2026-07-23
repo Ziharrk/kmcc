@@ -68,9 +68,9 @@ jobs:
 
       - name: Build KMCC repl
         run: |
-          make CYPM=$PWD/cypm PAKCS=$PWD/pakcs bin/kmcc_repl
+          make CURRYBIN_REPL_PAKCS_ARG= CYPM=$PWD/cypm PAKCS=$PWD/pakcs bin/kmcc_repl
           # twice, to generate with pakcs and then with kmcc
-          make CYPM=$PWD/cypm PAKCS=$PWD/pakcs bin/kmcc_repl
+          make CURRYBIN_REPL_PAKCS_ARG= CYPM=$PWD/cypm PAKCS=$PWD/pakcs bin/kmcc_repl
 
       - name: List produced binaries
         run: ls -l bin

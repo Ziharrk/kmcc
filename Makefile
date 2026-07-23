@@ -32,6 +32,11 @@ INSTALLCURRY = $(REPLDIR)/src/Installation.curry
 # a flag to check for it: 1 if true, 0 otherwise
 GIT_HISTORY_AVAILABLE := $(shell ! test -d "$(ROOT)/.git"; echo $$?)
 
+# If using a dockerized PAKCS/CYPM, avoid passing a pakcs executable to it,
+# since that would try to run a dockerized pakcs from within a dockerized pakcs-cypm, which is not possible.
+# On CI, this is fixed by overriding this variable with no argument.
+CURRYBIN_REPL_PAKCS_ARG = -d CURRYBIN=$(PAKCS)
+
 # Compiler version from the compiler cabal file
 export VERSION := $(shell head -3 $(ROOT)/compiler/kmcc.cabal | tail -1 | cut -c21-)
 export MAJORVERSION    = $(word 1,$(subst ., ,$(VERSION)))
@@ -66,7 +71,7 @@ bin/kmcc-frontend:
 	mv bin/curry-frontend bin/kmcc-frontend
 
 .PHONY: repl
-repl: $(INSTALLCURRY) 
+repl: $(INSTALLCURRY)
 ifeq (,$(wildcard .git)) # build REPL with script if this is not a git repo
 	scripts/compile-repl.sh
 else
@@ -88,7 +93,7 @@ ifeq (,$(wildcard bin/kmcc_repl)) # build REPL using PAKCS, since we need the RE
 	  echo "specify it explicitly by 'make PAKCS=...'" ; \
 	  exit 1 ; \
 	fi
-	cd repl && $(CYPM) -d CURRYBIN=$(PAKCS) -d BININSTALLPATH=$(BINDIR) install
+	cd repl && $(CYPM) $(CURRYBIN_REPL_PAKCS_ARG) -d BININSTALLPATH=$(BINDIR) install
 	# recompile using the newly built REPL:
 	cd repl && $(CYPM) -d BININSTALLPATH=$(BINDIR) install
 else
