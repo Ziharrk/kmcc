@@ -5,13 +5,20 @@ and run-time system to compile [Curry](http://www.curry-lang.org)
 programs to [Haskell](http://www.haskell.org) programs
 via a monadic transformation.
 
-The ideas of this compiler are described in:
+The ideas of this compiler are described in
 
 > Hanus, M., Prott, K.-O., Teegen, F.:
 > A Monadic Implementation of Functional Logic Programs.
 > Proc. of the 24th International Symposium on Principles and Practice
 > of Declarative Programming (PPDP 2022), ACM Press, pp. 1:1-1:15, 2024
 > DOI: [10.1145/3551357.3551370](https://dx.doi.org/10.1145/3551357.3551370)
+
+and in more detail in
+
+> Hanus, M., Prott, K.-O., Teegen, F.:
+> A Monadic Implementation of Functional Logic Programs.
+> Theory and Practice of Logic Programming, 2026
+> DOI: [10.1017/S1471068426100453](https://doi.org/10.1017/S1471068426100453)
 
 Installation:
 -------------
