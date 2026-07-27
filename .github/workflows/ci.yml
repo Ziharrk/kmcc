@@ -7,6 +7,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: kmcc-ci-${{ github.ref }}
   cancel-in-progress: true
@@ -28,8 +31,9 @@ jobs:
           enable-stack: true
           stack-version: 'latest'
 
-      - name: Cache Stack
-        uses: actions/cache@v6
+      - name: Stack cache restore
+        uses: actions/cache/restore@v6
+        id: cache-stack-restore
         with:
           path: |
             ~/.stack
@@ -42,40 +46,70 @@ jobs:
         id: z3
         uses: cda-tum/setup-z3@v1
 
-      - name: Setup PAKCS
+      - name: Build frontend
         run: |
-          curl -sSL -o pakcs.sh https://www.curry-lang.org/pakcs/pakcs-docker.sh
-          chmod +x pakcs.sh
-          sed -i 's/-it --rm/-i --rm/' pakcs.sh
+          make CYPM=/bin/true frontend
 
-          cat > pakcs <<'EOF'
-          #!/bin/sh
-          SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-          exec sh "$SCRIPT_DIR/pakcs.sh" "$@"
-          EOF
+      - name: Save frontend stack cache
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.stack
+            **/.stack-work
+          key: ${{ steps.cache-stack-restore.outputs.cache-primary-key }}
 
-          cat > cypm <<'EOF'
-          #!/bin/sh
-          SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-          exec sh "$SCRIPT_DIR/pakcs.sh" cypm "$@"
-          EOF
+      - name: Setup Prolog (SWI-Prolog)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y swi-prolog
 
-          chmod +x cypm pakcs
+      - name: Download PAKCS
+        run: |
+          wget https://www.curry-lang.org/pakcs/download/pakcs-3.9.0-amd64-Linux.tar.gz
+          tar xzf pakcs-3.9.0-amd64-Linux.tar.gz
+
+      - name: Cache PAKCS
+        uses: actions/cache/restore@v6
+        id: cache-pakcs-restore
+        with:
+          path: pakcs-3.9.0
+          key: ${{ runner.os }}-pakcs
+
+      - name: Build PAKCS
+        run: |
+          cd pakcs-3.9.0
+          make CI_BUILD=yes
+
+      - name: Save PAKCS cache
+        uses: actions/cache/save@v6
+        with:
+          path: pakcs-3.9.0
+          key: ${{ steps.cache-pakcs-restore.outputs.cache-primary-key }}
 
       - name: Build KMCC binaries via Make (excluding repl)
         run: |
-          make CYPM=/bin/true bin/kmcc_c frontend prebuild_prelude generate_distribution
+          make CYPM=/bin/true bin/kmcc_c prebuild_prelude generate_distribution
+
+      - name: Save kmcc stack cache
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.stack
+            **/.stack-work
+          key: ${{ steps.cache-stack-restore.outputs.cache-primary-key }}
 
       - name: Build KMCC repl
         run: |
-          make CURRYBIN_REPL_PAKCS_ARG= CYPM=$PWD/cypm PAKCS=$PWD/pakcs bin/kmcc_repl
+          make CURRYBIN_REPL_PAKCS_ARG= CURRYBIN_REPL_PAKCS_ARG2="-d CURRYBIN=$PWD/bin/kmcc" CYPM=$PWD/pakcs-3.9.0/bin/cypm PAKCS=$PWD/pakcs-3.9.0/bin/pakcs bin/kmcc_repl
+
+      - name: Build KMCC tools
+        run: |
           make currytools
           make tools
-          make -B bin/kmcc_repl
-          
+
       - name: Prebuild libraries
         run: make compile-all-libs
-      
+
       - name: List produced binaries
         run: ls -l bin
 
@@ -105,6 +139,14 @@ jobs:
         with:
           name: kmcc-workspace
           path: ${{ steps.pack_ws.outputs.archive }}
+
+      - name: Save full stack cache
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.stack
+            **/.stack-work
+          key: ${{ steps.cache-stack-restore.outputs.cache-primary-key }}
 
       - name: Summary
         run: |
