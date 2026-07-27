@@ -81,8 +81,8 @@ getGHCOptsFor topDir hasMain deps targetFile
   ["-i " ++ topDir </> "rts"] ++
   getOptimizationOpts ghcOpts optOptimizationBaseLevel ++
   concat [["-with-rtsopts=-pa", "-prof", "-osuf p_o", "-fprof-auto"] | optProfiling ] ++
-  ["-with-rtsopts=-single-threaded" | optSearchStrategy /= FS] ++
-  ["-with-rtsopts=-N" | optSearchStrategy == FS] ++
+  ["-single-threaded" | optSearchStrategy /= FS] ++
+  [ o | o <- ["-with-rtsopts=-N", "-threaded"] , optSearchStrategy == FS] ++
   getGHCSrcDirOpts deps frontendOpts ++
   ghcOpts ++
   [takeFileName (dropExtension targetFile)]
