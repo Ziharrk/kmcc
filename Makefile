@@ -35,8 +35,8 @@ GIT_HISTORY_AVAILABLE := $(shell ! test -d "$(ROOT)/.git"; echo $$?)
 # If using a dockerized PAKCS/CYPM, avoid passing a pakcs executable to it,
 # since that would try to run a dockerized pakcs from within a dockerized pakcs-cypm, which is not possible.
 # On CI, this is fixed by overriding this variable with no argument.
-CURRYBIN_REPL_PAKCS_ARG = -d CURRYBIN=$(PAKCS)
-CURRYBIN_REPL_PAKCS_ARG_2 =
+CURRYBIN_REPL_ARG_1 = -d CURRYBIN=$(PAKCS)
+CURRYBIN_REPL_ARG_2 = -d CURRYBIN=$(BINDIR)/$(CURRYSYSTEM)
 
 # Compiler version from the compiler cabal file
 export VERSION := $(shell head -3 $(ROOT)/compiler/kmcc.cabal | tail -1 | cut -c21-)
@@ -94,11 +94,11 @@ ifeq (,$(wildcard bin/kmcc_repl)) # build REPL using PAKCS, since we need the RE
 	  echo "specify it explicitly by 'make PAKCS=...'" ; \
 	  exit 1 ; \
 	fi
-	cd repl && $(CYPM) $(CURRYBIN_REPL_PAKCS_ARG) -d BININSTALLPATH=$(BINDIR) install
+	cd repl && $(CYPM) $(CURRYBIN_REPL_ARG_1) -d BININSTALLPATH=$(BINDIR) install
 	# recompile using the newly built REPL:
-	cd repl && $(CYPM) $(CURRYBIN_REPL_PAKCS_ARG_2) -d BININSTALLPATH=$(BINDIR) install
+	cd repl && $(CYPM) $(CURRYBIN_REPL_ARG_2) -d BININSTALLPATH=$(BINDIR) install
 else
-	cd repl && $(CYPM) -d BININSTALLPATH=$(BINDIR) install
+	cd repl && $(CYPM) $(CURRYBIN_REPL_ARG_2) -d BININSTALLPATH=$(BINDIR) install
 endif
 	# add alias `bin/curry`:
 	cd $(BINDIR) && rm -f curry && ln -s kmcc curry

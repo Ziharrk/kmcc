@@ -100,7 +100,7 @@ jobs:
 
       - name: Build KMCC repl
         run: |
-          make CURRYBIN_REPL_PAKCS_ARG= CURRYBIN_REPL_PAKCS_ARG2="-d CURRYBIN=$PWD/bin/kmcc" CYPM=$PWD/pakcs-3.9.0/bin/cypm PAKCS=$PWD/pakcs-3.9.0/bin/pakcs bin/kmcc_repl
+          make CURRYBIN_REPL_ARG_1= CURRYBIN_REPL_ARG_2="-d CURRYBIN=$PWD/bin/kmcc" CYPM=$PWD/pakcs-3.9.0/bin/cypm PAKCS=$PWD/pakcs-3.9.0/bin/pakcs bin/kmcc_repl
 
       - name: Build KMCC tools
         run: |
