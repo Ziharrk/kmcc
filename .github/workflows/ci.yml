@@ -108,6 +108,8 @@ jobs:
             --exclude="$REPO_NAME/**/.git" \
             --exclude="$REPO_NAME/**/.stack-work" \
             --exclude="$REPO_NAME/pakcs-3.9.0" \
+            --exclude-vcs \
+            --exclude-from=$REPO_NAME/.tarignore \
             -czf "$OUT" "$REPO_NAME"
           echo "archive=$OUT" >> "$GITHUB_OUTPUT"
 
