@@ -31,9 +31,8 @@ jobs:
           enable-stack: true
           stack-version: 'latest'
 
-      - name: Stack cache restore
-        uses: actions/cache/restore@v6
-        id: cache-stack-restore
+      - name: Stack cache
+        uses: actions/cache@v6
         with:
           path: |
             ~/.stack
@@ -50,14 +49,6 @@ jobs:
         run: |
           make CYPM=/bin/true frontend
 
-      - name: Save frontend stack cache
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ~/.stack
-            **/.stack-work
-          key: ${{ steps.cache-stack-restore.outputs.cache-primary-key }}
-
       - name: Setup Prolog (SWI-Prolog)
         run: |
           sudo apt-get update
@@ -69,8 +60,7 @@ jobs:
           tar xzf pakcs-3.9.0-amd64-Linux.tar.gz
 
       - name: Cache PAKCS
-        uses: actions/cache/restore@v6
-        id: cache-pakcs-restore
+        uses: actions/cache@v6
         with:
           path: pakcs-3.9.0
           key: ${{ runner.os }}-pakcs
@@ -80,23 +70,9 @@ jobs:
           cd pakcs-3.9.0
           make CI_BUILD=yes
 
-      - name: Save PAKCS cache
-        uses: actions/cache/save@v6
-        with:
-          path: pakcs-3.9.0
-          key: ${{ steps.cache-pakcs-restore.outputs.cache-primary-key }}
-
       - name: Build KMCC binaries via Make (excluding repl)
         run: |
           make CYPM=/bin/true bin/kmcc_c prebuild_prelude generate_distribution
-
-      - name: Save kmcc stack cache
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ~/.stack
-            **/.stack-work
-          key: ${{ steps.cache-stack-restore.outputs.cache-primary-key }}
 
       - name: Build KMCC repl
         run: |
@@ -139,14 +115,6 @@ jobs:
         with:
           name: kmcc-workspace
           path: ${{ steps.pack_ws.outputs.archive }}
-
-      - name: Save full stack cache
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ~/.stack
-            **/.stack-work
-          key: ${{ steps.cache-stack-restore.outputs.cache-primary-key }}
 
       - name: Summary
         run: |
