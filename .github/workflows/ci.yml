@@ -102,7 +102,7 @@ jobs:
           set -euo pipefail
           REPO_DIR="$(pwd)"
           REPO_NAME="$(basename "$REPO_DIR")"
-          OUT="$RUNNER_TEMP/${REPO_NAME}-workspace.tar.gz"
+          OUT="$RUNNER_TEMP/${REPO_NAME}.tar.gz"
           tar -C "$(dirname "$REPO_DIR")" \
             --exclude="$REPO_NAME/.git" \
             --exclude="$REPO_NAME/**/.git" \
