@@ -612,31 +612,34 @@ isUnconstrained i s = not (Set.member i (constrainedVars s))
 unifyL :: forall a. (HasPrimitiveInfo a, Unifiable a) => Curry a -> Curry a -> Curry Bool
 ma1 `unifyL` ma2 = Curry $ do
   a1 <- deref ma1
+  s1 <- get
   case a1 of
     Var i1
-      | Primitive <- primitiveInfo @a -> do
-        a2 <- deref ma2
-        s@NDState { .. } <- get
-        case a2 of
-          Var i2 | i1 == i2  -> return (Val True)
-                 | otherwise -> do
-            let cs = toSBV (Var @a i1) .=== toSBV a2
-            put (addToVarHeap i1 (Curry (return a2)) s
-                  { constraintStore = insertConstraint cs constraintStore
-                  , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
-                  })
-            _ <- checkConsistency
-            return (Val True)
-          Val v
-            | isUnconstrained i1 s -> put (addToVarHeap i1 (return v) s) >> return (Val True)
-            | otherwise -> do
-              let cs = toSBV (Var i1) .=== toSBV a2
-              put (addToVarHeap i1 (Curry (return a2)) s
+      | Primitive <- primitiveInfo @a ->  if isUnconstrained i1 s1
+        then modify (addToVarHeap i1 ma2) >> return (Val True)
+        else do
+          a2 <- deref ma2
+          -- re-get the state in case the 'deref' modified it
+          s2@NDState { .. } <- get
+          case a2 of
+            Var i2 | i1 == i2  -> return (Val True)
+                  | otherwise -> do
+              let cs = toSBV (Var @a i1) .=== toSBV a2
+              put (addToVarHeap i1 (Curry (return a2)) s2
                     { constraintStore = insertConstraint cs constraintStore
-                    , constrainedVars = Set.insert i1 constrainedVars
+                    , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
                     })
               _ <- checkConsistency
               return (Val True)
+            Val _
+              | otherwise -> do
+                let cs = toSBV (Var i1) .=== toSBV a2
+                put (addToVarHeap i1 (Curry (return a2)) s2
+                      { constraintStore = insertConstraint cs constraintStore
+                      , constrainedVars = Set.insert i1 constrainedVars
+                      })
+                _ <- checkConsistency
+                return (Val True)
       | otherwise -> unCurry $ do
         ma2' <- share ma2
         modify (addToVarHeap i1 ma2')
