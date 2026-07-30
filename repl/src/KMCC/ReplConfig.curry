@@ -118,9 +118,9 @@ stratOpt :: CCOption
 stratOpt = CCOption
   "fs/dfs/bfs     "
   "search strategy (fair / depth-first / breadth-first)"
-  [ ConstOpt "fs"  "--fs"
+  [ ConstOpt "bfs" "--bfs"
+  , ConstOpt "fs"  "--fs"
   , ConstOpt "dfs" "--dfs"
-  , ConstOpt "bfs" "--bfs"
   ]
 
 profilingOpt :: CCOption
