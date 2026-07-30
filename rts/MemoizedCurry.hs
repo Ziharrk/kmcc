@@ -50,6 +50,7 @@ import           Control.DeepSeq                    (NFData(..))
 import           GHC.Magic                          (noinline)
 import           GHC.Read                           (expectP)
 import           GHC.Show                           (showLitString)
+import           GHC.Stack                          (HasCallStack)
 import           GHC.IO                             (unsafePerformIO)
 import           Text.Read.Lex as L
 import           Text.Read                          (ReadPrec, readPrec, reset, pfail, lexP, (+++), parens)
@@ -705,7 +706,7 @@ class ToHs a where
   to :: a -> Curry (HsEquivalent a)
 
 class FromHs a where
-  from :: HsEquivalent a -> a
+  from :: HasCallStack => HsEquivalent a -> a
   elimFlat :: a -> a
   elimFlat = error "elimFlat is not used anymore"
 
