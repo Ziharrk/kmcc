@@ -180,10 +180,7 @@ checkDeterministic (TRule _ expr) mp = trTExpr var lit comb lt free o cse branch
 checkDeterministic (TExternal _ ext) _ = (Map.findWithDefault Det ext externalInfoMap, Nothing)
 
 externalInfoMap :: Map String NDInfo
-externalInfoMap = Map.fromList
-  [ ("Prelude.=:<=", NonDet)
-  , ("Prelude.=:=" , NonDet)
-  ]
+externalInfoMap = Map.fromList [ ]
 
 -- |Compute the filename of the analysis file for a source file
 analysisName :: FilePath -> FilePath
