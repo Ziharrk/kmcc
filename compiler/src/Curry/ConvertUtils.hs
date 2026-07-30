@@ -3,14 +3,15 @@
 module Curry.ConvertUtils where
 
 import Language.Haskell.Exts hiding (Kind)
+import Data.Set (Set)
 
 import Curry.Base.Ident (isInfixOp, mkIdent)
-import Curry.FlatCurry (TVarWithKind, Kind (..))
+import Curry.FlatCurry (TVarWithKind, Kind (..), TypeExpr (..))
 import qualified Curry.FlatCurry as Curry
 import Curry.FlatCurry.Annotated.Type (AExpr (..), VarIndex, ABranchExpr (..))
-import Options (SearchStrat (..))
 
 import Haskell.ExtsInstances ()
+import Options (SearchStrat (..))
 
 newtype UnqualName = Unqual Curry.QName
 
@@ -422,3 +423,26 @@ tupleStringArity s = case s of
 
 isOpQName :: (String , String) -> Bool
 isOpQName (_, s) = isInfixOp (mkIdent s)
+
+isFunFree :: Set Curry.QName -> TypeExpr -> Bool
+isFunFree dataNames t = not (isFun t)
+  where
+    isFun (FuncType _ _)     = True
+    isFun (TVar _)           = False
+    isFun (TCons qname args) = qname `elem` dataNames || any isFun args
+    isFun (ForallType _ _)   = True
+    -- anything with a forall is dictionary stuff,
+    -- which we cannot convert using 'fromHaskell' anyway
+
+exprAnn :: AExpr a -> a
+exprAnn (AVar a _) = a
+exprAnn (ALit a _) = a
+exprAnn (AComb a _ _ _) = a
+exprAnn (AFree a _ _) = a
+exprAnn (AOr a _ _) = a
+exprAnn (ACase a _ _ _) = a
+exprAnn (ATyped a _ _) = a
+exprAnn (ALet a _ _) = a
+
+altAnn :: ABranchExpr a -> a
+altAnn (ABranch _ e) = exprAnn e

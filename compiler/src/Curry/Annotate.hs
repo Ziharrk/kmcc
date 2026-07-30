@@ -1,14 +1,15 @@
-module Curry.Annotate (annotateND, annotateND', isFunFree, exprAnn) where
+module Curry.Annotate (annotateND, annotateND') where
 
 import Control.Arrow (second)
 import qualified Data.Map as Map
+import Data.Set (Set)
 
 import Curry.FlatCurry.Typeable (Typeable(..))
 import Curry.FlatCurry.Typed.Type (TExpr (..), TBranchExpr (..), TPattern (..), TypeExpr (..), QName)
 import Curry.FlatCurry.Annotated.Type (AExpr(..), ABranchExpr (..), APattern(..))
 
 import Curry.Analysis (NDInfo(..), NDAnalysisResult)
-import Data.Set (Set)
+import Curry.ConvertUtils (exprAnn, altAnn)
 
 annotateND :: NDAnalysisResult -> Set QName -> TExpr -> AExpr (TypeExpr, NDInfo)
 annotateND analysis = annotateND' analysis Map.empty
@@ -21,14 +22,9 @@ annotateND' analysis vMap dataNames (TComb ty ct qname args) =
   where
     argTys = map typeOf args
     ty' = foldr FuncType ty argTys
-    annHere = case Map.lookup qname analysis of
-                Nothing -> if all (isFunFree dataNames) argTys then Det else NonDet
-                Just det -> det
+    annHere = Map.findWithDefault Det qname analysis
     args' = map (annotateND' analysis vMap dataNames) args
-    ann | isFunFree dataNames ty = maximum (annHere : map (snd . exprAnn) args')
-        -- If the result is a function, do not use determinism optimization.
-        -- Might happen if this is a partial application.
-        | otherwise = NonDet
+    ann = maximum (annHere : map (snd . exprAnn) args')
 annotateND' analysis vMap dataNames (TFree bs e) =
   AFree (typeOf e, NonDet) (map (second (,NonDet)) bs)
         (annotateND' analysis vMap' dataNames e)
@@ -71,24 +67,3 @@ annotatePat :: TPattern -> APattern (TypeExpr, NDInfo)
 annotatePat (TPattern ty qname args) =
   APattern (ty, Det) (qname, (ty, Det)) (map (second (,NonDet)) args)
 annotatePat (TLPattern ty l) = ALPattern (ty, Det) l
-
-isFunFree :: Set QName -> TypeExpr -> Bool
-isFunFree dataNames t = not (isFun t)
-  where
-    isFun (FuncType _ _)     = True
-    isFun (TVar _)           = False
-    isFun (TCons qname args) = qname `elem` dataNames || any isFun args
-    isFun (ForallType _ _  ) = True -- Otherwise the type system will get confused
-
-exprAnn :: AExpr a -> a
-exprAnn (AVar a _) = a
-exprAnn (ALit a _) = a
-exprAnn (AComb a _ _ _) = a
-exprAnn (AFree a _ _) = a
-exprAnn (AOr a _ _) = a
-exprAnn (ACase a _ _ _) = a
-exprAnn (ATyped a _ _) = a
-exprAnn (ALet a _ _) = a
-
-altAnn :: ABranchExpr a -> a
-altAnn (ABranch _ e) = exprAnn e
