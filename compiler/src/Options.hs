@@ -68,8 +68,11 @@ defaultFrontendOpts = defaultOptions
   , optCppOpts = defaultCppOpts {
       cppDefinitions = Map.fromList [("__KMCC__", 1)]
     }
-  , optOutDir = ".curry" </> ("kmcc-" ++ showVersion version)
+  , optOutDir = defaultOutDir
   }
+
+defaultOutDir :: FilePath
+defaultOutDir = ".curry" </> ("kmcc-" ++ showVersion version)
 
 statusMessage :: KMCCOpts -> String -> IO ()
 statusMessage ops s = when (optCompilerVerbosity ops > 0) $ putStrLn s

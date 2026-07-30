@@ -8,8 +8,7 @@ maintainer:         mail@kaiprott.de
 copyright:          2023 Kai-Oliver Prott
 category:           Language
 
-executable kmcc_c
-    main-is:          Main.hs
+common exec
     other-modules:    Curry.Annotate,
                       Curry.Analysis,
                       Curry.CaseLift,
@@ -42,3 +41,11 @@ executable kmcc_c
                       extra                ^>= 1.8
     hs-source-dirs:   src
     default-language: GHC2021
+
+executable kmcc_c
+    import:           exec
+    main-is:          Main.hs
+
+executable analysis-viewer
+    import:           exec
+    main-is:          AnalysisViewer.hs

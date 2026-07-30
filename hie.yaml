@@ -24,6 +24,12 @@ cradle:
           stack:
             component: "kmcc:exe:kmcc_c"
             stackYaml: "stack.yaml"
+    - path: compiler/src/AnalysisViewer.hs
+      config:
+        cradle:
+          stack:
+            component: "kmcc:exe:analysis-viewer"
+            stackYaml: "stack.yaml"
     - path: rts
       config:
         cradle:

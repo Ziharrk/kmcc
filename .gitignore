@@ -5,6 +5,7 @@ bin/kmcc-frontend
 bin/kmcc_repl
 bin/kmcc_c
 bin/curry
+bin/analysis-viewer
 */.cpm/
 
 *.lock

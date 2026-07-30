@@ -63,6 +63,10 @@ all: bin/kmcc_c frontend generate_distribution repl prebuild_prelude
 bin/kmcc_c:
 	$(STACK) build kmcc:exe:kmcc_c --copy-bins
 
+.PHONY: bin/analysis-viewer
+bin/analysis-viewer:
+	$(STACK) build kmcc:exe:analysis-viewer --copy-bins
+
 .PHONY: frontend
 frontend: bin/kmcc-frontend
 
@@ -112,6 +116,7 @@ $(INSTALLCURRY): $(INSTALLCURRYIN) compiler/kmcc.cabal Makefile
 clean:
 	rm -rf bin/kmcc_repl
 	rm -rf bin/kmcc_c
+	rm -rf bin/analysis-viewer
 	cd repl && $(CYPM) clean
 	rm -rf libs/src/.curry
 	rm -f $(INSTALLCURRY)
