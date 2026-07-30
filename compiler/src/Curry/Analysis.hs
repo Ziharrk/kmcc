@@ -13,7 +13,7 @@ import Control.Monad.Except ( ExceptT (..), MonadError (..), runExceptT )
 import Control.Monad.State ( StateT (..), MonadState, evalStateT, get, put, modify' )
 import Data.Binary ( decodeFileOrFail, Binary, encodeFile )
 import Data.Map ( Map )
-import qualified Data.Map as Map ( empty, restrictKeys, lookup, insert, findWithDefault, unions, union, map, fromList )
+import qualified Data.Map as Map ( filterWithKey, empty, restrictKeys, lookup, insert, findWithDefault, unions, union, map, fromList )
 import Data.Set ( Set )
 import qualified Data.Set as Set ( empty, insert )
 import GHC.Generics ( Generic )
@@ -24,7 +24,7 @@ import Curry.Base.Message ( Message(..) )
 import Curry.Frontend.Base.Messages ( abortWithMessages, status )
 import Curry.FlatCurry.Typed.Type ( TProg, QName, TRule (..), Visibility (..) )
 import Curry.FlatCurry.Typed.Goodies ( trTProg, trTFunc, trTExpr )
-import Curry.Base.Ident ( ModuleIdent )
+import Curry.Base.Ident ( ModuleIdent, moduleName )
 import Curry.Frontend.CurryBuilder ( compMessage )
 import Curry.Frontend.CompilerOpts ( Options(..) )
 import Curry.Files.Filenames ( addOutDirModule )
@@ -102,10 +102,13 @@ process kmccopts idx@(thisIdx,maxIdx) tprog comp m fn
             else liftIO $ dumpMessage kmccopts "Loaded cached analysis."
           return analysis
     compile = do
-      res@(analysis, _) <- runLocalState $ do
+      (analysis, exportedNames) <- runLocalState $ do
         status opts $ compMessage idx (11, 16) "Analyzing" m (fn, destFile)
         analyzeTProg kmccopts tprog
-      liftIO $ encodeFile (tgtDir (analysisName fn)) res
+      -- The variable 'analysis' contains the analysis result of imported modules as well,
+      -- but we only want to store the analysis (exported, local) result of the current module.
+      let thisAnalysis = Map.filterWithKey (\(mdl, _) _ -> mdl == moduleName m) analysis
+      liftIO $ encodeFile (tgtDir (analysisName fn)) (thisAnalysis, exportedNames)
       if thisIdx == maxIdx
         then liftIO $ dumpMessage kmccopts $ "Analysis finished:\n" ++ show analysis
         else liftIO $ dumpMessage kmccopts "Analysis finished."
