@@ -27,7 +27,9 @@ import Data.List (intercalate, sortOn)
 import Data.SBV (SBV, (.===), sNot)
 import qualified Data.Set as Set
 import GHC.IO.Exception (IOException(..), IOErrorType(..))
+import System.IO (stderr, hPutStrLn)
 import System.IO.Unsafe (unsafeInterleaveIO, unsafePerformIO)
+import System.Exit (exitFailure)
 import qualified System.Time.Extra as E (offsetTime)
 import Text.Read (pfail)
 import Text.ParserCombinators.ReadPrec (readPrec_to_S)
@@ -269,9 +271,12 @@ exprWrapperDet :: forall a. (ShowFree a, FromHs a)
 exprWrapperDet search a = do
   _ <- offsetTime
   case search $ evalCurryTree (showFreeCurry (fromHaskell a) []) of
-    []  -> fail "**No value found"
+    []  -> exitFailed
     [s] -> putStrLn s
     _   -> error "internalError: More than on result from deterministic expression"
+
+exitFailed :: IO ()
+exitFailed = hPutStrLn stderr "**No value found" >> exitFailure
 
 exprWrapperNDet :: forall a. ShowFree a
                 => (Tree.Tree String -> [String])
@@ -283,7 +288,7 @@ exprWrapperNDet search optInt fvs b ca = do
   where
     sortedFvs = map fst $ sortOn snd fvs
 
-    printRes [] _     = fail "**No value found"
+    printRes [] _     = exitFailed
     printRes xs False = mapM_ putStrLn xs
     printRes xs True  = printInteractive xs
 
