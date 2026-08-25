@@ -395,16 +395,21 @@ narrowPrimitive cst i = do
 -- Bind and return are then easy to define.
 
 deref :: Curry a -> ND (CurryVal a)
-deref (Curry m) = do
+deref = derefWith Set.empty
+
+derefWith :: Set ID -> Curry a -> ND (CurryVal a)
+derefWith forbiddenVars (Curry m) = do
   fl <- m
   case fl of
-    v@(Var i) -> get >>= \ndState ->
-      case lookupHeap i (varHeap ndState) of
-        Nothing  -> return v
-        Just res -> do
-          let s' = advanceNDState ndState
-          s' `seq` put s'
-          deref (typed res)
+    v@(Var i)
+      | i `Set.member` forbiddenVars -> mzero
+      | otherwise -> get >>= \ndState ->
+        case lookupHeap i (varHeap ndState) of
+          Nothing  -> return v
+          Just res -> do
+            let s' = advanceNDState ndState
+            s' `seq` put s'
+            derefWith forbiddenVars (typed res)
     x@(Val _) -> return x
 
 {-# INLINE[1] pureCurry #-}
@@ -540,19 +545,20 @@ lookupTaskResult ref i s = do
 
 class Unifiable a where
   unifyWith :: (forall x. (HasPrimitiveInfo x, Unifiable x)
-                        => Curry x -> Curry x -> Curry Bool)
+                  => Curry x -> Curry x -> Curry Bool)
             -> a -> a -> Curry Bool
 
   lazyUnifyVar :: a -> ID -> Curry Bool
 
 --------------------------------------------------------------------------------
--- Unify itself is implemented as shown in the paper.
+-- Unify itself is implemented as shown in the paper,
+-- extended with occurs check and constraint solving for primitive types.
 
 unify :: forall a. (HasPrimitiveInfo a, Unifiable a)
-      => Curry a -> Curry a -> Curry Bool
-ma1 `unify` ma2 = Curry $ do
-  a1 <- deref ma1
-  a2 <- deref ma2
+      => Set ID -> Curry a -> Curry a -> Curry Bool
+unify forbiddenVars ma1 ma2 = Curry $ do
+  a1 <- derefWith forbiddenVars ma1
+  a2 <- derefWith forbiddenVars ma2
   unCurry $ case (a1, a2) of
     (Var i1, Var i2)
       | i1 == i2 -> return True
@@ -568,7 +574,7 @@ ma1 `unify` ma2 = Curry $ do
       | otherwise -> do
         modify (addToVarHeap i1 (Curry (return a2)))
         return True
-    (Val x, Val y)  -> unifyWith unify x y
+    (Val x, Val y)  -> unifyWith (unify forbiddenVars) x y
     (Var i1, Val y) -> unifyVar i1 y
     (Val x, Var i2) -> unifyVar i2 x
   where
@@ -579,7 +585,7 @@ ma1 `unify` ma2 = Curry $ do
         let x = narrowConstr v
         sX <- x
         put (addToVarHeap i (return sX) s)
-        _ <- unifyWith unify sX v
+        _ <- unifyWith (unify (Set.insert i forbiddenVars)) sX v
         return True
       Primitive   -> Curry $ do
         s <- get
@@ -599,7 +605,7 @@ isUnconstrained :: Integer -> NDState -> Bool
 isUnconstrained i s = not (Set.member i (constrainedVars s))
 
 (=:=) :: (HasPrimitiveInfo a, Unifiable a) => Curry (a :-> a :-> Bool)
-(=:=) = return . Func $ \a -> return . Func $ \b -> unify a b
+(=:=) = return . Func $ \a -> return . Func $ \b -> unify Set.empty a b >> return True
 
 --------------------------------------------------------------------------------
 -- Lazy unification is used to implement functional patterns.
@@ -607,10 +613,10 @@ isUnconstrained i s = not (Set.member i (constrainedVars s))
 -- In consequence, it can happen that a variable is bound to a failing computations.
 -- Such a unification succeeds with this lazy unification,
 -- but fails in the "normal" stricter unification.
-
--- TODO: primitives
-unifyL :: forall a. (HasPrimitiveInfo a, Unifiable a) => Curry a -> Curry a -> Curry Bool
-ma1 `unifyL` ma2 = Curry $ do
+-- Here, we can ignore the forbiddenVars, since functional patterns need no occurs check.
+unifyL :: forall a. (HasPrimitiveInfo a, Unifiable a)
+       => Curry a -> Curry a -> Curry Bool
+unifyL ma1 ma2 = Curry $ do
   a1 <- deref ma1
   s1 <- get
   case a1 of
@@ -623,7 +629,7 @@ ma1 `unifyL` ma2 = Curry $ do
           s2@NDState { .. } <- get
           case a2 of
             Var i2 | i1 == i2  -> return (Val True)
-                  | otherwise -> do
+                   | otherwise -> do
               let cs = toSBV (Var @a i1) .=== toSBV a2
               put (addToVarHeap i1 (Curry (return a2)) s2
                     { constraintStore = insertConstraint cs constraintStore

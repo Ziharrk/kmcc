@@ -83,7 +83,7 @@ literalCase x f g = Curry $ do
     Var i -> f i
 
 bindVar :: Curryable a => ID -> Curry a -> Curry Bool
-bindVar i = unify (freeWith i)
+bindVar i = unify Set.empty (freeWith i)
 
 normalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent a))
 normalForm' a = do
