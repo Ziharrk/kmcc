@@ -73,11 +73,11 @@ fs t = unsafePerformIO $ do
         Leaf x   -> evaluate (force x) >>= writeChan ch . Just
         Node l r -> do
           tids <- takeMVar mvarTids
-          (mR, mL) <- (,) <$> newEmptyMVar <*> newEmptyMVar
+          mL <- newEmptyMVar
           tidL <- forkFinally (go l) $ \_ -> finalizeT mvarTids mL
-          tidR <- forkFinally (go r) $ \_ -> finalizeT mvarTids mR
-          putMVar mvarTids $ Set.insert tidR (Set.insert tidL tids)
-          takeMVar mL >> takeMVar mR
+          putMVar mvarTids $ Set.insert tidL tids
+          go r
+          takeMVar mL
   tid <- forkFinally (go t) $ \_ -> writeChan ch Nothing
   result <- catMaybes . takeWhile isJust <$> getChanContents ch
   addFinalizer result $ do
