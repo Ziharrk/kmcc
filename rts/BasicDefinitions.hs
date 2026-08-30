@@ -18,7 +18,7 @@ module BasicDefinitions
  , fs ,bfs , dfs
  ) where
 
-import Control.Exception (throw, catch, evaluate, Exception, SomeException (..))
+import Control.Exception (throw, catch, try, evaluate, Exception, SomeException (..))
 import Control.Monad (MonadPlus(..), (>=>))
 import Control.Monad.Codensity (lowerCodensity)
 import Control.Monad.State (modify, MonadState(put, get), StateT(runStateT))
@@ -513,6 +513,10 @@ allVars :: CurryVal a -> [Integer]
 allVars (Var i) = [i]
 allVars _       = []
 
+forceHaskell :: (NFDataC a, HsEquivalent a ~ a') => a' -> Curry ()
+forceHaskell x = case unsafePerformIO (try (evaluate (rnfC x))) of
+  Left (_ :: Failed) -> mzero
+  Right () -> return ()
 
 -- allow defaulting of type variables with a kind that has a maximum of 10 arguments.
 mkAllAnyDefinitions 10

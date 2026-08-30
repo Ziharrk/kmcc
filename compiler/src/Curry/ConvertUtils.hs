@@ -398,6 +398,9 @@ trueQualName = Qual () (ModuleName () "P") (Ident () "True")
 falseQualName :: QName ()
 falseQualName = Qual () (ModuleName () "P") (Ident () "False")
 
+forceHaskellQualName :: QName ()
+forceHaskellQualName = Qual () (ModuleName () "B") (Ident () "forceHaskell")
+
 searchStratQualName :: SearchStrat -> QName ()
 searchStratQualName DFS = Qual () (ModuleName () "B") (Ident () "dfs")
 searchStratQualName BFS = Qual () (ModuleName () "B") (Ident () "bfs")

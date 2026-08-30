@@ -228,8 +228,9 @@ gen qname vs cs dataNotNew =
       | otherwise = Hs.App () (Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "lazyUnifyVar")))
                       (Hs.Var () (UnQual () (indexToName 1))))
                       (Hs.Var () (UnQual () (Ident () "_i")))
-    mkLazyUnifyDetImpl qname2 ar = Do ()
-      [ Qualifier () $ mkAddToVarHeap (Hs.Var () (UnQual () (Ident () "_i"))) $ mkReturn $
+    mkLazyUnifyDetImpl qname2 ar = Do () $
+      map (\i -> Qualifier () $ Hs.App () (Hs.Var () forceHaskellQualName) (Hs.Var () $ UnQual () $ indexToName i)) [1..ar] ++
+      [Qualifier () $ mkAddToVarHeap (Hs.Var () (UnQual () (Ident () "_i"))) $ mkReturn $
                         App () (Hs.Var () (convertQualNameToFlatQualName qname))
                         (foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
                         (map (Hs.Var () . UnQual () . indexToName) [1..ar]))
