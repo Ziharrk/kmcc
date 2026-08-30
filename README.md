@@ -57,9 +57,9 @@ into your `PATH` variable, KMCC can be invoked as follows:
 
     > kmcc
     ----------------------------------------------------------
-    KMCC Interactive Environment (Version 0.6.0 of 2026-07-22)
+    KMCC Interactive Environment (Version 0.7.0 of 2026-08-30)
     ----------------------------------------------------------
-    Prelude> 
+    Prelude>
 
 Now one can use the command `:help` to get an overview of all
 available commands in this environment.
@@ -72,7 +72,7 @@ A distinguishing feature of KMCC is its **operational completeness**
 by offering a fair search strategy in the default mode.
 For instance, KMCC computes a value to the following
 non-deterministic choice between three expressions,
-where the leftmost and rightmost are non-terminating: 
+where the leftmost and rightmost are non-terminating:
 
     Prelude> length [1 ..] ? 42 ? length [1 ..]
     42
