@@ -395,7 +395,7 @@ dollarBangNDImpl :: Curry (LiftedFunc (LiftedFunc a b) (LiftedFunc a b))
 dollarBangNDImpl =
   returnFunc (\f ->
   returnFunc (\(Curry a) -> Curry (
-    a >>= unCurry. \case
+    a >>= deref . \case
       Val x -> x `seq` (f `app` return x)
       Var i -> f `app` Curry (return (Var i)))))
 
