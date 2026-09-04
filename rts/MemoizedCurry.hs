@@ -646,7 +646,7 @@ unifyL ma1 ma2 = Curry $ do
         Val y  -> unifyWith unifyL x y
 
 addToVarHeap :: ID -> Curry a -> NDState -> NDState
-addToVarHeap i v ndState =
+addToVarHeap i v ndState = advanceNDState
   ndState { varHeap = insertHeap i (Untyped v) (varHeap ndState) }
 
 (=:<=) :: (HasPrimitiveInfo a, Unifiable a) => Curry (a :-> a :-> Bool)

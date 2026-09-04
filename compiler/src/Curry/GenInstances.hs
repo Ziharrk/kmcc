@@ -220,7 +220,7 @@ gen qname vs cs dataNotNew =
           map (\i -> Generator () (PVar () (appendName "_s" (indexToName i))) (mkShare mkFree)) [1..ar] ++
           [Qualifier () $ mkAddToVarHeap (Hs.Var () (UnQual () (Ident () "_i"))) $ mkReturn
                             (foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
-                            (map (Hs.Var () . UnQual () . indexToName) [1..ar]))] ++
+                            (map (Hs.Var () . UnQual () . appendName "_s" . indexToName) [1..ar]))] ++
           maybeAddReturnTrue (
           map (\i -> Qualifier () $ mkLazyUnify
                         (Hs.Var () (UnQual () (indexToName i)))
