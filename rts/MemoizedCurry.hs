@@ -41,7 +41,7 @@ import           Data.SBV.Control                   ( checkSatAssuming,
                                                       CheckSatResult(..),
                                                       Query )
 import           Control.Applicative                (Alternative(..))
-import           Control.Monad                      (MonadPlus(..), ap, unless, msum)
+import           Control.Monad                      (MonadPlus(..), ap, unless, msum, guard)
 import           Control.Monad.Fix                  (MonadFix(..), fix)
 import           Control.Monad.Codensity            (Codensity(..), lowerCodensity)
 import           Control.Monad.State                (StateT(..), MonadState(..), evalStateT, gets, modify)
@@ -393,19 +393,19 @@ narrowPrimitive cst i = do
 -- Bind and return are then easy to define.
 
 deref :: Curry a -> ND (CurryVal a)
-deref = derefWith Set.empty
+deref = fmap fst . derefWith Set.empty
 
-derefWith :: Set ID -> Curry a -> ND (CurryVal a)
+derefWith :: Set ID -> Curry a -> ND (CurryVal a, Bool)
 derefWith forbiddenVars (Curry m) = do
   fl <- m
   case fl of
     v@(Var i)
-      | i `Set.member` forbiddenVars -> mzero
+      | i `Set.member` forbiddenVars -> return (v, True)
       | otherwise -> get >>= \ndState ->
         case lookupHeap i (varHeap ndState) of
-          Nothing  -> return v
+          Nothing  -> return (v, False)
           Just res -> derefWith forbiddenVars (typed res)
-    x@(Val _) -> return x
+    x@(Val _) -> return (x, False)
 
 {-# INLINE[1] pureCurry #-}
 pureCurry :: a -> Curry a
@@ -537,23 +537,24 @@ lookupTaskResult ref i s = do
 
 class Unifiable a where
   unifyWith :: (forall x. (HasPrimitiveInfo x, Unifiable x)
-                  => Curry x -> Curry x -> Curry Bool)
-            -> a -> a -> Curry Bool
+                  => Set ID -> Curry x -> Curry x -> Curry (Set ID))
+            -> Set ID -> a -> a -> Curry (Set ID)
 
-  lazyUnifyVar :: a -> ID -> Curry Bool
+  lazyUnifyVar :: Set ID -> a -> ID -> Curry (Set ID)
 
 --------------------------------------------------------------------------------
 -- Unify itself is implemented as shown in the paper,
 -- extended with occurs check and constraint solving for primitive types.
 
 unify :: forall a. (HasPrimitiveInfo a, Unifiable a)
-      => Set ID -> Curry a -> Curry a -> Curry Bool
+      => Set ID -> Curry a -> Curry a -> Curry (Set ID)
 unify forbiddenVars ma1 ma2 = Curry $ do
-  a1 <- derefWith forbiddenVars ma1
-  a2 <- derefWith forbiddenVars ma2
+  (a1, bool1) <- derefWith forbiddenVars ma1
+  (a2, bool2) <- derefWith forbiddenVars ma2
+  guard (not (bool1 || bool2))  -- occurs check
   unCurry $ case (a1, a2) of
     (Var i1, Var i2)
-      | i1 == i2 -> return True
+      | i1 == i2 -> return Set.empty
       | Primitive <- primitiveInfo @a
         -> Curry $ do
             let cs = toSBV (Var i1) .=== toSBV a2
@@ -562,40 +563,40 @@ unify forbiddenVars ma1 ma2 = Curry $ do
                       , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
                       })
             _ <- checkConsistency
-            return (Val True)
+            return (Val Set.empty)
       | otherwise -> do
         modify (addToVarHeap i1 (Curry (return a2)))
-        return True
-    (Val x, Val y)  -> unifyWith (unify forbiddenVars) x y
+        return Set.empty
+    (Val x, Val y)  -> unifyWith unify forbiddenVars x y
     (Var i1, Val y) -> unifyVar i1 y
     (Val x, Var i2) -> unifyVar i2 x
   where
-    unifyVar :: ID -> a -> Curry Bool
+    unifyVar :: ID -> a -> Curry (Set ID)
     unifyVar i v = case primitiveInfo @a of
       NoPrimitive -> do
         sX <- narrowConstr v
         modify (addToVarHeap i (return sX))
-        _ <- unifyWith (unify (Set.insert i forbiddenVars)) sX v
-        return True
+        _ <- unifyWith unify (Set.insert i forbiddenVars) sX v
+        return Set.empty
       Primitive   -> Curry $ do
         s <- get
         if isUnconstrained i s
           then do
             modify (addToVarHeap i (return v))
-            return (Val True)
+            return (Val Set.empty)
           else do
             let cs1 = toSBV (Var i) .=== toSBV (Val v)
                 s1 = addToVarHeap i (return v) s
                           { constraintStore = insertConstraint cs1 (constraintStore s)
                           , constrainedVars = Set.insert i (constrainedVars s)
                           }
-            put s1 >> checkConsistency >> return (Val True)
+            put s1 >> checkConsistency >> return (Val Set.empty)
 
 isUnconstrained :: Integer -> NDState -> Bool
 isUnconstrained i s = not (Set.member i (constrainedVars s))
 
 (=:=) :: (HasPrimitiveInfo a, Unifiable a) => Curry (a :-> a :-> Bool)
-(=:=) = return . Func $ \a -> return . Func $ \b -> unify Set.empty a b
+(=:=) = return . Func $ \a -> return . Func $ \b -> unify Set.empty a b >> return True
 
 --------------------------------------------------------------------------------
 -- Lazy unification is used to implement functional patterns.
@@ -605,19 +606,20 @@ isUnconstrained i s = not (Set.member i (constrainedVars s))
 -- but fails in the "normal" stricter unification.
 -- Here, we can ignore the forbiddenVars, since functional patterns need no occurs check.
 unifyL :: forall a. (HasPrimitiveInfo a, Unifiable a)
-       => Curry a -> Curry a -> Curry Bool
-unifyL ma1 ma2 = Curry $ do
-  a1 <- deref ma1
+       => Set ID -> Curry a -> Curry a -> Curry (Set ID)
+unifyL strictVars ma1 ma2 = Curry $ do
+  (a1, bool1) <- derefWith strictVars ma1
   s1 <- get
   case a1 of
     Var i1
+      | bool1 ->  unCurry $ unify Set.empty (Curry (return a1)) ma2 -- non-linearity
       | Primitive <- primitiveInfo @a,
         not (isUnconstrained i1 s1) -> do
           a2 <- deref ma2
           -- re-get the state in case the 'deref' modified it
           s2@NDState { .. } <- get
           case a2 of
-            Var i2 | i1 == i2  -> return (Val True)
+            Var i2 | i1 == i2  -> return (Val (Set.insert i1 strictVars))
                    | otherwise -> do
               let cs = toSBV (Var @a i1) .=== toSBV a2
               put (addToVarHeap i1 (Curry (return a2)) s2
@@ -625,7 +627,7 @@ unifyL ma1 ma2 = Curry $ do
                     , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
                     })
               _ <- checkConsistency
-              return (Val True)
+              return (Val (Set.insert i1 (Set.insert i2 strictVars)))
             Val _
               | otherwise -> do
                 let cs = toSBV (Var i1) .=== toSBV a2
@@ -634,23 +636,23 @@ unifyL ma1 ma2 = Curry $ do
                       , constrainedVars = Set.insert i1 constrainedVars
                       })
                 _ <- checkConsistency
-                return (Val True)
+                return (Val (Set.insert i1 strictVars))
       | otherwise -> unCurry $ do
         ma2' <- share ma2
         modify (addToVarHeap i1 ma2')
-        return True
+        return (Set.insert i1 strictVars)
     Val x -> do
       a2 <- deref ma2
       unCurry $ case a2 of
-        Var i2 -> lazyUnifyVar x i2
-        Val y  -> unifyWith unifyL x y
+        Var i2 -> lazyUnifyVar strictVars x i2
+        Val y  -> unifyWith unifyL strictVars x y
 
 addToVarHeap :: ID -> Curry a -> NDState -> NDState
 addToVarHeap i v ndState = advanceNDState
   ndState { varHeap = insertHeap i (Untyped v) (varHeap ndState) }
 
 (=:<=) :: (HasPrimitiveInfo a, Unifiable a) => Curry (a :-> a :-> Bool)
-(=:<=) = return . Func $ \a -> return . Func $ \b -> unifyL a b
+(=:<=) = return . Func $ \a -> return . Func $ \b -> unifyL Set.empty a b >> return True
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -658,23 +660,27 @@ addToVarHeap i v ndState = advanceNDState
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-instance Unifiable Integer where
-  unifyWith _ x y = if x == y then return True else mzero
+{-# INLINE primitiveLazyUnifyVar #-}
+primitiveLazyUnifyVar :: (SymVal a, HasPrimitiveInfo a) => Set ID -> a -> ID -> Curry (Set ID)
+primitiveLazyUnifyVar = \strictVars n i -> Curry $ do
+  s@NDState { .. } <- get
+  if isUnconstrained i s
+    then do
+      put (addToVarHeap i (return n) s)
+      return (Val (Set.insert i strictVars))
+    else do
+      let cs = toSBV (Var i) .=== toSBV (Val n)
+      put (addToVarHeap i (return n) s
+            { constraintStore = insertConstraint cs constraintStore
+            , constrainedVars = Set.insert i constrainedVars
+            })
+      _ <- checkConsistency
+      return (Val (Set.insert i strictVars))
 
-  lazyUnifyVar n i = Curry $ do
-    s@NDState { .. } <- get
-    if isUnconstrained i s
-      then do
-        put (addToVarHeap i (return n) s)
-        return (Val True)
-      else do
-        let cs = toSBV (Var i) .=== toSBV (Val n)
-        put (addToVarHeap i (return n) s
-              { constraintStore = insertConstraint cs constraintStore
-              , constrainedVars = Set.insert i constrainedVars
-              })
-        _ <- checkConsistency
-        return (Val True)
+instance Unifiable Integer where
+  unifyWith _ _ x y = if x == y then return Set.empty else mzero
+
+  lazyUnifyVar = primitiveLazyUnifyVar
 
 --------------------------------------------------------------------------------
 -- Some example data types.
@@ -788,22 +794,9 @@ instance HasPrimitiveInfo Double where
   primitiveInfo = Primitive
 
 instance Unifiable Double where
-  unifyWith _ x y = if x == y then return True else mzero
+  unifyWith _ _ x y = if x == y then return Set.empty else mzero
 
-  lazyUnifyVar n i = Curry $ do
-    s@NDState { .. } <- get
-    if isUnconstrained i s
-      then do
-        put (addToVarHeap i (return n) s)
-        return (Val True)
-      else do
-        let cs = toSBV (Var i) .=== toSBV (Val n)
-        put (addToVarHeap i (return n) s
-              { constraintStore = insertConstraint cs constraintStore
-              , constrainedVars = Set.insert i constrainedVars
-              })
-        _ <- checkConsistency
-        return (Val True)
+  lazyUnifyVar = primitiveLazyUnifyVar
 
 instance NormalForm Double where
   nfWith _ !x = return (Right x)
@@ -834,22 +827,9 @@ instance HasPrimitiveInfo Char where
   primitiveInfo = Primitive
 
 instance Unifiable Char where
-  unifyWith _ x y = if x == y then return True else mzero
+  unifyWith _ _ x y = if x == y then return Set.empty else mzero
 
-  lazyUnifyVar n i = Curry $ do
-    s@NDState { .. } <- get
-    if isUnconstrained i s
-      then do
-        put (addToVarHeap i (return n) s)
-        return (Val True)
-      else do
-        let cs = toSBV (Var i) .=== toSBV (Val n)
-        put (addToVarHeap i (return n) s
-              { constraintStore = insertConstraint cs constraintStore
-              , constrainedVars = Set.insert i constrainedVars
-              })
-        _ <- checkConsistency
-        return (Val True)
+  lazyUnifyVar = primitiveLazyUnifyVar
 
 instance NormalForm Char where
   nfWith _ !x = return (Right x)
@@ -892,8 +872,8 @@ instance Narrowable (IO a) where
   narrowConstr _ = error "narrowing an IO action is not possible"
 
 instance Unifiable (IO a) where
-  unifyWith _ _ _ = error "unifying an IO action is not possible"
-  lazyUnifyVar _ _ = error "lazily unifying an IO action is not possible"
+  unifyWith _ _ _ _ = error "unifying an IO action is not possible"
+  lazyUnifyVar _ _ _ = error "lazily unifying an IO action is not possible"
 
 instance NormalForm (IO a) where
   nfWith _ !x = return (Left (Val x))

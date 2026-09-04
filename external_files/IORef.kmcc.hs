@@ -40,9 +40,9 @@ instance HasPrimitiveInfo (IORef_ND# a) where
   primitiveInfo = NoPrimitive
 
 instance Unifiable (IORef_ND# a) where
-  unifyWith _ _ _ = P.error "unifying an IORef is not possible"
+  unifyWith _ _ _ _ = P.error "unifying an IORef is not possible"
 
-  lazyUnifyVar _ _ = P.error "unifying an IORef is not possible"
+  lazyUnifyVar _ _ _ = P.error "unifying an IORef is not possible"
 
 instance NFDataC (IORef_ND# a) where
   rnfC !_ = ()

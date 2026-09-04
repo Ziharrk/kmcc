@@ -85,7 +85,7 @@ literalCase x f g = Curry $ do
     Var i -> f i
 
 bindVar :: Curryable a => ID -> Curry a -> Curry Bool
-bindVar i = unify Set.empty (freeWith i)
+bindVar i ma = unify Set.empty (freeWith i) ma >> return True
 
 normalForm' :: NormalForm a => Curry a -> ND (Either (CurryVal a) (HsEquivalent a))
 normalForm' a = do
@@ -142,8 +142,8 @@ instance Narrowable (LiftedFunc a b) where
   narrowConstr _ = error "narrowing a function is not possible"
 
 instance Unifiable (LiftedFunc a b) where
-  unifyWith _ _ = error "unifying a function is not possible"
-  lazyUnifyVar _ = error "lazily unifying a function is not possible"
+  unifyWith _ _ _ _ = error "unifying a function is not possible"
+  lazyUnifyVar _ _ _ = error "lazily unifying a function is not possible"
 
 instance NormalForm (LiftedFunc a b) where
   nfWith _ !x = return (Left (Val x))
@@ -508,7 +508,7 @@ primitiveEq :: forall a b b'.
                ( Curryable a, Curryable b, ForeignType b'
                ,  Foreign b' ~ Bool, HsEquivalent b ~ b')
            => Curry (a :-> a :-> b)
-primitiveEq = returnFunc (\a1 -> returnFunc (unify Set.empty a1 >=> (fromHaskell . fromForeign)))
+primitiveEq = returnFunc (\a1 -> returnFunc (\a2 -> unify Set.empty a1 a2 >> fromHaskell (fromForeign True)))
 
 allVars :: CurryVal a -> [Integer]
 allVars (Var i) = [i]

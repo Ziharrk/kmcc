@@ -84,8 +84,8 @@ dummyInstances = [d|
     nfWith _ _ = error "normalizing an ambigouous type variable is not possible"
 
   instance Unifiable None where
-    unifyWith _ _ _ = error "unifying an ambigouous type variable is not possible"
-    lazyUnifyVar _ _ = error "lazily unifying an ambigouous type variable is not possible"
+    unifyWith _ _ _ _ = error "unifying an ambigouous type variable is not possible"
+    lazyUnifyVar _ _ _ = error "lazily unifying an ambigouous type variable is not possible"
 
   instance ShowFree None where
     showsFreePrec _ _ = error "showing an ambigouous type variable is not possible"

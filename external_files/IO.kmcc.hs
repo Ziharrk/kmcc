@@ -52,9 +52,9 @@ instance HasPrimitiveInfo CurryHandle where
   primitiveInfo = NoPrimitive
 
 instance Unifiable CurryHandle where
-  unifyWith _ _ _ = P.error "unifying a Handle is not possible"
+  unifyWith _ _ _ _ = P.error "unifying a Handle is not possible"
 
-  lazyUnifyVar _ _ = P.error "unifying a Handle is not possible"
+  lazyUnifyVar _ _ _ = P.error "unifying a Handle is not possible"
 
 instance NFDataC CurryHandle where
   rnfC !_ = ()

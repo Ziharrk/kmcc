@@ -126,30 +126,33 @@ gen qname vs cs dataNotNew =
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkSameConstrImpl qname2 ar], dataNotNew]
     mkUnifyWithMatch (Cons qname2 ar _ _) = [Match () (Ident () "unifyWith")
       [ PVar () (Ident () "_f")
+      , PVar () (Ident () "_set0")
       , PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . appendName "_a" . indexToName) [1..ar])
       , PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . appendName "_b" . indexToName) [1..ar])
       ]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkUnifyWithImpl qname2 ar]] ++
       [Match () (Ident () "unifyWith")
       [ PVar () (Ident () "_f")
+      , PVar () (Ident () "_set0")
       , mkFlatPattern qname2 (TCons qname []) [1..ar]
       , PVar () (Ident () "_b")
       ]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkUnifyWithDetImplRight qname2 ar], dataNotNew] ++
       [Match () (Ident () "unifyWith")
       [ PVar () (Ident () "_f")
+      , PVar () (Ident () "_set0")
       , PVar () (Ident () "_a")
       , mkFlatPattern qname2 (TCons qname []) [1..ar]
       ]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkUnifyWithDetImplLeft qname2 ar], dataNotNew]
     unifyWithFailMatch = Match () (Ident () "unifyWith")
-      [PWildCard (), PWildCard (), PWildCard ()]
+      [PWildCard (), PWildCard (), PWildCard (), PWildCard ()]
       (UnGuardedRhs () mkFailed) Nothing
     mkLazyUnifyMatch (Cons qname2 ar _ _) = [Match () (Ident () "lazyUnifyVar")
-      [PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar]), PVar () (Ident () "_i")]
+      [PVar () (Ident () "_set0"), PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar]), PVar () (Ident () "_i")]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkLazyUnifyImpl qname2 ar]] ++
       [Match () (Ident () "lazyUnifyVar")
-      [mkFlatPattern qname2 (TCons qname []) [1..ar], PVar () (Ident () "_i")]
+      [PVar () (Ident () "_set0"), mkFlatPattern qname2 (TCons qname []) [1..ar], PVar () (Ident () "_i")]
       (UnGuardedRhs () e) Nothing | Just e <- [preventDict mkLazyUnifyDetImpl qname2 ar], dataNotNew]
     mkNfWithMatch (Cons qname2 ar _ _) = [Match () (Ident () "nfWith")
       [PVar () (Ident () "_f"), PApp () (convertTypeNameToMonadicHs qname2) (map (PVar () . indexToName) [1..ar])]
@@ -198,20 +201,25 @@ gen qname vs cs dataNotNew =
               (replicate a (mkShare mkFree))
         c' = f qname2 ar
     mkUnifyWithImpl _ ar
-      | dataNotNew = Do () $ maybeAddReturnTrue $
-          map (\i -> Qualifier () $ App () (App () (Hs.Var () (UnQual () (Ident () "_f")))
+      | dataNotNew = Do () $ maybeAddReturnEmptySet $
+          map (\i -> Generator () (PVar () (Ident () ("_set" ++ show i)))
+                      (App () (App () (App () (Hs.Var () (UnQual () (Ident () "_f")))
+                        (Hs.Var () (UnQual () (Ident () ("_set" ++ show (i -1))))))
                         (Hs.Var () (UnQual () (appendName "_a" (indexToName i)))))
-                        (Hs.Var () (UnQual () (appendName "_b" (indexToName i))))) [1..ar]
+                        (Hs.Var () (UnQual () (appendName "_b" (indexToName i)))))) [1..ar]
       | otherwise = mkUnifyWith (Hs.Var () (UnQual () (Ident () "_f")))
+                                (Hs.Var () (UnQual () (Ident () "_set0")))
                                 (Hs.Var () (UnQual () (appendName "_a" (indexToName 1))))
                                 (Hs.Var () (UnQual () (appendName "_b" (indexToName 1))))
     mkUnifyWithDetImplRight qname2 ar = mkUnifyWith
       (Hs.Var () (UnQual () (Ident () "_f")))
+      (Hs.Var () (UnQual () (Ident () "_set0")))
       (foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToMonadicHs qname2)
         (map (mkFromHaskell . Hs.Var () . UnQual () . indexToName) [1..ar]))
       (Var () (UnQual () (Ident () "_b")))
     mkUnifyWithDetImplLeft qname2 ar = mkUnifyWith
       (Hs.Var () (UnQual () (Ident () "_f")))
+      (Hs.Var () (UnQual () (Ident () "_set0")))
       (Var () (UnQual () (Ident () "_a")))
       (foldl (Hs.App ()) (Hs.Var () $ convertTypeNameToMonadicHs qname2)
         (map (mkFromHaskell . Hs.Var () . UnQual () . indexToName) [1..ar]))
@@ -221,10 +229,11 @@ gen qname vs cs dataNotNew =
           [Qualifier () $ mkAddToVarHeap (Hs.Var () (UnQual () (Ident () "_i"))) $ mkReturn
                             (foldl (App ()) (Hs.Var () (convertTypeNameToMonadicHs qname2))
                             (map (Hs.Var () . UnQual () . appendName "_s" . indexToName) [1..ar]))] ++
-          maybeAddReturnTrue (
-          map (\i -> Qualifier () $ mkLazyUnify
+          maybeAddReturnEmptySet (
+          map (\i -> Generator () (PVar () (Ident () ("_set" ++ show i))) (mkLazyUnify
+                        (Hs.Var () (UnQual () (Ident () ("_set" ++ show (i - 1)))))
                         (Hs.Var () (UnQual () (indexToName i)))
-                        (Hs.Var () (UnQual () (appendName "_s" (indexToName i))))) [1..ar])
+                        (Hs.Var () (UnQual () (appendName "_s" (indexToName i)))))) [1..ar])
       | otherwise = Hs.App () (Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "lazyUnifyVar")))
                       (Hs.Var () (UnQual () (indexToName 1))))
                       (Hs.Var () (UnQual () (Ident () "_i")))
@@ -234,7 +243,7 @@ gen qname vs cs dataNotNew =
                         App () (Hs.Var () (convertQualNameToFlatQualName qname))
                         (foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
                         (map (Hs.Var () . UnQual () . indexToName) [1..ar]))
-      , Qualifier () $ mkReturn (Hs.Var () trueQualName) ]
+      , Qualifier () $ mkReturn (Hs.Var () emptySetQualName) ]
     mkNfWithImpl qname2 ar
       | dataNotNew = Do () $
           map (\i -> Generator () (PVar () (appendName "_f" (indexToName i))) $
@@ -308,8 +317,9 @@ gen qname vs cs dataNotNew =
     mkReturnP qname2 ar = mkReturn (foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
       (map (Hs.Var () . UnQual () . indexToName) [1..ar]))
 
-    maybeAddReturnTrue [] = [Qualifier () $ mkReturn (Hs.Var () trueQualName)]
-    maybeAddReturnTrue xs = xs
+    maybeAddReturnEmptySet [] = [Qualifier () $ mkReturn (Hs.Var () emptySetQualName)]
+    maybeAddReturnEmptySet xs = xs ++ [Qualifier () $ mkReturn $ Hs.Var () $ UnQual () $
+                                                      Ident () ("_set" ++ show (length xs))]
 
 mkTuple :: Boxed -> [Exp ()] -> Exp ()
 mkTuple _       []  = Hs.Con () (Special () (UnitCon ()))

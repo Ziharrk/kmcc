@@ -38,9 +38,9 @@ instance HasPrimitiveInfo N.Socket where
   primitiveInfo = NoPrimitive
 
 instance Unifiable N.Socket where
-  unifyWith _ _ _ = P.error "unifying a Socket is not possible"
+  unifyWith _ _ _ _ = P.error "unifying a Socket is not possible"
 
-  lazyUnifyVar _ _ = P.error "unifying a Socket is not possible"
+  lazyUnifyVar _ _ _ = P.error "unifying a Socket is not possible"
 
 instance NFDataC N.Socket where
   rnfC !_ = ()

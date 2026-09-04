@@ -210,7 +210,7 @@ instance ToHs TProgWithFilePath where
     let ps' = defaultPragmas ++ extPragmas
     let qualNameImports = map (\n -> ImportDecl () (ModuleName () n) True False False Nothing Nothing Nothing)
           $ Set.toList $ Set.delete (convertModName nm) -- do not import self
-          $ Set.delete "M" $ Set.delete "B" $ Set.delete "P" -- do not import these module aliases
+          $ Set.delete "M" $ Set.delete "B" $ Set.delete "P" $ Set.delete "S" -- do not import these module aliases
           $ everything Set.union (mkQ Set.empty (\(ModuleName () n) -> Set.singleton n)) curryDs
     let im' = defaultImports ++ extImports ++ curryImports ++ qualNameImports
     let ds' = extDs ++ curryDs
@@ -981,6 +981,7 @@ defaultImports =
   , ImportDecl () (ModuleName () "Text.Read.Lex") True False False Nothing (Just (ModuleName () "P")) Nothing
   , ImportDecl () (ModuleName () "Text.ParserCombinators.ReadPrec") True False False Nothing (Just (ModuleName () "P")) Nothing
   , ImportDecl () (ModuleName () "Control.DeepSeq") True False False Nothing (Just (ModuleName () "P"))  Nothing
+  , ImportDecl () (ModuleName () "Data.Set") True False False Nothing (Just (ModuleName () "S")) Nothing
   ]
 
 -- |Compute the filename of the Haskell file for a source file

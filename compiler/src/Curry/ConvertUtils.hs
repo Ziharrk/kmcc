@@ -84,11 +84,8 @@ mkMplus e1 = App () (App () (Var () mplusQualName) e1)
 mkFailed :: Exp ()
 mkFailed = Var () failedQualName
 
-mkUnify :: Exp () -> Exp () -> Exp ()
-mkUnify e = App () (App () (Var () unifyQualName) e)
-
-mkUnifyWith :: Exp () -> Exp () -> Exp () -> Exp ()
-mkUnifyWith e1 e2 = App () (App () (App () (Var () unifyWithQualName) e1) e2)
+mkUnifyWith :: Exp () -> Exp () -> Exp () -> Exp () -> Exp ()
+mkUnifyWith e1 e2 e3 = App () (App () (App () (App () (Var () unifyWithQualName) e1) e2) e3)
 
 mkBindVar :: Exp () -> Exp () -> Exp ()
 mkBindVar e = App () (App () (Var () bindVarQualName) e)
@@ -194,8 +191,8 @@ mkLazyTuplePat xs  = PParen () $ PIrrPat () $ PTuple () Boxed xs
 mkMFix :: Exp () -> Exp ()
 mkMFix = App () (Var () (Qual () (ModuleName () "M") (Ident () "mfix")))
 
-mkLazyUnify :: Exp () -> Exp () -> Exp ()
-mkLazyUnify e = App () (App () (Var () lazyUnifyQualName) e)
+mkLazyUnify :: Exp () -> Exp () -> Exp () -> Exp ()
+mkLazyUnify e1 e2 = App () (App () (App () (Var () lazyUnifyQualName) e1) e2)
 
 mkAddToVarHeap :: Exp () -> Exp () -> Exp ()
 mkAddToVarHeap e1 = App () (App () (Var () addToVarHeapQualName) e1)
@@ -397,6 +394,9 @@ trueQualName = Qual () (ModuleName () "P") (Ident () "True")
 
 falseQualName :: QName ()
 falseQualName = Qual () (ModuleName () "P") (Ident () "False")
+
+emptySetQualName :: QName ()
+emptySetQualName = Qual () (ModuleName () "S") (Ident () "empty")
 
 forceHaskellQualName :: QName ()
 forceHaskellQualName = Qual () (ModuleName () "B") (Ident () "forceHaskell")
