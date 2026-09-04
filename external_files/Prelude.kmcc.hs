@@ -47,7 +47,7 @@ eqInt_Det# :: Int_Det -> Int_Det -> Bool_Det
 eqInt_Det# = liftForeign2 (==)
 
 eqInt_ND# :: Curry (LiftedFunc Int_ND (LiftedFunc Int_ND Bool_ND))
-eqInt_ND# = primitive2Bool (SBV..==) (==)
+eqInt_ND# = primitiveEq
 
 ltEqInt_Det# :: Int_Det -> Int_Det -> Bool_Det
 ltEqInt_Det# = liftForeign2 (<=)
@@ -67,7 +67,7 @@ eqFloat_Det# :: Float_Det -> Float_Det -> Bool_Det
 eqFloat_Det# = liftForeign2 (==)
 
 eqFloat_ND# :: Curry (LiftedFunc Float_ND (LiftedFunc Float_ND Bool_ND))
-eqFloat_ND# = primitive2Bool (SBV..==) (==)
+eqFloat_ND# = primitiveEq
 
 ltEqFloat_Det# :: Float_Det -> Float_Det -> Bool_Det
 ltEqFloat_Det# = liftForeign2 (<=)
@@ -87,7 +87,7 @@ eqChar_Det# :: Char_Det -> Char_Det -> Bool_Det
 eqChar_Det# = liftForeign2 (==)
 
 eqChar_ND# :: Curry (LiftedFunc Char_ND (LiftedFunc Char_ND Bool_ND))
-eqChar_ND# = primitive2Bool (SBV..==) (==)
+eqChar_ND# = primitiveEq
 
 ltEqChar_Det# :: Char_Det -> Char_Det -> Bool_Det
 ltEqChar_Det# = liftForeign2 (<=)
@@ -1135,7 +1135,7 @@ eqcolonlteq_ND# = BasicDefinitions.returnFunc (\a1 -> BasicDefinitions.returnFun
 
 eqcoloneq_ND# :: Curryable a => Curry (LiftedFunc a (LiftedFunc a Bool_ND))
 eqcoloneq_ND# = BasicDefinitions.returnFunc (\a1 -> BasicDefinitions.returnFunc
-  (BasicDefinitions.unify a1 P.>=> (BasicDefinitions.fromHaskell . fromForeign)))
+  (BasicDefinitions.unify Set.empty a1 P.>=> (BasicDefinitions.fromHaskell . fromForeign)))
 
 cond_Det# :: Bool_Det -> a -> a
 cond_Det# True_Det a = a

@@ -470,12 +470,6 @@ primitive2 sbvF hsF =
               return (Var k)
             _ -> error "internalError: primitive2: non-primitive type"))
 
-{-# SPECIALISE primitive2 :: (SBV Integer -> SBV Integer -> SBV Integer)
-                          -> (Integer -> Integer -> Integer)
-                          -> Curry (Integer :-> Integer :-> Integer) #-}
-{-# SPECIALISE primitive2 :: (SBV Char -> SBV Char -> SBV Char)
-                          -> (Char -> Char -> Char)
-                          -> Curry (Char :-> Char :-> Char) #-}
 {-# INLINABLE primitive2Bool #-}
 primitive2Bool :: forall a b c c'
             . ( HasPrimitiveInfo a, ForeignType a
@@ -508,6 +502,13 @@ primitive2Bool sbvF hsF =
                         checkConsistency
                         return (Val (from $ fromForeign False)))
               _ -> error "internalError: primitive2: non-primitive type"))
+
+{-# INLINABLE primitiveEq #-}
+primitiveEq :: forall a b b'.
+               ( Curryable a, Curryable b, ForeignType b'
+               ,  Foreign b' ~ Bool, HsEquivalent b ~ b')
+           => Curry (a :-> a :-> b)
+primitiveEq = returnFunc (\a1 -> returnFunc (unify Set.empty a1 >=> (fromHaskell . fromForeign)))
 
 allVars :: CurryVal a -> [Integer]
 allVars (Var i) = [i]
