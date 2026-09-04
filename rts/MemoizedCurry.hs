@@ -605,6 +605,7 @@ isUnconstrained i s = not (Set.member i (constrainedVars s))
 -- Such a unification succeeds with this lazy unification,
 -- but fails in the "normal" stricter unification.
 -- Here, we can ignore the forbiddenVars, since functional patterns need no occurs check.
+-- However, we still need to check for non-linearity, since that needs strict unification.
 unifyL :: forall a. (HasPrimitiveInfo a, Unifiable a)
        => Set ID -> Curry a -> Curry a -> Curry (Set ID)
 unifyL strictVars ma1 ma2 = Curry $ do
