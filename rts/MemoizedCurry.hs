@@ -54,11 +54,11 @@ import           GHC.IO                             (unsafePerformIO)
 import           Text.Read.Lex as L
 import           Text.Read                          (ReadPrec, readPrec, reset, pfail, lexP, (+++), parens)
 import           Unsafe.Coerce                      (unsafeCoerce)
+
 import           Classes                            (MonadShare(..), MonadFree(..))
 import qualified Tree
-
-import Narrowable
-import Solver
+import           Narrowable
+import           Solver
 
 -- Changes to the paper:
 -- - The performance optimization that was teasered
@@ -195,9 +195,6 @@ varToSBV i = sym $ "x" ++ (if i < 0 then "n" else "") ++ show (abs i)
 -- - parentIDs to see which branches this one originated from
 -- Additionally, we need:
 -- - the constraintStore to store constraints on primitive variables
--- - the currentLevel for set functions (see later)
--- - setComputation as a flag for set functions as well
-
 data NDState = NDState {
     idSupply        :: IORef ID,
     varHeap         :: Heap Untyped,
@@ -235,15 +232,13 @@ advanceNDState :: NDState -> NDState
 advanceNDState s =
   let i = freshIDFromState s
       ps = Set.insert (branchID s) (parentIDs s)
-  in s { branchID = i, parentIDs = ps }
+  in i `seq` s { branchID = i, parentIDs = ps }
 
 --------------------------------------------------------------------------------
 -- Before defining the actual memoizing curry monad, we define this intermediate monad,
--- which is basically the same as `StateT NDState (Tree Level (NDState, Level)) a`.
--- Meaning, we have a state monad withb the above state and a Tree that is annotated with:
--- - Level at Choices/Nodes (NOT Fingerprints), which are used for set functions
--- - Level and State at Failures, which are used for set functions as well.
--- We just use Codensity for performance.
+-- which is basically the same as `StateT NDState Tree a`.
+-- Meaning, we have a state monad with the above state and a Tree.
+-- We just use Codensity ("Search" = "Codensity Tree") for performance.
 -- Codensity with Reader is semantically equivalent to State.
 
 newtype ND a = ND {
@@ -252,7 +247,7 @@ newtype ND a = ND {
                      , MonadState NDState )
 
 instance MonadFix m => MonadFix (Codensity m) where
-    mfix f = Codensity $ \k -> mfix (lowerCodensity . f) >>= k
+  mfix f = Codensity $ \k -> mfix (lowerCodensity . f) >>= k
 
 --------------------------------------------------------------------------------
 -- Two convenience function to run an ND action to get the resulting tree.
@@ -277,11 +272,11 @@ instance MonadPlus ND where
     let i1 = freshIDFromState ndState1
         ps = Set.insert (branchID ndState1) (parentIDs ndState1)
         s1 = ndState1 { branchID = i1, parentIDs = ps }
-        i2 = noinline const (freshIDFromState ndState1) i1
+        i2 = noinline const freshIDFromState i1 ndState1
         s2 = ndState1 { branchID = i2, parentIDs = ps }
         t1 = runStateT ma1 s1
         t2 = runStateT ma2 s2
-    in Choice (runCodensity t1 sc) (runCodensity t2 sc)
+    in i1 `seq` i2 `seq` Choice (runCodensity t1 sc) (runCodensity t2 sc)
 
 --------------------------------------------------------------------------------
 -- We also need a Shareable constraint for the type of variables.
@@ -349,7 +344,7 @@ runCurryTree ma = runCurryTreeWith ma (initialNDState ())
 instantiate :: forall a. HasPrimitiveInfo a => ID -> Curry a
 instantiate i = Curry $
   case primitiveInfo @a of
-    NoPrimitive -> msum $ flip map narrow $ \x -> unCurry $ do
+    NoPrimitive -> msum' $ flip map narrow $ \x -> unCurry $ do
                       sX <- x
                       modify (addToVarHeap i (return sX))
                       return sX
@@ -357,6 +352,9 @@ instantiate i = Curry $
       s@NDState { constraintStore = cst } <- get
       put s { constraintStore = [], constrainedVars = Set.insert i (constrainedVars s) }
       narrowPrimitive cst i
+  where
+    msum' [] = mzero
+    msum' xs = msum xs
 
 --------------------------------------------------------------------------------
 -- Instantiation of primitive variables is done by querying the SMT solver for
@@ -406,10 +404,7 @@ derefWith forbiddenVars (Curry m) = do
       | otherwise -> get >>= \ndState ->
         case lookupHeap i (varHeap ndState) of
           Nothing  -> return v
-          Just res -> do
-            let s' = advanceNDState ndState
-            s' `seq` put s'
-            derefWith forbiddenVars (typed res)
+          Just res -> derefWith forbiddenVars (typed res)
     x@(Val _) -> return x
 
 {-# INLINE[1] pureCurry #-}
@@ -481,7 +476,7 @@ instance MonadFree Curry where
   free = do
     ndState <- get
     let key = freshIDFromState ndState
-    freeWith key
+    key `seq`freeWith key
 
 freeWith :: HasPrimitiveInfo a => ID -> Curry a
 freeWith = Curry . return . Var
@@ -503,7 +498,7 @@ memo (Curry m) = Curry $ do
   -- floating out of the memo entirely.
   -- That would cause each memo to use the same IORef.
   let taskMap = unsafePerformIO
-                    $ noinline const (newIORef Map.empty) ndState1
+                    $ noinline const newIORef ndState1 Map.empty
   return $ Val $ Curry $ do
     ndState2 <- get
     case lookupTaskResult taskMap (branchID ndState2) (parentIDs ndState2)  of
@@ -512,17 +507,15 @@ memo (Curry m) = Curry $ do
       Nothing -> do
         y <- m
         ndState3 <- get
-        let wasND   = branchID ndState2 /= branchID ndState3
-            insertID = if wasND
-                          then branchID ndState3
-                          else branchID ndState1
+        let wasND = branchID ndState2 /= branchID ndState3
+            insertID = if wasND then branchID ndState3 else branchID ndState1
             insertH = insertHeap insertID (y, wasND)
         unsafePerformIO (atomicModifyIORef' taskMap (\x -> (insertH x, return y)))
 
 --------------------------------------------------------------------------------
 -- We could define lookupTaskResult exactly as in the paper,
 -- but a small optimization is to get any value (we chose the maximium) from the
--- task result map after restricting the mep to all keys that are valid in the current branch.
+-- task result map after restricting the map to all keys that are valid in the current branch.
 -- There should only ever be one valid result for a branch.
 -- Thus, choosing the maximum is ok.
 -- This saves a few lookup operations for a single restrictKeys operation.
@@ -531,7 +524,7 @@ memo (Curry m) = Curry $ do
 lookupTaskResult :: IORef (Heap a) -> ID -> Set ID -> Maybe a
 lookupTaskResult ref i s = do
   -- msum $ map (`Map.lookup` trMap) $ Set.toList allIDs
-  (_k, v) <- Map.lookupMax trMap
+  (_k, v) <- Map.lookupMin trMap
   return v
   where
     allIDs = Set.insert i s
@@ -539,7 +532,6 @@ lookupTaskResult ref i s = do
 
 --------------------------------------------------------------------------------
 -- Unification proceeds as shown in the appendix of the paper.
--- Our class uses Generics so that we can easily derive instances.
 -- Since we also provide a "lazy" unification operator,
 -- we also have a function for that in the type class.
 
@@ -564,13 +556,13 @@ unify forbiddenVars ma1 ma2 = Curry $ do
       | i1 == i2 -> return True
       | Primitive <- primitiveInfo @a
         -> Curry $ do
-          let cs = toSBV (Var i1) .=== toSBV a2
-          modify (\s@NDState { .. } -> addToVarHeap i1 (Curry (return a2)) s
-                    { constraintStore = insertConstraint cs constraintStore
-                    , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
-                    })
-          _ <- checkConsistency
-          return (Val True)
+            let cs = toSBV (Var i1) .=== toSBV a2
+            modify (\s@NDState { .. } -> addToVarHeap i1 (Curry (return a2)) s
+                      { constraintStore = insertConstraint cs constraintStore
+                      , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
+                      })
+            _ <- checkConsistency
+            return (Val True)
       | otherwise -> do
         modify (addToVarHeap i1 (Curry (return a2)))
         return True
@@ -581,17 +573,15 @@ unify forbiddenVars ma1 ma2 = Curry $ do
     unifyVar :: ID -> a -> Curry Bool
     unifyVar i v = case primitiveInfo @a of
       NoPrimitive -> do
-        s <- get
-        let x = narrowConstr v
-        sX <- x
-        put (addToVarHeap i (return sX) s)
+        sX <- narrowConstr v
+        modify (addToVarHeap i (return sX))
         _ <- unifyWith (unify (Set.insert i forbiddenVars)) sX v
         return True
       Primitive   -> Curry $ do
         s <- get
         if isUnconstrained i s
           then do
-            put (addToVarHeap i (return v) s)
+            modify (addToVarHeap i (return v))
             return (Val True)
           else do
             let cs1 = toSBV (Var i) .=== toSBV (Val v)
@@ -605,7 +595,7 @@ isUnconstrained :: Integer -> NDState -> Bool
 isUnconstrained i s = not (Set.member i (constrainedVars s))
 
 (=:=) :: (HasPrimitiveInfo a, Unifiable a) => Curry (a :-> a :-> Bool)
-(=:=) = return . Func $ \a -> return . Func $ \b -> unify Set.empty a b >> return True
+(=:=) = return . Func $ \a -> return . Func $ \b -> unify Set.empty a b
 
 --------------------------------------------------------------------------------
 -- Lazy unification is used to implement functional patterns.
@@ -621,9 +611,8 @@ unifyL ma1 ma2 = Curry $ do
   s1 <- get
   case a1 of
     Var i1
-      | Primitive <- primitiveInfo @a ->  if isUnconstrained i1 s1
-        then modify (addToVarHeap i1 ma2) >> return (Val True)
-        else do
+      | Primitive <- primitiveInfo @a,
+        not (isUnconstrained i1 s1) -> do
           a2 <- deref ma2
           -- re-get the state in case the 'deref' modified it
           s2@NDState { .. } <- get
@@ -662,18 +651,6 @@ addToVarHeap i v ndState =
 
 (=:<=) :: (HasPrimitiveInfo a, Unifiable a) => Curry (a :-> a :-> Bool)
 (=:<=) = return . Func $ \a -> return . Func $ \b -> unifyL a b
-
-showShape :: Tree y -> String
-showShape (Single _) = "Single"
-showShape Fail = "Fail"
-showShape (Choice l r) = "Choice " ++ " (" ++ showShape l ++ ") (" ++ showShape r ++ ")"
-
--- Lift a tree computation to a Curry computation
-treeToCurry :: Tree a -> Curry a
-treeToCurry = Curry . ND . lift . lift . fmap Val
-
-mkList :: [Curry a] -> ListC a
-mkList = foldr (\e xs -> ConsC e (return xs)) NilC
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
