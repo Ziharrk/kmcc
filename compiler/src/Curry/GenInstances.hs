@@ -234,7 +234,8 @@ gen qname vs cs dataNotNew =
                         (Hs.Var () (UnQual () (Ident () ("_set" ++ show (i - 1)))))
                         (Hs.Var () (UnQual () (indexToName i)))
                         (Hs.Var () (UnQual () (appendName "_s" (indexToName i)))))) [1..ar])
-      | otherwise = Hs.App () (Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "lazyUnifyVar")))
+      | otherwise = Hs.App () (Hs.App () (Hs.App () (Hs.Var () (Qual () (ModuleName () "B") (Ident () "lazyUnifyVar")))
+                      (Hs.Var () (UnQual () (Ident () "_set0"))))
                       (Hs.Var () (UnQual () (indexToName 1))))
                       (Hs.Var () (UnQual () (Ident () "_i")))
     mkLazyUnifyDetImpl qname2 ar = Do () $
