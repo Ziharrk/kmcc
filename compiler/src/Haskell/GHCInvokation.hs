@@ -67,7 +67,7 @@ stackPkgArgs = concatMap (("--package":) . return)
 
 invokeGHCDefaultArgs :: [String]
 invokeGHCDefaultArgs =
-  ["--make", "-threaded",
+  ["--make", "-j", "-threaded",
    "-with-rtsopts=-T"]  -- enables CPU time measurements
 
 getGHCOptsFor :: FilePath -> Bool -> [(ModuleIdent, Source)] -> FilePath -> KMCCOpts -> [String]
