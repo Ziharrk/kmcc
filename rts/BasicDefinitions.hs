@@ -23,7 +23,7 @@ import Control.Monad (MonadPlus(..), (>=>))
 import Control.Monad.State (modify, MonadState(put, get))
 import Data.IORef (IORef, newIORef, readIORef)
 import Data.List (intercalate, sortOn)
-import Data.SBV (SBV, (.===), sNot)
+import Data.SBV (SBV, (.===), sNot, (.==), SymVal)
 import qualified Data.Set as Set
 import GHC.IO.Exception (IOException(..), IOErrorType(..))
 import System.IO (stderr, hPutStrLn)
@@ -409,6 +409,15 @@ condSeq a b = do
   a' <- a
   if a' then b else mzero
 
+{-# SPECIALISE primitive1 :: (SBV Integer -> SBV Integer)
+                          -> (Integer -> Integer)
+                          -> Curry (Integer :-> Integer) #-}
+{-# SPECIALISE primitive1 :: (SBV Char -> SBV Char)
+                          -> (Char -> Char)
+                          -> Curry (Char :-> Char) #-}
+{-# SPECIALISE primitive1 :: (SBV Double -> SBV Double)
+                          -> (Double -> Double)
+                          -> Curry (Double :-> Double) #-}
 {-# INLINABLE primitive1 #-}
 primitive1 :: forall a b
             . ( HasPrimitiveInfo a, ForeignType a
@@ -438,6 +447,9 @@ primitive1 sbvF hsF = case (# primitiveInfo @a, primitiveInfo @b #) of
 {-# SPECIALISE primitive2 :: (SBV Char -> SBV Char -> SBV Char)
                           -> (Char -> Char -> Char)
                           -> Curry (Char :-> Char :-> Char) #-}
+{-# SPECIALISE primitive2 :: (SBV Double -> SBV Double -> SBV Double)
+                          -> (Double -> Double -> Double)
+                          -> Curry (Double :-> Double :-> Double) #-}
 {-# INLINABLE primitive2 #-}
 primitive2 :: forall a b c
             . ( HasPrimitiveInfo a, ForeignType a
@@ -509,10 +521,12 @@ primitive2Bool sbvF hsF =
 
 {-# INLINABLE primitiveEq #-}
 primitiveEq :: forall a b b'.
-               ( Curryable a, Curryable b, ForeignType b'
-               ,  Foreign b' ~ Bool, HsEquivalent b ~ b')
+               ( Curryable a, Curryable b
+               , SymVal a
+               , ForeignType a, ForeignType b', Eq (Foreign a)
+               , Foreign b' ~ Bool, HsEquivalent b ~ b')
            => Curry (a :-> a :-> b)
-primitiveEq = returnFunc (\a1 -> returnFunc (\a2 -> unify Set.empty a1 a2 >> fromHaskell (fromForeign True)))
+primitiveEq = primitive2Bool (.==) (==)
 
 allVars :: CurryVal a -> [Integer]
 allVars (Var i) = [i]
