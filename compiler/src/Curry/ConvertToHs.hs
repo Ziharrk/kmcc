@@ -586,7 +586,9 @@ instance ToMonadicHs RuleInfo where
 type instance HsEquivalent (AExpr (TypeExpr, NDInfo)) = Exp ()
 instance ToHs (AExpr (TypeExpr, NDInfo)) where
   convertToHs (AVar _ idx) = return $ Hs.Var () (UnQual () (indexToName idx))
-  convertToHs (ALit _ lit) = return $ convertLit (Paren ()) (Hs.Lit ()) lit
+  convertToHs (ALit (ty, _) lit) =
+    let e' = convertLit (Paren ()) (Hs.Lit ()) lit
+    in Paren () . ExpTypeSig () e' <$> convertToHs ty
   convertToHs (AComb _ FuncCall (("Prelude", "apply"), _) [arg1, arg2]) =
     App () <$> convertToHs arg1 <*> convertToHs arg2
   convertToHs (AComb _ ct (qname, _) args) = do
@@ -671,7 +673,9 @@ convertExprToMonadicHs :: Set Int -> Set QName -> AExpr (TypeExpr, NDInfo) -> CM
 convertExprToMonadicHs vset _ (AVar _ idx) = if idx `elem` vset
   then return $ Hs.Var () (UnQual () (appendName "_nd" (indexToName idx)))
   else return $ Hs.Var () (UnQual () (indexToName idx))
-convertExprToMonadicHs _ _ (ALit _ lit) = return $ mkReturn $ convertLit (Paren ()) (Hs.Lit ()) lit
+convertExprToMonadicHs _ _ (ALit (ty, _) lit) =
+  let e' = mkReturn $ convertLit (Paren ()) (Hs.Lit ()) lit
+  in return $ Hs.Paren () $ ExpTypeSig () e' $ convertQualType ty
 convertExprToMonadicHs _ dataNames ex@(AComb (ty, Det) FuncCall _ _)
   | isFunFree dataNames ty = mkFromHaskellTyped <$> convertToHs ex <*> convertToMonadicHs ty
 convertExprToMonadicHs _ dataNames ex@(AComb (ty, Det) ConsCall  _ _)
