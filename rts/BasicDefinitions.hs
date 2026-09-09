@@ -20,8 +20,7 @@ module BasicDefinitions
 
 import Control.Exception (throw, catch, try, evaluate, Exception, SomeException (..))
 import Control.Monad (MonadPlus(..), (>=>))
-import Control.Monad.Codensity (lowerCodensity)
-import Control.Monad.State (modify, MonadState(put, get), StateT(runStateT))
+import Control.Monad.State (modify, MonadState(put, get))
 import Data.IORef (IORef, newIORef, readIORef)
 import Data.List (intercalate, sortOn)
 import Data.SBV (SBV, (.===), sNot)
@@ -39,6 +38,7 @@ import Narrowable
 import Classes
 import Any
 import Tree (Tree, dfs, bfs, fs)
+import GHC.Stack (HasCallStack)
 
 failed :: a
 failed = throw Failed
@@ -205,22 +205,26 @@ liftConvertIO2 f = return $ Func $ \x -> return $ Func $ \y -> do
   y' <- share y >>= toHaskell
   return (fmap from (f x' y'))
 
-ensureOneResult :: Curry a -> Curry a
-ensureOneResult (Curry (ND act)) = Curry $ ND $ do
+ensureOneResult :: HasCallStack => Curry a -> Curry a
+ensureOneResult ma = do
+  eith <- ensureOneResult_Either ma
+  case eith of
+    Left err -> throw err
+    Right x  -> return x
+
+ensureOneResult_Either :: Curry a -> Curry (Either IOException a)
+ensureOneResult_Either act = Curry $ ND $ do
   s <- get
-  case lowerCodensity (runStateT act s) of
-    Fail
-      -> throw (IOError Nothing OtherError "ensureOneResult" "FAILERR_ IO action failed non-deterministic" Nothing Nothing)
-    Single (x, s')
-      -> put s' >> return x
-    Choice {}
-      -> throw (IOError Nothing OtherError "ensureOneResult" "NDERR_ IO action was non-deterministic" Nothing Nothing)
+  case bfs (runCurryTreeWith act s) of
+    [] -> return (Val (Left (IOError Nothing OtherError "ensureOneResult" "FAILERR_ IO action failed non-deterministic" Nothing Nothing)))
+    [(s', x)] -> put s' >> return (Val (Right x))
+    _ -> return (Val (Left (IOError Nothing OtherError "ensureOneResult" "NDERR_ IO action was non-deterministic" Nothing Nothing)))
 
 {-# NOINLINE bindIONDImpl #-}
-bindIONDImpl :: Curry (LiftedFunc (IO a) (LiftedFunc (LiftedFunc a (IO b)) (IO b)))
+bindIONDImpl :: HasCallStack => Curry (LiftedFunc (IO a) (LiftedFunc (LiftedFunc a (IO b)) (IO b)))
 bindIONDImpl = returnFunc $ \ioND -> returnFunc $ \fND -> bindIO ioND fND
 
-bindIO :: Curry (IO a) -> Curry (LiftedFunc a (IO b)) -> Curry (IO b)
+bindIO :: HasCallStack => Curry (IO a) -> Curry (LiftedFunc a (IO b)) -> Curry (IO b)
 bindIO ioND fND = do
   io <- ensureOneResult ioND
   Func f <- ensureOneResult fND
