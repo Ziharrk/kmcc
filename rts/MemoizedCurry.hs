@@ -404,7 +404,7 @@ derefWith forbiddenVars (Curry m) = do
       | otherwise -> get >>= \ndState ->
         case lookupHeap i (varHeap ndState) of
           Nothing  -> return (v, False)
-          Just res -> derefWith forbiddenVars (typed res)
+          Just res -> modify advanceNDState >> derefWith forbiddenVars (typed res)
     x@(Val _) -> return (x, False)
 
 {-# INLINE[1] pureCurry #-}
