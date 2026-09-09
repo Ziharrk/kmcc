@@ -57,7 +57,7 @@ into your `PATH` variable, KMCC can be invoked as follows:
 
     > kmcc
     ----------------------------------------------------------
-    KMCC Interactive Environment (Version 0.7.0 of 2026-08-30)
+    KMCC Interactive Environment (Version 0.8.0 of 2026-09-10)
     ----------------------------------------------------------
     Prelude>
 
