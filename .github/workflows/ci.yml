@@ -122,3 +122,76 @@ jobs:
       - name: Summary
         run: |
           echo "KMCC build completed."
+
+  testsuite:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download workspace artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: kmcc-workspace
+          path: artifacts/workspace
+
+      - name: Download binaries artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: kmcc-binaries
+          path: artifacts/bin
+
+      - name: Restore built workspace
+        run: |
+          archive=$(find artifacts/workspace -name '*.tar.gz' -print -quit)
+          test -n "$archive"
+          tar -xzf "$archive"
+          cp artifacts/bin/* kmcc/bin/
+
+      - name: Setup Prolog (SWI-Prolog) and rlwrap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y swi-prolog rlwrap
+
+      - name: Download PAKCS
+        run: |
+          wget https://www.curry-lang.org/pakcs/download/pakcs-3.9.0-amd64-Linux.tar.gz
+          tar xzf pakcs-3.9.0-amd64-Linux.tar.gz
+
+      - name: Cache PAKCS
+        uses: actions/cache@v6
+        with:
+          path: pakcs-3.9.0
+          key: ${{ runner.os }}-pakcs
+
+      - name: Build PAKCS
+        run: |
+          cd pakcs-3.9.0
+          make CI_BUILD=yes
+
+      - name: Cache CurryCheck
+        uses: actions/cache@v6
+        with:
+          path: ~/.cpm
+          key: ${{ runner.os }}-currycheck-4.0.0
+
+      - name: Install CurryCheck via CPM
+        run: |
+          export PATH="$GITHUB_WORKSPACE/pakcs-3.9.0/bin:$HOME/.cpm/bin:$PATH"
+          cypm update
+          cypm install currycheck
+          test -x "$HOME/.cpm/bin/curry-check"
+          echo "$HOME/.cpm/bin" >> "$GITHUB_PATH"
+
+      - name: Run testsuite
+        working-directory: kmcc/testsuite
+        run: |
+          export PATH="$GITHUB_WORKSPACE/pakcs-3.9.0/bin:$GITHUB_WORKSPACE/kmcc/bin:$PATH"
+          command -v curry-check
+          ./test.sh
+
+      - name: Run legacy regression tests
+        working-directory: kmcc/testing
+        run: |
+          export PATH="$GITHUB_WORKSPACE/kmcc/bin:$PATH"
+          command -v kmcc
+          ./test.sh
