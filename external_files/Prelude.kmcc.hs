@@ -3,6 +3,7 @@
 {-# LANGUAGE KindSignatures         #-}
 {-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE MagicHash              #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
 {-# LANGUAGE TupleSections          #-}
 {-# LANGUAGE TypeFamilyDependencies #-}
 {-# LANGUAGE UndecidableInstances   #-}
@@ -12,10 +13,12 @@ import qualified Control.Monad as P
 import qualified Control.Monad.State as P
 import qualified Control.Exception as P
 import qualified Data.List as P
+import qualified Data.Maybe as P
 import qualified GHC.IO.Exception as P
 import qualified GHC.Magic as P
 import qualified GHC.Read as P
 import qualified System.IO.Unsafe as P
+import qualified Data.Set as Set
 import qualified Data.SBV as SBV
 import Control.DeepSeq (NFData)
 import BasicDefinitions
@@ -1135,6 +1138,20 @@ eqcolonlteq_ND# = B.returnFunc (\a1 -> B.returnFunc (\a2 -> B.unifyL Set.empty a
 eqcoloneq_ND# :: Curryable a => Curry (LiftedFunc a (LiftedFunc a Bool_ND))
 eqcoloneq_ND# = B.returnFunc (\a1 -> B.returnFunc (\a2 -> B.unify Set.empty a1 a2 M.>> B.fromHaskell (B.fromForeign P.True)))
 
+eqcolonlteq_Det# :: forall a a'. (Curryable a', HsEquivalent a' ~ a) => a -> a -> Bool_Det
+eqcolonlteq_Det# a1 a2 =
+  case evalCurry (eqcolonlteq_ND# P.>>= \(Func f) -> f (fromHaskell a1)
+                                  P.>>= \(Func f') -> f' (fromHaskell a2)) of
+    Single _ -> True_Det
+    _        -> failed_Det#
+
+eqcoloneq_Det# :: forall a a'. (Curryable a', HsEquivalent a' ~ a) => a -> a -> Bool_Det
+eqcoloneq_Det# a1 a2 =
+  case evalCurry (eqcoloneq_ND# P.>>= \(Func f) -> f (fromHaskell a1)
+                                P.>>= \(Func f') -> f' (fromHaskell a2)) of
+      Single _ -> True_Det
+      _        -> failed_Det#
+
 cond_Det# :: Bool_Det -> a -> a
 cond_Det# True_Det a = a
 cond_Det# _        _ = failed_Det#
@@ -1464,6 +1481,10 @@ primuscoreappendFile_Det# = liftForeign2 P.appendFile
 primuscoreappendFile_ND# :: Curry (LiftedFunc (CList_ND Char_ND) (LiftedFunc (CList_ND Char_ND) (IO_ND CUnit_ND)))
 primuscoreappendFile_ND# = liftConvertIO2 primuscoreappendFile_Det#
 
+-- -----------------------------------------------------------------------------
+-- Primitive operations: Exception handling
+-- -----------------------------------------------------------------------------
+
 instance ForeignType IOError_Det where
   type Foreign IOError_Det = P.IOException
   fromForeign (P.IOError _ P.UserError _ s _ _) = UserError_Det (fromForeign s)
@@ -1487,23 +1508,28 @@ primuscoreioError_ND# = P.return (Func (\err -> do
   P.return (P.throw (toForeign e :: P.IOException))))
 
 catch_Det# :: IO_Det a -> (IOError_Det -> IO_Det a) -> IO_Det a
-catch_Det# io cont = P.catch io (cont . fromForeign)
+catch_Det# io cont = P.catches io
+  [P.Handler (cont . fromForeign), P.Handler (cont . fromForeign . fromSomeException)]
+
+fromSomeException :: P.SomeException -> P.IOError
+fromSomeException e = P.IOError P.Nothing P.OtherError "" ("IOERR_ " P.++ P.show e) P.Nothing P.Nothing
 
 catch_ND# :: Curry (LiftedFunc (IO_Det a) (LiftedFunc (LiftedFunc IOError_ND (IO_Det a)) (IO_Det a)))
 catch_ND# = P.return (Func (\ioND -> P.return (Func (\contND -> do
-  io <- BasicDefinitions.ensureOneResult ioND
-  Func cont <- BasicDefinitions.ensureOneResult contND
-  let res = P.unsafePerformIO (P.unsafeInterleaveIO (P.try io))
-  case res of
-    P.Left e -> cont (fromHaskell (fromForeign e))
-    P.Right x -> P.return (P.return x)))))
-
--- -----------------------------------------------------------------------------
--- Primitive operations: Exception handling
--- -----------------------------------------------------------------------------
+  eith_io <- BasicDefinitions.ensureOneResult_Either ioND
+  case eith_io of
+    P.Left err -> catchErr contND (P.SomeException err)
+    P.Right io -> do
+      case P.unsafePerformIO (P.unsafeInterleaveIO (P.try io)) of
+        P.Right x -> P.return (P.return x)
+        P.Left e  -> catchErr contND e))))
+  where
+    catchErr contND err = do
+      Func cont <-BasicDefinitions.ensureOneResult contND
+      cont (fromHaskell (fromForeign (P.fromMaybe (fromSomeException err) (P.fromException err))))
 
 primuscoreerror_Det# :: CList_Det Char_Det -> a
-primuscoreerror_Det# xs = P.error (toForeign xs)
+primuscoreerror_Det# xs = P.throw (toForeign (UserError_Det xs))
 
 primuscoreerror_ND# :: Curry (LiftedFunc (CList_ND Char_ND) a)
 primuscoreerror_ND# = P.return $ Func $ toHaskell M.>=> \xs' -> primuscoreerror_Det# xs'
