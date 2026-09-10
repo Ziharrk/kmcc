@@ -149,6 +149,17 @@ jobs:
           chmod +x kmcc/bin/kmcc kmcc/bin/kmcc_c kmcc/bin/kmcc-frontend kmcc/bin/kmcc_repl
           test -x kmcc/bin/kmcc_c
 
+      - name: Inspect restored workspace layout
+        run: |
+          pwd
+          echo '--- artifact staging ---'
+          find artifacts -maxdepth 4 -printf '%M %p\n' | sort
+          echo '--- restored workspace ---'
+          find kmcc -maxdepth 3 -printf '%M %p\n' | sort
+          echo '--- resolved compiler paths ---'
+          readlink -f kmcc/bin/kmcc
+          readlink -f kmcc/bin/kmcc_c
+
       - name: Setup Prolog (SWI-Prolog) and rlwrap
         run: |
           sudo apt-get update
@@ -184,13 +195,6 @@ jobs:
           test -x "$HOME/.cpm/bin/curry-check"
           echo "$HOME/.cpm/bin" >> "$GITHUB_PATH"
 
-      - name: Run testsuite
-        working-directory: kmcc/testsuite
-        run: |
-          export PATH="$GITHUB_WORKSPACE/pakcs-3.9.0/bin:$GITHUB_WORKSPACE/kmcc/bin:$PATH"
-          command -v curry-check
-          ./test.sh
-
       - name: Run legacy regression tests
         working-directory: kmcc/testing
         run: |
@@ -198,4 +202,14 @@ jobs:
           export PATH="$CURRYHOME/bin:$PATH"
           command -v kmcc
           test -x "$CURRYHOME/bin/kmcc_c"
+          file "$CURRYHOME/bin/kmcc_c"
+          ldd "$CURRYHOME/bin/kmcc_c"
+          "$CURRYHOME/bin/kmcc_c" --version
+          ./test.sh
+
+      - name: Run testsuite
+        working-directory: kmcc/testsuite
+        run: |
+          export PATH="$GITHUB_WORKSPACE/pakcs-3.9.0/bin:$GITHUB_WORKSPACE/kmcc/bin:$PATH"
+          command -v curry-check
           ./test.sh
