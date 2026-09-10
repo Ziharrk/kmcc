@@ -7,6 +7,13 @@ CURRYBIN=$CURRYHOME/bin
 PATH=$CURRYBIN:$PATH
 export PATH
 
+echo "testing directory: $(pwd)"
+echo "test script: $(realpath "$0")"
+echo "CURRYHOME: $CURRYHOME"
+echo "CURRYBIN: $CURRYBIN"
+command -v kmcc
+ls -l "$CURRYBIN/kmcc" "$CURRYBIN/kmcc_c" "$CURRYBIN/kmcc-frontend" "$CURRYBIN/kmcc_repl"
+
 # Clean old stuff:
 clean() {
   /bin/rm -rf .curry
@@ -28,7 +35,7 @@ testall() {
   echo "TESTING ALL PROGRAMS WITH OPTIONS: $KMCCOPTS"
   LOGFILE=XXX$$
   clean
-  run | tee $LOGFILE
+  run 2>&1 | tee $LOGFILE
   clean
 
   # Check differences:
