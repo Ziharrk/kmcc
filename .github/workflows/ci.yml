@@ -146,6 +146,8 @@ jobs:
           test -n "$archive"
           tar -xzf "$archive"
           cp artifacts/bin/* kmcc/bin/
+          chmod +x kmcc/bin/kmcc kmcc/bin/kmcc_c kmcc/bin/kmcc-frontend kmcc/bin/kmcc_repl
+          test -x kmcc/bin/kmcc_c
 
       - name: Setup Prolog (SWI-Prolog) and rlwrap
         run: |
@@ -195,4 +197,5 @@ jobs:
           export CURRYHOME="$GITHUB_WORKSPACE/kmcc"
           export PATH="$CURRYHOME/bin:$PATH"
           command -v kmcc
+          test -x "$CURRYHOME/bin/kmcc_c"
           ./test.sh
