@@ -144,10 +144,10 @@ jobs:
         run: |
           archive=$(find artifacts/workspace -name '*.tar.gz' -print -quit)
           test -n "$archive"
-          tar -xzf "$archive"
-          cp artifacts/bin/* kmcc/bin/
-          chmod +x kmcc/bin/kmcc kmcc/bin/kmcc_c kmcc/bin/kmcc-frontend kmcc/bin/kmcc_repl
-          test -x kmcc/bin/kmcc_c
+          tar -xzf "$archive" -C ..
+          cp artifacts/bin/* bin/
+          chmod +x bin/kmcc bin/kmcc_c bin/kmcc-frontend bin/kmcc_repl
+          test -x bin/kmcc_c
 
       - name: Inspect restored workspace layout
         run: |
@@ -155,10 +155,10 @@ jobs:
           echo '--- artifact staging ---'
           find artifacts -maxdepth 4 -printf '%M %p\n' | sort
           echo '--- restored workspace ---'
-          find kmcc -maxdepth 3 -printf '%M %p\n' | sort
+          find . -maxdepth 3 -printf '%M %p\n' | sort
           echo '--- resolved compiler paths ---'
-          readlink -f kmcc/bin/kmcc
-          readlink -f kmcc/bin/kmcc_c
+          readlink -f bin/kmcc
+          readlink -f bin/kmcc_c
 
       - name: Setup Prolog (SWI-Prolog) and rlwrap
         run: |
@@ -196,7 +196,7 @@ jobs:
           echo "$HOME/.cpm/bin" >> "$GITHUB_PATH"
 
       - name: Run legacy regression tests
-        working-directory: kmcc/testing
+        working-directory: testing
         run: |
           export CURRYHOME="$GITHUB_WORKSPACE/kmcc"
           export PATH="$CURRYHOME/bin:$PATH"
@@ -204,11 +204,11 @@ jobs:
           test -x "$CURRYHOME/bin/kmcc_c"
           file "$CURRYHOME/bin/kmcc_c"
           ldd "$CURRYHOME/bin/kmcc_c"
-          "$CURRYHOME/bin/kmcc_c" --version
+          "$CURRYHOME/bin/kmcc_c" --numeric-version
           ./test.sh
 
       - name: Run testsuite
-        working-directory: kmcc/testsuite
+        working-directory: testsuite
         run: |
           export PATH="$GITHUB_WORKSPACE/pakcs-3.9.0/bin:$GITHUB_WORKSPACE/kmcc/bin:$PATH"
           command -v curry-check
