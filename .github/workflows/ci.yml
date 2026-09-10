@@ -186,7 +186,7 @@ jobs:
           echo "workspace: $GITHUB_WORKSPACE"
           find "$GITHUB_WORKSPACE" -maxdepth 2 -type d -print | sort
           cd "$GITHUB_WORKSPACE/testing"
-          export CURRYHOME="$GITHUB_WORKSPACE/kmcc"
+          export CURRYHOME="$GITHUB_WORKSPACE"
           export PATH="$CURRYHOME/bin:$PATH"
           command -v kmcc
           test -x "$CURRYHOME/bin/kmcc_c"
@@ -212,6 +212,6 @@ jobs:
       - name: Run testsuite
         working-directory: testsuite
         run: |
-          export PATH="$GITHUB_WORKSPACE/pakcs-3.9.0/bin:$GITHUB_WORKSPACE/kmcc/bin:$PATH"
+          export PATH="$GITHUB_WORKSPACE/pakcs-3.9.0/bin:$GITHUB_WORKSPACE/bin:$PATH"
           command -v curry-check
           ./test.sh
