@@ -192,6 +192,7 @@ jobs:
       - name: Run legacy regression tests
         working-directory: kmcc/testing
         run: |
-          export PATH="$GITHUB_WORKSPACE/kmcc/bin:$PATH"
+          export CURRYHOME="$GITHUB_WORKSPACE/kmcc"
+          export PATH="$CURRYHOME/bin:$PATH"
           command -v kmcc
           ./test.sh
