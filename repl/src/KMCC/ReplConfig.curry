@@ -76,11 +76,31 @@ quote :: String -> String
 quote s = "\"" ++ s ++ "\""
 
 kmccBanner :: String
-kmccBanner = unlines [bannerLine, bannerText, bannerLine]
+kmccBanner = unlines
+  [ logoLine 0
+  , logoLine 1 ++ compilerLine
+  , logoLine 2
+  , logoLine 3
+  , logoLine 4
+  , logoLine 5 ++ versionLine
+  ]
  where
-  bannerText = "KMCC Interactive Environment (Version " ++
-               I.compilerVersion ++ " of " ++ I.compilerDate ++ ")"
-  bannerLine = take (length bannerText) (repeat '-')
+  esc = "\27["
+  blue  = esc ++ "38;5;33m"
+  red   = esc ++ "38;5;124m"
+  white = esc ++ "38;5;255m"
+  reset = esc ++ "0m"
+  compilerLine = white ++ "KMCC - the Kiel Monadic Curry Compiler" ++ reset
+  versionLine = white ++ "Version " ++ I.compilerVersion ++ " of " ++ I.compilerDate ++ reset
+  logoLine n = logo n ++ reset ++ take 8 (repeat ' ')
+  logo n = case n of
+    0 -> blue ++ " __"        ++ red ++ "    _      "
+    1 -> blue ++ "|_ \\"      ++ red ++  "  | |     "
+    2 -> blue ++ "  \\ \\"    ++ red ++   " | |____ "
+    3 -> blue ++ "  /  \\"    ++ red ++    "|  ____|"
+    4 -> blue ++ " / /\\ \\"  ++ red ++     " |     "
+    5 -> blue ++ "/_/  \\_\\" ++ red ++      "|     "
+    _ -> ""
 
 forceOpt :: CCOption
 forceOpt = CCOption

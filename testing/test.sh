@@ -30,6 +30,14 @@ run() {
   done
 }
 
+warmup() {
+  WARMUP_LOG=.kmcc-warmup-$$
+  echo "Warming up compiler: Fac"
+  kmcc -n -q :set dfs :load Fac :eval main :q >"$WARMUP_LOG" 2>&1
+  cat "$WARMUP_LOG"
+  /bin/rm -f "$WARMUP_LOG"
+}
+
 testall() {
   TESTRESULT=$1
   echo "TESTING ALL PROGRAMS WITH OPTIONS: $KMCCOPTS"
@@ -55,6 +63,8 @@ testall() {
     exit 1
   fi
 }
+
+warmup
 
 # Tests where strategy is not relevant:
 PROGRAMS="Fac FreeBool Higher Last InfList PermSort PermSortInt Rev Xor Zip"
