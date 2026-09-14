@@ -67,7 +67,7 @@ testall() {
 warmup
 
 # Tests where strategy is not relevant:
-PROGRAMS="Fac FreeBool Higher Last InfList PermSort PermSortInt Rev Xor Zip"
+PROGRAMS="Fac FreeBool Higher Last InfList PermSort PermSortInt RederefPrim Rev Xor Zip"
 KMCCOPTS=":set dfs"
 testall TESTANYSTRAT.txt
 KMCCOPTS=":set bfs"
