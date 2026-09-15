@@ -461,7 +461,11 @@ primitive2 :: forall a b c
 primitive2 sbvF hsF =
   return . Func $ share >=> \ca -> Curry (
   return . Val . Func $ share >=> \cb -> Curry (
-    deref ca >>= \a -> deref cb >>= \b ->
+    deref ca >>= \aOld -> deref cb >>= \b ->
+    -- Evaluating the second argument might have bound the variable that the
+    -- first one dereferenced to, so we dereference the first argument again.
+    -- See "primitive2Bool" and "unify" for the same pattern.
+    deref (Curry (return aOld)) >>= \a ->
     case (# a, b #) of
       (# Val x, Val y #) -> return $ Val $ fromForeign $ hsF (toForeign x) (toForeign y)
       _ -> case (# primitiveInfo @a, primitiveInfo @b, primitiveInfo @c #) of
@@ -497,8 +501,12 @@ primitive2Bool :: forall a b c c'
            -> (Foreign a -> Foreign b -> Bool)
            -> Curry (a :-> b :-> c')
 primitive2Bool sbvF hsF =
-  return . Func $ share >=> \ca -> Curry (deref ca >>= \a ->
+  return . Func $ share >=> \ca -> Curry (deref ca >>= \aOld ->
   return . Val . Func $ share >=> \cb -> Curry (deref cb >>= \b ->
+    -- Evaluating the second argument might have bound the variable that the
+    -- first one dereferenced to, so we dereference the first argument again.
+    -- See "primitive2" and "unify" for the same pattern.
+    deref (Curry (return aOld)) >>= \a ->
     case (# a, b #) of
       (# Val x, Val y #) -> return $ Val $ from $ fromForeign $ hsF (toForeign x) (toForeign y)
       _ ->  case (# primitiveInfo @a, primitiveInfo @b #) of
@@ -517,7 +525,7 @@ primitive2Bool sbvF hsF =
                         put (s' { constraintStore = cst2, constrainedVars = csv' })
                         checkConsistency
                         return (Val (from $ fromForeign False)))
-              _ -> error "internalError: primitive2: non-primitive type"))
+              _ -> error "internalError: primitive2Bool: non-primitive type"))
 
 {-# INLINABLE primitiveEq #-}
 primitiveEq :: forall a b b'.
