@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveFoldable             #-}
 {-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -41,6 +43,7 @@ import           Data.SBV.Control                   ( checkSatAssuming,
                                                       CheckSatResult(..),
                                                       Query )
 import           Control.Applicative                (Alternative(..))
+import qualified Control.Concurrent.RLock as RLock  (new, with)
 import           Control.Monad                      (MonadPlus(..), ap, unless, msum, guard)
 import           Control.Monad.Fix                  (MonadFix(..), fix)
 import           Control.Monad.Codensity            (Codensity(..), lowerCodensity)
@@ -78,7 +81,7 @@ newtype (:->) a b = Func (Curry a -> Curry b)
 data Tree l = Single l
             | Fail
             | Choice (Tree l) (Tree l)
-  deriving (Functor, Show)
+  deriving (Show, Functor, Foldable, Traversable)
 
 instance Applicative Tree where
   pure = Single
@@ -499,18 +502,23 @@ memo (Curry m) = Curry $ do
   -- That would cause each memo to use the same IORef.
   let taskMap = unsafePerformIO
                     $ noinline const newIORef ndState1 Map.empty
+  let taskLock = unsafePerformIO
+                    $ noinline const RLock.new ndState1
   return $ Val $ Curry $ do
     ndState2 <- get
-    case lookupTaskResult taskMap (branchID ndState2) (parentIDs ndState2)  of
-      Just (y, False) -> return y
-      Just (y, True)  -> put (advanceNDState ndState2) >> return y
-      Nothing -> do
-        y <- m
-        ndState3 <- get
-        let wasND = branchID ndState2 /= branchID ndState3
-            insertID = if wasND then branchID ndState3 else branchID ndState1
-            insertH = insertHeap insertID (y, wasND)
-        unsafePerformIO (atomicModifyIORef' taskMap (\x -> (insertH x, return y)))
+    unsafePerformIO $ RLock.with taskLock $
+      case lookupTaskResult taskMap (branchID ndState2) (parentIDs ndState2) of
+        Just (y, False) -> return (return y)
+        Just (y, True)  -> return (put (advanceNDState ndState2) >> return y)
+        Nothing -> do
+          let yStateRes = runCodensity (runStateT (unND m) ndState2) return
+          let modifyOne (y, ndState3) = atomicModifyIORef' taskMap (\x -> (insertH x, ()))
+                where
+                  wasND = branchID ndState2 /= branchID ndState3
+                  insertID = if wasND then branchID ndState3 else branchID ndState1
+                  insertH = insertHeap insertID (y, wasND)
+          mapM_ modifyOne yStateRes
+          return (ND (StateT (\_ -> Codensity (\f -> yStateRes >>= f))))
 
 --------------------------------------------------------------------------------
 -- We could define lookupTaskResult exactly as in the paper,
@@ -524,7 +532,7 @@ memo (Curry m) = Curry $ do
 lookupTaskResult :: IORef (Heap a) -> ID -> Set ID -> Maybe a
 lookupTaskResult ref i s = do
   -- msum $ map (`Map.lookup` trMap) $ Set.toList allIDs
-  (_k, v) <- Map.lookupMin trMap
+  (_k, v) <- Map.lookupMax trMap
   return v
   where
     allIDs = Set.insert i s

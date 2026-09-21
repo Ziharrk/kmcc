@@ -25,6 +25,7 @@ common deps
     kan-extensions   ^>= 5.2,
     sbv              ^>= 10.6,
     adjunctions      ^>= 4.4,
+    concurrent-extra ^>= 0.7,
     deepseq
   ghc-options:      -Wall
   default-language: GHC2021
