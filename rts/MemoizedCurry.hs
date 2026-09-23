@@ -558,12 +558,14 @@ unify :: forall a. (HasPrimitiveInfo a, Unifiable a)
       => Set ID -> Curry a -> Curry a -> Curry (Set ID)
 unify forbiddenVars ma1 ma2 = Curry $ do
   (a1_pre, bool1) <- derefWith forbiddenVars ma1
+  guard (not bool1) -- occurs check
   (a2, bool2) <- derefWith forbiddenVars ma2
+  guard (not bool2) -- occurs check again
   -- Dereferencing ma2 might introduce new bindings that influence the dereferencing of ma1,
   -- so we dereference ma1 again.
   -- A chain is not possible, since ma2 cannot add lazy bindings.
   (a1, bool3) <- derefWith forbiddenVars (Curry (return a1_pre))
-  guard (not (bool1 || bool2 || bool3))  -- occurs check
+  guard (not bool3)  -- occurs check one last time
   unCurry $ case (a1, a2) of
     (Var i1, Var i2)
       | i1 == i2 -> return forbiddenVars
