@@ -284,17 +284,18 @@ exitFailed = hPutStrLn stderr "**No value found" >> exitFailure
 
 exprWrapperNDet :: forall a. ShowFree a
                 => (Tree.Tree String -> [String])
-                -> Bool -> [(String, Integer)] -> Bool
+                -> Bool -> Bool -> [(String, Integer)] -> Bool
                 -> Curry (CurryVal a, [VarInfo]) -> IO ()
-exprWrapperNDet search optInt fvs b ca = do
+exprWrapperNDet search optInt optFirst fvs b ca = do
   _ <- offsetTime
-  printRes (search $ evalCurryTree extract) optInt
+  printRes (search $ evalCurryTree extract)
   where
     sortedFvs = map fst $ sortOn snd fvs
 
-    printRes [] _     = exitFailed
-    printRes xs False = mapM_ putStrLn xs
-    printRes xs True  = printInteractive xs
+    printRes []    = exitFailed
+    printRes xs | optFirst  = mapM_ putStrLn (take 1 xs)
+                | optInt    = printInteractive xs
+                | otherwise = mapM_ putStrLn xs
 
     printInteractive [] = putStrLn "No more values"
     printInteractive (x:xs) = do

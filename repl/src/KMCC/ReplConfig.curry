@@ -60,7 +60,7 @@ kmcc = CCDescription
   cleanCmd                       -- command to clean module
   (CommandLineFreeMode (\vs -> unwords $ map (\(v,i) -> "-V" ++ v ++ "=" ++ show i) vs))
   [ stratOpt, profilingOpt, intOpt, forceOpt, compOpt
-  , ghcOpt, rtsOpt -- [firstOpt, resultsOpt, errDepthtOpt]
+  , ghcOpt, rtsOpt, firstOpt -- [, resultsOpt, errDepthtOpt]
   ]
  where
   cleanCmd m = unwords

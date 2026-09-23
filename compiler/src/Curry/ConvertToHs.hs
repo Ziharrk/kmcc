@@ -319,7 +319,8 @@ patchMainPost ty opts (ModuleHead _ nm w (Just (ExportSpecList _ es))) ds = do
           let bindingOpt = Hs.Var () $ if optShowBindings opts then trueQualName else falseQualName
           let searchOpt = Hs.Var () (searchStratQualName (optSearchStrategy opts))
           let intOpt = Hs.Var () $ if optInteractive opts then trueQualName else falseQualName
-          return (App () (App () (App () ( App () ( App () (Hs.Var () exprWrapperNDetQualName) searchOpt ) intOpt ) varInfos) bindingOpt) mainE, mainNDDecl:mainNDHashDecl:mainNDHashType:rest)
+          let firstOpt = Hs.Var () $ if optFirst opts then trueQualName else falseQualName
+          return (applyList (Hs.Var () exprWrapperNDetQualName) [searchOpt, intOpt, firstOpt, varInfos, bindingOpt, mainE], mainNDDecl:mainNDHashDecl:mainNDHashType:rest)
 
   let mainDecl = PatBind () (PVar () (Ident () "main##")) (UnGuardedRhs () mainExpr) Nothing
   return (ModuleHead () nm w (Just (ExportSpecList () (mainExport:es))), mainDecl:ds')

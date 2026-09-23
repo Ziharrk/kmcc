@@ -27,6 +27,9 @@ mkApplicativeChain e [] = mkReturn e
 mkApplicativeChain e xs = InfixApp () e (QVarOp () dollarApplicativeQualName)
   (foldl1 (flip (InfixApp ()) (QVarOp () starApplicativeQualName)) xs)
 
+applyList :: Exp () -> [Exp ()] -> Exp ()
+applyList = foldl (App ())
+
 mkFromHaskell :: Exp () -> Exp ()
 mkFromHaskell = App () (Var () fromHaskellQualName)
 

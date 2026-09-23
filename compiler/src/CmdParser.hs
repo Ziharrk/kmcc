@@ -44,6 +44,7 @@ optParser = adjustDefaultOpts
       <|> flag' FS (long "fs" <> help "Set search mode to fair-search"))
   <*> switch (long "profiling" <> short 'P' <> help "Enable profiling of generated code")
   <*> switch (long "interactive" <> help "Interactive result printing")
+  <*> switch (long "first" <> help "Stop after first solution")
 
 
   <*> (Left <$> many (
@@ -107,9 +108,10 @@ adjustDefaultOpts :: Bool -> Bool -> Bool
                   -> Maybe SearchStrat
                   -> Bool
                   -> Bool
+                  -> Bool
                   -> Either [InfoCommand] FilePath
                   -> KMCCOpts
-adjustDefaultOpts f c q v t is o p x ghc rts dOpt opt vars b strat pr int torv = defaultOpts
+adjustDefaultOpts f c q v t is o p x ghc rts dOpt opt vars b strat pr int fir torv = defaultOpts
   { optTarget = fromRight "" torv
   , optCompilerVerbosity = verbosity
   , optShowTimings = t
@@ -122,6 +124,7 @@ adjustDefaultOpts f c q v t is o p x ghc rts dOpt opt vars b strat pr int torv =
   , optSearchStrategy = fromMaybe (optSearchStrategy defaultOpts) strat
   , optProfiling = pr
   , optInteractive = int
+  , optFirst = fir
   , frontendOpts = adjustFrontendOpts
   , ghcOpts = fromMaybe [] ghc ++ maybe [] (\ros -> ["-with-rtsopts=" ++ unwords ros]) rts
   }

@@ -28,6 +28,7 @@ data KMCCOpts = KMCCOpts {
     optSearchStrategy :: SearchStrat,
     optProfiling :: Bool,
     optInteractive :: Bool,
+    optFirst :: Bool,
     frontendOpts :: Options,
     ghcOpts :: [String]
   }
@@ -57,7 +58,8 @@ defaultOpts = KMCCOpts
   , optOptimizationDeterminism = True
   , optSearchStrategy = BFS
   , optProfiling = False
-  , optInteractive = False
+  , optInteractive = True
+  , optFirst = False
   , frontendOpts = defaultFrontendOpts
   , ghcOpts = []
   }
