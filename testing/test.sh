@@ -97,9 +97,6 @@ KMCCOPTS=":set dfs"
 testall TESTFUNPATS.txt
 KMCCOPTS=":set bfs"
 testall TESTFUNPATS.txt
-# (fair search is currently bugged for FunPats, so we omit the following tests for the moment)
-# # The last two example programs do not terminate so that we omit them for the
-# # moment:
-# PROGRAMS="Dutch FunPatsLast FunPatsPali FunPatsExpSimp FunPatsExpVar"
-# KMCCOPTS=":set fs"
-# testall TESTFUNPATSWOBUGGY.txt
+PROGRAMS="Dutch FunPatsLast FunPatsPali FunPatsExpSimp FunPatsExpVar"
+KMCCOPTS=":set fs"
+testall TESTFUNPATS.txt
