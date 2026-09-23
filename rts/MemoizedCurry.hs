@@ -566,7 +566,7 @@ unify forbiddenVars ma1 ma2 = Curry $ do
   guard (not (bool1 || bool2 || bool3))  -- occurs check
   unCurry $ case (a1, a2) of
     (Var i1, Var i2)
-      | i1 == i2 -> return Set.empty
+      | i1 == i2 -> return forbiddenVars
       | Primitive <- primitiveInfo @a
         -> Curry $ do
             let cs = toSBV (Var i1) .=== toSBV a2
@@ -575,10 +575,10 @@ unify forbiddenVars ma1 ma2 = Curry $ do
                       , constrainedVars = Set.insert i1 (Set.insert i2 constrainedVars)
                       })
             _ <- checkConsistency
-            return (Val Set.empty)
+            return (Val forbiddenVars)
       | otherwise -> do
         modify (addToVarHeap i1 (Curry (return a2)))
-        return Set.empty
+        return forbiddenVars
     (Val x, Val y)  -> unifyWith unify forbiddenVars x y
     (Var i1, Val y) -> unifyVar i1 y
     (Val x, Var i2) -> unifyVar i2 x
@@ -589,20 +589,20 @@ unify forbiddenVars ma1 ma2 = Curry $ do
         sX <- narrowConstr v
         modify (addToVarHeap i (return sX))
         _ <- unifyWith unify (Set.insert i forbiddenVars) sX v
-        return Set.empty
+        return forbiddenVars
       Primitive   -> Curry $ do
         s <- get
         if isUnconstrained i s
           then do
             modify (addToVarHeap i (return v))
-            return (Val Set.empty)
+            return (Val forbiddenVars)
           else do
             let cs1 = toSBV (Var i) .=== toSBV (Val v)
                 s1 = addToVarHeap i (return v) s
                           { constraintStore = insertConstraint cs1 (constraintStore s)
                           , constrainedVars = Set.insert i (constrainedVars s)
                           }
-            put s1 >> checkConsistency >> return (Val Set.empty)
+            put s1 >> checkConsistency >> return (Val forbiddenVars)
 
 isUnconstrained :: Integer -> NDState -> Bool
 isUnconstrained i s = not (Set.member i (constrainedVars s))
