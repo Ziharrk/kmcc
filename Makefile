@@ -54,7 +54,7 @@ export INSTALLDATE := $(shell date)
 
 ##############################################################################
 .PHONY: all
-all: bin/kmcc_c frontend generate_distribution repl prebuild_prelude
+all: update_stack bin/kmcc_c frontend generate_distribution repl prebuild_prelude
 	# pre-compile all libraries to produce up-to-date intermediate files:
 	$(MAKE) compile-all-libs
 	$(MAKE) tools
@@ -126,6 +126,10 @@ clean:
 prebuild_prelude: bin/kmcc_c
 	$(info "Pre-Compiling Prelude")
 	bin/kmcc_c libs/src/Prelude.curry
+
+.PHONY: update_stack
+update_stack:
+	$(STACK) update
 
 .PHONY: generate_distribution
 generate_distribution:
