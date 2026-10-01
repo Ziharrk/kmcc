@@ -80,16 +80,15 @@ PROGRAMS="CaseLiteral Colormap ColormapFree Data Half NonDet Perm PullTabOwnerTa
 KMCCOPTS=":set dfs"
 testall TESTDFS.txt
 
-# (first is currently unsupported, so we omit the following tests for the moment)
-# # Tests where BFS strategy is relevant:
-# PROGRAMS="NDNums Strategy"
-# KMCCOPTS=":set bfs :set +first"
-# testall TESTBFS.txt
+# Tests where BFS strategy is relevant:
+PROGRAMS="Strategy"
+KMCCOPTS=":set bfs :set +first"
+testall TESTBFS.txt
 
-# # Tests where fair strategy is relevant:
-# PROGRAMS="FairSearch"
-# KMCCOPTS=":set fs :set +first"
-# testall TESTFS.txt
+# Tests where fair strategy is relevant:
+PROGRAMS="FairSearch"
+KMCCOPTS=":set fs :set +first"
+testall TESTFS.txt
 
 # Tests with functional patterns:
 PROGRAMS="Dutch FunPatsLast FunPatsPali FunPatsExpSimp FunPatsExpVar"
