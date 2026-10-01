@@ -6,7 +6,7 @@ import qualified Data.Set as Set
 import Data.List ( isPrefixOf )
 
 import Curry.FlatCurry (TypeExpr(..), VarIndex, QName)
-import Curry.FlatCurry.Typed.Type (TExpr (..), TBranchExpr (..), TProg (..), TFuncDecl(..), TRule (..), TPattern (..))
+import Curry.FlatCurry.Typed.Type (TExpr (..), TBranchExpr (..), TProg (..), TFuncDecl(..), TRule (..), TPattern (..), typeOf)
 
 defaultAmbiguous :: TProg -> TProg
 defaultAmbiguous (TProg imps fixs typs decls ops) =
@@ -40,9 +40,10 @@ defaultAmbiguousExpr vs (TComb ty ct qn args)
   -- since there are no function applications in a Dict binding that might lead to vanishing type variables.
   | "_Dict#" `isPrefixOf` snd qn = TComb ty ct qn args
   | tyvs `Set.isSubsetOf` vs     = TComb ty ct qn args'
-  | otherwise                    = TTyped (TComb ty ct qn args') (defaultType vs ty)
+  | otherwise                    = TTyped (TComb ty' ct qn args') (defaultType vs ty)
   where
     tyvs = tyVars ty
+    ty' = defaultType vs ty
     args' = map (defaultAmbiguousExpr (vs `Set.union` tyvs)) args
 defaultAmbiguousExpr vs (TFree bs e) =
   TFree bs (defaultAmbiguousExpr vs e)
@@ -77,7 +78,7 @@ defaultAmbiguousPat _ p@(TLPattern _ _) = p
 defaultAmbiguousBinding :: Set.Set VarIndex
                         -> [((VarIndex, TypeExpr), TExpr)]
                         -> [((VarIndex, TypeExpr), TExpr)]
-defaultAmbiguousBinding vs = map (second (defaultAmbiguousExpr vs))
+defaultAmbiguousBinding vs = map (\((v, _), e) -> let e' = defaultAmbiguousExpr vs e in ((v, typeOf e'), e'))
 
 anyQName :: QName
 anyQName = ("Special", "Any")
