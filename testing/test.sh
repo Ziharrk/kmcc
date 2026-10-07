@@ -81,7 +81,7 @@ KMCCOPTS=":set dfs"
 testall TESTDFS.txt
 
 # Tests where BFS strategy is relevant:
-PROGRAMS="Strategy"
+PROGRAMS="NDNums Strategy"
 KMCCOPTS=":set bfs :set +first"
 testall TESTBFS.txt
 
