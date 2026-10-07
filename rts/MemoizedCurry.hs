@@ -43,7 +43,6 @@ import           Data.SBV.Control                   ( checkSatAssuming,
                                                       CheckSatResult(..),
                                                       Query )
 import           Control.Applicative                (Alternative(..))
-import qualified Control.Concurrent.RLock as RLock  (new, with)
 import           Control.Monad                      (MonadPlus(..), ap, unless, msum, guard)
 import           Control.Monad.Fix                  (MonadFix(..), fix)
 import           Control.Monad.Codensity            (Codensity(..), lowerCodensity)
@@ -62,6 +61,7 @@ import           Classes                            (MonadShare(..), MonadFree(.
 import qualified Tree
 import           Narrowable
 import           Solver
+import           RLock
 
 -- Changes to the paper:
 -- - The performance optimization that was teasered
@@ -259,8 +259,8 @@ instance MonadFix m => MonadFix (Codensity m) where
 evalND :: ND a -> NDState -> Tree a
 evalND (ND a) s = lowerCodensity (evalStateT a s)
 
-runND :: ND a -> NDState -> Tree (NDState, a)
-runND a = evalND (a >>= \a' -> get >>= \st -> return (st, a'))
+runND :: ND a -> NDState -> Tree (a, NDState)
+runND a = evalND (a >>= \a' -> get >>= \st -> return (a', st))
 
 --------------------------------------------------------------------------------
 
@@ -316,15 +316,15 @@ runCurry :: Curry a -> Tree (NDState, a)
 runCurry (Curry ma) =
   unVal <$> runND (ma >>= \a -> checkConsistency >> return a) (initialNDState ())
   where
-    unVal (s, Val x) = (s, x)
-    unVal (_, Var _) = error "evalCurry: Variable"
+    unVal (Val x, s) = (s, x)
+    unVal (Var _, _) = error "evalCurry: Variable"
 
 runCurryWith :: Curry a -> NDState -> Tree (NDState, a)
 runCurryWith (Curry ma) s' =
   unVal <$> runND (ma >>= \a -> checkConsistency >> return a) s'
   where
-    unVal (s, Val x) = (s, x)
-    unVal (_, Var _) = error "evalCurry: Variable"
+    unVal (Val x, s) = (s, x)
+    unVal (Var _, _) = error "evalCurry: Variable"
 
 runCurryTreeWith :: Curry a -> NDState -> Tree.Tree (NDState, a)
 runCurryTreeWith ma s = convertTree $ runCurryWith ma s
@@ -506,19 +506,36 @@ memo (Curry m) = Curry $ do
                     $ noinline const RLock.new ndState1
   return $ Val $ Curry $ do
     ndState2 <- get
-    unsafePerformIO $ RLock.with taskLock $
+    RLock.with taskLock $
       case lookupTaskResult taskMap (branchID ndState2) (parentIDs ndState2) of
         Just (y, False) -> return (return y)
         Just (y, True)  -> return (put (advanceNDState ndState2) >> return y)
-        Nothing -> do
-          let yStateRes = runCodensity (runStateT (unND m) ndState2) return
-          let modifyOne (y, ndState3) = atomicModifyIORef' taskMap (\x -> (insertH x, ()))
-                where
-                  wasND = branchID ndState2 /= branchID ndState3
-                  insertID = if wasND then branchID ndState3 else branchID ndState1
-                  insertH = insertHeap insertID (y, wasND)
-          mapM_ modifyOne yStateRes
-          return (ND (StateT (\_ -> Codensity (\f -> yStateRes >>= f))))
+        -- Soo what is happening here?
+        -- For thread safety, we discovered we need an RLock when using fair search.
+        -- This means, that the action here needs to be an IO action.
+        -- (See also the outer return at the two cases above.)
+        -- We cannot enter all results into the trMap in this IO action (may be infinite).
+        -- However, if we enter the result for branchID ndState1,
+        -- this has to be synchronized with other threads.
+        -- Thus, if just one result is found (only here we could ever enter in ndState1),
+        -- we CAN enter it into the trMap in this IO action before the RLock.with finishes.
+        -- If we find more than one, it is okay to enter them after RLock.with finishes,
+        -- since they will be for different branchIDs.
+        -- The code is a bit ugly, since we need to get the tree representation for this.
+        Nothing -> case runND m ndState2 of
+          Fail -> return mzero
+          t@(Single res) -> modifyOne res >>
+            return (ND (StateT (\_ -> Codensity (\f ->
+              t >>= f))))
+          t@(Choice _ _) ->
+            return (ND (StateT (\_ -> Codensity (\f ->
+              t >>= \res -> unsafePerformIO (modifyOne res) `seq` f res))))
+          where
+            modifyOne (y, ndState3) = atomicModifyIORef' taskMap (\x -> (insertH x, ()))
+              where
+                wasND = branchID ndState2 /= branchID ndState3
+                insertID = if wasND then branchID ndState3 else branchID ndState1
+                insertH = insertHeap insertID (y, wasND)
 
 --------------------------------------------------------------------------------
 -- We could define lookupTaskResult exactly as in the paper,
