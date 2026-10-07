@@ -28,7 +28,7 @@ import qualified Data.Set as Set
 import GHC.IO.Exception (IOException(..), IOErrorType(..))
 import System.IO (stderr, hPutStrLn)
 import System.IO.Unsafe (unsafeInterleaveIO, unsafePerformIO)
-import System.Exit (exitFailure)
+import System.Exit (exitFailure, exitSuccess)
 import qualified System.Time.Extra as E (offsetTime)
 import Text.Read (pfail)
 import Text.ParserCombinators.ReadPrec (readPrec_to_S)
@@ -252,8 +252,8 @@ mainWrapperDet mx = do
   x <- mx
   case evalCurry (showFreeCurry (return (from x)) []) of
     Single x' -> case unitDispatch @(HsEquivalent a) of
-                  IsUnit  -> return ()
-                  NotUnit -> putStrLn x'
+                  IsUnit  -> exitSuccess
+                  NotUnit -> putStrLn x' >> exitSuccess
     _         -> error "mainWrapper: not a single result"
 
 mainWrapperNDet :: forall a. (ShowFree a, ToHs a, UnitDispatchable a) => Curry (IO a) -> IO ()
@@ -261,8 +261,8 @@ mainWrapperNDet mx = do
   _ <- offsetTime
   case evalCurry (ensureOneResult (bindIO mx (returnFunc $ \x -> return <$> showFreeCurry x []))) of
     Single x' -> x' >>= \a -> case unitDispatch @a of
-                  IsUnit  -> return ()
-                  NotUnit -> putStrLn a
+                  IsUnit  -> exitSuccess
+                  NotUnit -> putStrLn a >> exitSuccess
     _         -> error "mainWrapper: not a single result"
 
 unSingle :: MemoizedCurry.Tree l -> l
@@ -319,7 +319,7 @@ exprWrapperNDet search optInt optFirst fvs b ca = do
       (va, ids) <- ca
       let swapped = map (\(x, y) -> (y, x)) fvs
       str <- showFreeCurry (Curry (return va)) swapped
-      vs <- mapM (\(VarInfo @v i) -> showFreeCurry (Curry $ deref $ Curry $ return $ Var @v i) swapped) ids
+      vs <- if not b then return [] else mapM (\(VarInfo @v i) -> showFreeCurry (Curry $ deref $ Curry $ return $ Var @v i) swapped) ids
       let vs' = zipWith (\s n -> n ++ " = " ++ s) vs sortedFvs
       let str' = if null vs || not b then str else "{ " ++ intercalate "\n, " vs' ++ " } " ++ str
       return str'
