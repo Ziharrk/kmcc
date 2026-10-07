@@ -1,4 +1,5 @@
-# KMCC: The Kiel Monadic Curry Compiler
+KMCC: The Kiel Monadic Curry Compiler
+=====================================
 
 This repository contains the implementation of a compiler
 and run-time system to compile [Curry](http://www.curry-lang.org)
@@ -20,7 +21,7 @@ and in more detail in
 > Theory and Practice of Logic Programming, 2026
 > DOI: [10.1017/S1471068426100453](https://doi.org/10.1017/S1471068426100453)
 
-Installation:
+Installation
 -------------
 
 Since the front end and compiler of KMCC are implemented in Haskell,
@@ -56,16 +57,21 @@ by the script `bin/kmcc`. If you put the directory `.../kmcc/bin`
 into your `PATH` variable, KMCC can be invoked as follows:
 
     > kmcc
-    ----------------------------------------------------------
-    KMCC Interactive Environment (Version 0.8.0 of 2026-09-10)
-    ----------------------------------------------------------
+     __    _
+    |_ \  | |             KMCC - the Kiel Monadic Curry Compiler
+      \ \ | |____
+      /  \|  ____|
+     / /\ \ |
+    /_/  \_\|             Version 0.8.0 of 2026-09-10
+
+    Type ":h" for help  (contact: info@curry-lang.org)
+    Compiling Prelude...
     Prelude>
 
 Now one can use the command `:help` to get an overview of all
 available commands in this environment.
 
-
-Features:
+Features
 ---------
 
 A distinguishing feature of KMCC is its **operational completeness**
@@ -74,6 +80,7 @@ For instance, KMCC computes a value to the following
 non-deterministic choice between three expressions,
 where the leftmost and rightmost are non-terminating:
 
+    Prelude> :set fs
     Prelude> length [1 ..] ? 42 ? length [1 ..]
     42
 
