@@ -26,4 +26,4 @@ psort :: [Int] -> [Int]
 psort xs = idSorted (perm xs)
 
 main :: [Int]
-main = psort [15,14 .. 1]
+main = psort [10, 9 .. 1]
