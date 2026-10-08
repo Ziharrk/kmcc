@@ -12,7 +12,7 @@ Executing: InfList
 Executing: PermSort
 [O,S O,S (S O),S (S (S O)),S (S (S (S O)))]
 Executing: PermSortInt
-[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+[1,2,3,4,5,6,7,8,9,10]
 Executing: RederefPrim
 (True,8)
 Executing: Rev
