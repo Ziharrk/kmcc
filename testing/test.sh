@@ -96,6 +96,5 @@ KMCCOPTS=":set dfs"
 testall TESTFUNPATS.txt
 KMCCOPTS=":set bfs"
 testall TESTFUNPATS.txt
-PROGRAMS="Dutch FunPatsLast FunPatsPali FunPatsExpSimp FunPatsExpVar"
 KMCCOPTS=":set fs"
 testall TESTFUNPATS.txt

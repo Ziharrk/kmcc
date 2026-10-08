@@ -1,3 +1,4 @@
+{-# OPTIONS_FRONTEND -Wno-name-shadowing -Wno-incomplete-patterns -Wno-overlapping -Wno-missing-signatures #-}
 -- Examples for showing operational completeness of a strategy.
 
 data Nat = O | S Nat

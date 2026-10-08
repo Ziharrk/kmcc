@@ -1,3 +1,4 @@
+{-# OPTIONS_FRONTEND -Wno-incomplete-patterns -Wno-overlapping -Wno-missing-signatures #-}
 -- Examples for showing incompleteness of DFS
 
 data Nat = O | S Nat

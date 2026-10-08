@@ -1,3 +1,4 @@
+{-# OPTIONS_FRONTEND -Wno-incomplete-patterns -Wno-overlapping -Wno-missing-signatures #-}
 -- Example showing the influence of strategies to computed results
 
 aBool :: Bool
