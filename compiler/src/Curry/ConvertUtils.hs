@@ -405,9 +405,9 @@ forceHaskellQualName :: QName ()
 forceHaskellQualName = Qual () (ModuleName () "B") (Ident () "forceHaskell")
 
 searchStratQualName :: SearchStrat -> QName ()
-searchStratQualName DFS = Qual () (ModuleName () "B") (Ident () "dfs")
-searchStratQualName BFS = Qual () (ModuleName () "B") (Ident () "bfs")
-searchStratQualName FS  = Qual () (ModuleName () "B") (Ident () "fs")
+searchStratQualName DFS = Qual () (ModuleName () "B") (Ident () "DFS")
+searchStratQualName BFS = Qual () (ModuleName () "B") (Ident () "BFS")
+searchStratQualName FS  = Qual () (ModuleName () "B") (Ident () "FS")
 
 anyHsQualName :: QName ()
 anyHsQualName = Qual () (ModuleName () "B") (Ident () "Any")

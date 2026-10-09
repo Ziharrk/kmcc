@@ -67,7 +67,7 @@ iORefdotprimuscorereadIORef_Det# :: forall a a'. (HsEquivalent a' ~ a, ToHs a', 
                                  => IORef_Det# a -> Curry_Prelude.IO_Det a
 iORefdotprimuscorereadIORef_Det# (RefDet r) = do
   v <- D.readIORef r
-  P.return (fromTree (evalCurry (ensureOneResult (to (unsafeCoerce v :: a')))))
+  P.return (fromTree (evalCurry DFS (ensureOneResult (to (unsafeCoerce v :: a')))))
   where fromTree (Single x) = x
         fromTree _          = P.error "readIORef: not a single result"
 

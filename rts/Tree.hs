@@ -6,7 +6,6 @@ import           Control.Applicative ( Alternative(empty, (<|>)) )
 import           Control.Concurrent ( forkFinally, myThreadId )
 import           Control.Concurrent.Chan ( getChanContents, newChan, writeChan )
 import           Control.Concurrent.MVar ( newEmptyMVar, putMVar, takeMVar, modifyMVar_ )
-import           Control.DeepSeq ( NFData, force )
 import           Control.Exception ( evaluate )
 import           Control.Monad ( MonadPlus )
 import           Data.Maybe ( catMaybes, isJust )
@@ -44,8 +43,6 @@ instance MonadPlus Tree
 instance MonadFail Tree where
   fail = const Empty
 
-instance NFData a => NFData (Tree a) where
-
 dfs :: Tree a -> [a]
 dfs t' = dfs' [t']
   where dfs' [] = []
@@ -63,14 +60,14 @@ bfs t' = bfs' (Seq.singleton t')
           Node l r -> bfs' (ts Seq.:|> l Seq.:|> r)
 
 {-# NOINLINE fs #-}
-fs :: NFData a => Tree a -> [a]
+fs :: Tree a -> [a]
 fs t = unsafePerformIO $ do
   ch <- newChan
   mvarTids <- newEmptyMVar
   putMVar mvarTids Set.empty
   let go t' = case t' of
         Empty    -> return ()
-        Leaf x   -> evaluate (force x) >>= writeChan ch . Just
+        Leaf x   -> evaluate x >>= writeChan ch . Just
         Node l r -> do
           tids <- takeMVar mvarTids
           mL <- newEmptyMVar

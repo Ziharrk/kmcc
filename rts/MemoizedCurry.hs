@@ -205,8 +205,12 @@ data NDState = NDState {
     constrainedVars :: Set ID,
     branchID        :: ID,
     parentIDs       :: Set ID,
+    searchMode      :: SearchMode,
     solverState     :: SolverState
   }
+
+data SearchMode = DFS | BFS | FS
+  deriving Eq
 
 --------------------------------------------------------------------------------
 -- Here are a few function to generate the initial state and
@@ -216,10 +220,10 @@ data NDState = NDState {
 -- but the expression cannot float out of the function.
 -- This ensures safety in the presence of unsafePerformIO.
 {-# NOINLINE initialNDState #-}
-initialNDState :: () -> NDState
-initialNDState x = unsafePerformIO $ do
+initialNDState :: SearchMode -> () -> NDState
+initialNDState sm x = unsafePerformIO $ do
   r <- newIORef (toInteger (fromEnum x + 1))
-  NDState r emptyHeap mempty Set.empty 0 Set.empty <$> startSolver
+  NDState r emptyHeap mempty Set.empty 0 Set.empty sm <$> startSolver
 
 {-# NOINLINE freshIDFromState #-}
 freshIDFromState :: NDState -> ID
@@ -300,8 +304,8 @@ newtype Curry a = Curry {
 -- For evalutation of Curry values we provide a funtion
 -- that converts results to a non-polymorphic, "normal" tree.
 
-evalCurry :: Curry a -> Tree a
-evalCurry = fmap snd . runCurry
+evalCurry :: SearchMode -> Curry a -> Tree a
+evalCurry sm = fmap snd . runCurry sm
 
 evalCurryWith :: Curry a -> NDState -> Tree a
 evalCurryWith ma s = snd <$> runCurryWith ma s
@@ -309,12 +313,12 @@ evalCurryWith ma s = snd <$> runCurryWith ma s
 evalCurryTreeWith :: Curry a -> NDState -> Tree.Tree a
 evalCurryTreeWith ma s = snd <$> runCurryTreeWith ma s
 
-evalCurryTree :: Curry a -> Tree.Tree a
-evalCurryTree = fmap snd . runCurryTree
+evalCurryTree :: SearchMode -> Curry a -> Tree.Tree a
+evalCurryTree sm = fmap snd . runCurryTree sm
 
-runCurry :: Curry a -> Tree (NDState, a)
-runCurry (Curry ma) =
-  unVal <$> runND (ma >>= \a -> checkConsistency >> return a) (initialNDState ())
+runCurry :: SearchMode -> Curry a -> Tree (NDState, a)
+runCurry sm (Curry ma) =
+  unVal <$> runND (ma >>= \a -> checkConsistency >> return a) (initialNDState sm ())
   where
     unVal (Val x, s) = (s, x)
     unVal (Var _, _) = error "evalCurry: Variable"
@@ -333,8 +337,8 @@ runCurryTreeWith ma s = convertTree $ runCurryWith ma s
     convertTree Fail         = Tree.Empty
     convertTree (Choice l r) = Tree.Node (convertTree l) (convertTree r)
 
-runCurryTree :: Curry a -> Tree.Tree (NDState, a)
-runCurryTree ma = runCurryTreeWith ma (initialNDState ())
+runCurryTree :: SearchMode -> Curry a -> Tree.Tree (NDState, a)
+runCurryTree sm ma = runCurryTreeWith ma (initialNDState sm ())
 
 --------------------------------------------------------------------------------
 -- Instantiation of variables follows a similar scheme as in the paper,
@@ -504,12 +508,11 @@ memo (Curry m) = Curry $ do
                     $ noinline const newIORef ndState1 Map.empty
   let taskLock = unsafePerformIO
                     $ noinline const RLock.new ndState1
-  return $ Val $ Curry $ do
-    ndState2 <- get
-    RLock.with taskLock $
+  return $ Val $ Curry $ ND $ StateT $ \ndState2 ->
+    RLock.with (searchMode ndState2 == FS) taskLock $
       case lookupTaskResult taskMap (branchID ndState2) (parentIDs ndState2) of
-        Just (y, False) -> return (return y)
-        Just (y, True)  -> return (put (advanceNDState ndState2) >> return y)
+        Just (y, False) -> return (return (y, ndState2))
+        Just (y, True)  -> return (return (y, advanceNDState ndState2))
         -- Soo what is happening here?
         -- For thread safety, we discovered we need an RLock when using fair search.
         -- This means, that the action here needs to be an IO action.
@@ -523,13 +526,15 @@ memo (Curry m) = Curry $ do
         -- since they will be for different branchIDs.
         -- The code is a bit ugly, since we need to get the tree representation for this.
         Nothing -> case runND m ndState2 of
-          Fail -> return mzero
+          t@Fail ->
+            return (Codensity (\f ->
+              t >>= f))
           t@(Single res) -> modifyOne res >>
-            return (ND (StateT (\_ -> Codensity (\f ->
-              t >>= f))))
+            return (Codensity (\f ->
+              t >>= f))
           t@(Choice _ _) ->
-            return (ND (StateT (\_ -> Codensity (\f ->
-              t >>= \res -> unsafePerformIO (modifyOne res) `seq` f res))))
+            return (Codensity (\f ->
+              t >>= \res -> unsafePerformIO (modifyOne res >> return (f res))))
           where
             modifyOne (y, ndState3) = atomicModifyIORef' taskMap (\x -> (insertH x, ()))
               where

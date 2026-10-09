@@ -1140,14 +1140,14 @@ eqcoloneq_ND# = B.returnFunc (\a1 -> B.returnFunc (\a2 -> B.unify Set.empty a1 a
 
 eqcolonlteq_Det# :: forall a a'. (Curryable a', HsEquivalent a' ~ a) => a -> a -> Bool_Det
 eqcolonlteq_Det# a1 a2 =
-  case evalCurry (eqcolonlteq_ND# P.>>= \(Func f) -> f (fromHaskell a1)
+  case evalCurry DFS (eqcolonlteq_ND# P.>>= \(Func f) -> f (fromHaskell a1)
                                   P.>>= \(Func f') -> f' (fromHaskell a2)) of
     Single _ -> True_Det
     _        -> failed_Det#
 
 eqcoloneq_Det# :: forall a a'. (Curryable a', HsEquivalent a' ~ a) => a -> a -> Bool_Det
 eqcoloneq_Det# a1 a2 =
-  case evalCurry (eqcoloneq_ND# P.>>= \(Func f) -> f (fromHaskell a1)
+  case evalCurry DFS (eqcoloneq_ND# P.>>= \(Func f) -> f (fromHaskell a1)
                                 P.>>= \(Func f') -> f' (fromHaskell a2)) of
       Single _ -> True_Det
       _        -> failed_Det#

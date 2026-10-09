@@ -26,6 +26,7 @@ import Data.List (intercalate, sortOn)
 import Data.SBV (SBV, (.===), sNot, (.==), SymVal)
 import qualified Data.Set as Set
 import GHC.IO.Exception (IOException(..), IOErrorType(..))
+import GHC.Stack (HasCallStack)
 import System.IO (stderr, hPutStrLn)
 import System.IO.Unsafe (unsafeInterleaveIO, unsafePerformIO)
 import System.Exit (exitFailure, exitSuccess)
@@ -38,7 +39,6 @@ import Narrowable
 import Classes
 import Any
 import Tree (Tree, dfs, bfs, fs)
-import GHC.Stack (HasCallStack)
 
 failed :: a
 failed = throw Failed
@@ -127,7 +127,9 @@ type LiftedFunc = (:->)
 type instance HsEquivalent LiftedFunc = (->)
 
 instance (ToHs b, FromHs a) => ToHs (LiftedFunc a b) where
-  to (Func f) = return (\x -> fromTree $ evalCurry (ensureOneResult (toHaskell (f (fromHaskell x)))))
+  to (Func f) = do
+    sm <- searchMode <$> get
+    return (\x -> fromTree $ evalCurry sm (ensureOneResult (toHaskell (f (fromHaskell x)))))
     where fromTree (Single x) = x
           fromTree _        = error "to: not a single result"
 
@@ -250,7 +252,7 @@ mainWrapperDet :: forall a. (ShowFree a, FromHs a, UnitDispatchable (HsEquivalen
 mainWrapperDet mx = do
   _ <- offsetTime
   x <- mx
-  case evalCurry (showFreeCurry (return (from x)) []) of
+  case evalCurry DFS (showFreeCurry (return (from x)) []) of
     Single x' -> case unitDispatch @(HsEquivalent a) of
                   IsUnit  -> exitSuccess
                   NotUnit -> putStrLn x' >> exitSuccess
@@ -259,7 +261,7 @@ mainWrapperDet mx = do
 mainWrapperNDet :: forall a. (ShowFree a, ToHs a, UnitDispatchable a) => Curry (IO a) -> IO ()
 mainWrapperNDet mx = do
   _ <- offsetTime
-  case evalCurry (ensureOneResult (bindIO mx (returnFunc $ \x -> return <$> showFreeCurry x []))) of
+  case evalCurry DFS (ensureOneResult (bindIO mx (returnFunc $ \x -> return <$> showFreeCurry x []))) of
     Single x' -> x' >>= \a -> case unitDispatch @a of
                   IsUnit  -> exitSuccess
                   NotUnit -> putStrLn a >> exitSuccess
@@ -270,11 +272,10 @@ unSingle (Single x) = x
 unSingle _ = error "mainWrapper: not a single result"
 
 exprWrapperDet :: forall a. (ShowFree a, FromHs a)
-               => (Tree.Tree String -> [String])
-               -> HsEquivalent a -> IO ()
-exprWrapperDet search a = do
+               => SearchMode -> HsEquivalent a -> IO ()
+exprWrapperDet sm a = do
   _ <- offsetTime
-  case search $ evalCurryTree (showFreeCurry (fromHaskell a) []) of
+  case search sm $ evalCurryTree sm (showFreeCurry (fromHaskell a) []) of
     []  -> exitFailed
     [s] -> putStrLn s
     _   -> error "internalError: More than on result from deterministic expression"
@@ -283,12 +284,11 @@ exitFailed :: IO ()
 exitFailed = hPutStrLn stderr "**No value found" >> exitFailure
 
 exprWrapperNDet :: forall a. ShowFree a
-                => (Tree.Tree String -> [String])
-                -> Bool -> Bool -> [(String, Integer)] -> Bool
+                => SearchMode -> Bool -> Bool -> [(String, Integer)] -> Bool
                 -> Curry (CurryVal a, [VarInfo]) -> IO ()
-exprWrapperNDet search optInt optFirst fvs b ca = do
+exprWrapperNDet sm optInt optFirst fvs b ca = do
   _ <- offsetTime
-  printRes (search $ evalCurryTree extract)
+  printRes (search sm $ evalCurryTree sm extract)
   where
     sortedFvs = map fst $ sortOn snd fvs
 
@@ -338,6 +338,11 @@ addVarIds ca xs = Curry $ do
   ids <- sequence xs
   a <- unCurry ca
   return (Val (a, ids))
+
+search :: SearchMode -> Tree.Tree a -> [a]
+search DFS = dfs
+search BFS = bfs
+search FS  = fs
 
 -- Required for time since the start of the program in milliseconds,
 -- which is deprecated in the curry library.
