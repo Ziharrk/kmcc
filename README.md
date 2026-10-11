@@ -62,7 +62,7 @@ into your `PATH` variable, KMCC can be invoked as follows:
       \ \ | |____
       /  \|  ____|
      / /\ \ |
-    /_/  \_\|             Version 0.8.0 of 2026-09-10
+    /_/  \_\|             Version 0.9.0 of 2026-09-10
 
     Type ":h" for help  (contact: info@curry-lang.org)
     Compiling Prelude...
