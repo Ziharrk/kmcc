@@ -244,7 +244,7 @@ gen qname vs cs dataNotNew =
                         App () (Hs.Var () (convertQualNameToFlatQualName qname))
                         (foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
                         (map (Hs.Var () . UnQual () . indexToName) [1..ar]))
-      , Qualifier () $ mkReturn (Hs.Var () emptySetQualName) ]
+      , Qualifier () $ mkReturn (Hs.Var () (UnQual () (Ident () "_set0"))) ]
     mkNfWithImpl qname2 ar
       | dataNotNew = Do () $
           map (\i -> Generator () (PVar () (appendName "_f" (indexToName i))) $
@@ -318,7 +318,6 @@ gen qname vs cs dataNotNew =
     mkReturnP qname2 ar = mkReturn (foldl (App ()) (Hs.Var () (convertTypeNameToHs qname2))
       (map (Hs.Var () . UnQual () . indexToName) [1..ar]))
 
-    maybeAddReturnEmptySet [] = [Qualifier () $ mkReturn (Hs.Var () emptySetQualName)]
     maybeAddReturnEmptySet xs = xs ++ [Qualifier () $ mkReturn $ Hs.Var () $ UnQual () $
                                                       Ident () ("_set" ++ show (length xs))]
 
